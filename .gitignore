@@ -1,0 +1,62 @@
+# Checkpoints (large files)
+Beat-Transformer/checkpoint/*.pt
+*.pt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output files
+AP_2_code/output/*/
+!AP_2_code/output/.gitkeep
+
+# Input files (large audio)
+AP_2_code/input_wav/*.wav
+AP_2_code/input_wav/*.mp3
+AP_2_code/input_wav/*.flac
+!AP_2_code/input_wav/README.md
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Conda
+*.conda
+*.tar.bz2
