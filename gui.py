@@ -11,17 +11,26 @@ from pathlib import Path
 import subprocess
 import threading
 import sys
+import os
 
 class LoopExtractorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("LOOP EXTRACTOR 2000")
-        self.root.geometry("1200x700")
+        self.root.geometry("900x550")
         self.root.configure(bg='#000080')  # Dark blue background
+
+        # Set up cleanup on window close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # Track running process
+        self.running_process = None
 
         # Variables
         self.input_path = tk.StringVar()
         self.output_path = tk.StringVar()
+        self.last_input_dir = None
+        self.last_output_dir = None
         self.apply_to_folder = tk.BooleanVar(value=False)
 
         # Pattern detection modes
@@ -29,10 +38,17 @@ class LoopExtractorGUI:
         self.drum_melbands = tk.BooleanVar(value=True)
         self.bass_pitch = tk.BooleanVar(value=True)
 
-        # Output options
-        self.output_tempo_plots = tk.BooleanVar(value=True)
-        self.output_raster_plots = tk.BooleanVar(value=True)
-        self.output_midi_loops = tk.BooleanVar(value=True)
+        # Output options (pipeline steps)
+        self.step_stem_separation = tk.BooleanVar(value=True)
+        self.step_beat_detection = tk.BooleanVar(value=True)
+        self.step_downbeat_correction = tk.BooleanVar(value=True)
+        self.step_onset_detection = tk.BooleanVar(value=True)
+        self.step_pattern_detection = tk.BooleanVar(value=True)
+        self.step_grid_analysis = tk.BooleanVar(value=True)
+        self.step_rms_analysis = tk.BooleanVar(value=True)
+        self.step_audio_examples = tk.BooleanVar(value=True)
+        self.step_midi_export = tk.BooleanVar(value=True)
+        self.step_loop_export = tk.BooleanVar(value=True)
 
         self.setup_ui()
 
@@ -52,8 +68,9 @@ class LoopExtractorGUI:
         title.pack(pady=(0, 20))
 
         # Left column - Input/Output
-        left_frame = tk.Frame(main_frame, bg='#000080')
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 20))
+        left_frame = tk.Frame(main_frame, bg='#000080', width=450)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 20))
+        left_frame.pack_propagate(False)
 
         # Input section
         input_label = tk.Label(
@@ -79,8 +96,9 @@ class LoopExtractorGUI:
             text="Load file/folder BUTTON",
             font=('Arial', 12, 'bold'),
             bg='#0000FF',
-            fg='white',
+            fg='black',
             activebackground='#0000CC',
+            activeforeground='black',
             command=self.load_input,
             relief=tk.RAISED,
             bd=3
@@ -89,7 +107,7 @@ class LoopExtractorGUI:
 
         folder_check = tk.Checkbutton(
             left_frame,
-            text="(X) apply to all files in folder",
+            text="apply to all files in folder",
             variable=self.apply_to_folder,
             font=('Arial', 10),
             fg='white',
@@ -124,8 +142,9 @@ class LoopExtractorGUI:
             text="Choose output path",
             font=('Arial', 12, 'bold'),
             bg='#0000FF',
-            fg='white',
+            fg='black',
             activebackground='#0000CC',
+            activeforeground='black',
             command=self.choose_output,
             relief=tk.RAISED,
             bd=3
@@ -147,7 +166,7 @@ class LoopExtractorGUI:
 
         drum_events_check = tk.Checkbutton(
             pattern_frame,
-            text="()DRUM EVENTS",
+            text="DRUM EVENTS",
             variable=self.drum_events,
             font=('Arial', 10),
             fg='white',
@@ -159,7 +178,7 @@ class LoopExtractorGUI:
 
         melbands_check = tk.Checkbutton(
             pattern_frame,
-            text="()DRUM MELBANDS",
+            text="DRUM MELBANDS",
             variable=self.drum_melbands,
             font=('Arial', 10),
             fg='white',
@@ -171,7 +190,7 @@ class LoopExtractorGUI:
 
         bass_check = tk.Checkbutton(
             pattern_frame,
-            text="()BASS PITCH",
+            text="BASS PITCH",
             variable=self.bass_pitch,
             font=('Arial', 10),
             fg='white',
@@ -181,85 +200,98 @@ class LoopExtractorGUI:
         )
         bass_check.pack(side=tk.LEFT)
 
-        # Raster plot note
-        raster_note = tk.Label(
-            left_frame,
-            text="• HERE 1 RASTER PLOT FOR\n  CHOSEN METHOD",
-            font=('Arial', 11),
-            fg='black',
-            bg='#000080',
-            justify=tk.LEFT
-        )
-        raster_note.pack(anchor='w', pady=(40, 20))
-
         # Run button
-        run_button = tk.Button(
+        self.run_button = tk.Button(
             left_frame,
             text="RUN ANALYSIS",
             font=('Arial', 14, 'bold'),
             bg='#00FF00',
             fg='black',
             activebackground='#00CC00',
+            activeforeground='black',
             command=self.run_analysis,
             relief=tk.RAISED,
             bd=4,
-            width=20
+            width=20,
+            cursor='hand2',
+            state=tk.NORMAL
         )
-        run_button.pack(pady=20)
+        self.run_button.pack(pady=20)
+        self.run_button.lift()  # Ensure button is on top layer
 
-        # Right column - Outputs
+        # Debug: bind additional click event
+        self.run_button.bind('<Button-1>', lambda e: print("DEBUG: Button clicked!"))
+
+        # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         outputs_label = tk.Label(
             right_frame,
-            text="OUTPUTS:",
+            text="PIPELINE STEPS:",
             font=('Arial', 14, 'bold'),
             fg='white',
             bg='#000080'
         )
-        outputs_label.pack(anchor='w')
+        outputs_label.pack(anchor='w', pady=(0, 10))
 
-        tempo_check = tk.Checkbutton(
-            right_frame,
-            text="()1. TEMPO PLOTS",
-            variable=self.output_tempo_plots,
-            font=('Arial', 11),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080'
+        # Create 5x2 grid of checkboxes
+        steps_grid = tk.Frame(right_frame, bg='#000080')
+        steps_grid.pack(anchor='w', fill=tk.X)
+
+        steps = [
+            ("1. Stem Separation", self.step_stem_separation),
+            ("2. Beat Detection", self.step_beat_detection),
+            ("3. Downbeat Correction", self.step_downbeat_correction),
+            ("4. Onset Detection", self.step_onset_detection),
+            ("5. Pattern Detection", self.step_pattern_detection),
+            ("6. Grid Analysis", self.step_grid_analysis),
+            ("7. RMS Analysis", self.step_rms_analysis),
+            ("8. Audio Examples", self.step_audio_examples),
+            ("9. MIDI Export", self.step_midi_export),
+            ("10. Loop Export", self.step_loop_export),
+        ]
+
+        # Create 5 rows x 2 columns
+        for i, (text, var) in enumerate(steps):
+            row = i % 5
+            col = i // 5
+
+            check = tk.Checkbutton(
+                steps_grid,
+                text=text,
+                variable=var,
+                font=('Arial', 10),
+                fg='white',
+                bg='#000080',
+                selectcolor='#000080',
+                activebackground='#000080',
+                activeforeground='white'
+            )
+            check.grid(row=row, column=col, sticky='w', padx=(0, 20), pady=2)
+
+        steps_grid.columnconfigure(0, weight=1)
+        steps_grid.columnconfigure(1, weight=1)
+
+        # Progress bar
+        progress_frame = tk.Frame(right_frame, bg='#000080')
+        progress_frame.pack(fill=tk.X, pady=(20, 10))
+
+        # Main progress bar (animated)
+        self.progress_bar = ttk.Progressbar(
+            progress_frame,
+            mode='indeterminate',
+            length=400
         )
-        tempo_check.pack(anchor='w', pady=5)
+        self.progress_bar.pack(fill=tk.X, pady=5)
 
-        raster_check = tk.Checkbutton(
-            right_frame,
-            text="()2. RASTER PLOTS",
-            variable=self.output_raster_plots,
-            font=('Arial', 11),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080'
-        )
-        raster_check.pack(anchor='w', pady=5)
-
-        midi_label = tk.Label(
-            right_frame,
-            text="()10 MIDI LOOP etc etc",
-            font=('Arial', 11),
-            fg='white',
-            bg='#000080'
-        )
-        midi_label.pack(anchor='w', pady=(40, 5))
-
-        # Status/log area
+        # Status/log area (system monitor)
         status_frame = tk.Frame(right_frame, bg='#000080')
-        status_frame.pack(fill=tk.BOTH, expand=True, pady=(20, 0))
+        status_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
         status_label = tk.Label(
             status_frame,
-            text="Status:",
+            text="System Monitor:",
             font=('Arial', 11, 'bold'),
             fg='white',
             bg='#000080'
@@ -268,8 +300,8 @@ class LoopExtractorGUI:
 
         self.status_text = tk.Text(
             status_frame,
-            height=15,
-            width=50,
+            height=20,
+            width=60,
             bg='#000040',
             fg='#00FF00',
             font=('Courier', 10),
@@ -285,10 +317,14 @@ class LoopExtractorGUI:
     def load_input(self):
         """Load input file or folder"""
         if self.apply_to_folder.get():
-            path = filedialog.askdirectory(title="Select input folder")
+            path = filedialog.askdirectory(
+                title="Select input folder",
+                initialdir=self.last_input_dir
+            )
         else:
             path = filedialog.askopenfilename(
                 title="Select audio file",
+                initialdir=self.last_input_dir,
                 filetypes=[
                     ("Audio files", "*.wav *.mp3 *.flac"),
                     ("All files", "*.*")
@@ -297,13 +333,20 @@ class LoopExtractorGUI:
 
         if path:
             self.input_path.set(path)
+            # Remember the directory for next time
+            self.last_input_dir = str(Path(path).parent if Path(path).is_file() else path)
             self.log_status(f"Input selected: {path}")
 
     def choose_output(self):
         """Choose output directory"""
-        path = filedialog.askdirectory(title="Select output folder")
+        path = filedialog.askdirectory(
+            title="Select output folder",
+            initialdir=self.last_output_dir
+        )
         if path:
             self.output_path.set(path)
+            # Remember the directory for next time
+            self.last_output_dir = path
             self.log_status(f"Output path: {path}")
 
     def log_status(self, message):
@@ -315,17 +358,25 @@ class LoopExtractorGUI:
 
     def run_analysis(self):
         """Run the analysis pipeline"""
+        print("DEBUG: run_analysis called!")  # Debug print
+
         if not self.input_path.get():
+            print("DEBUG: No input path")  # Debug print
             messagebox.showerror("Error", "Please select an input file or folder")
             return
 
         if not self.output_path.get():
+            print("DEBUG: No output path")  # Debug print
             messagebox.showerror("Error", "Please select an output folder")
             return
 
+        print("DEBUG: Starting analysis")  # Debug print
         self.log_status("\n" + "="*50)
         self.log_status("Starting analysis...")
         self.log_status("="*50)
+
+        # Start progress bar
+        self.progress_bar.start(10)
 
         # Run in separate thread to avoid blocking GUI
         thread = threading.Thread(target=self._run_pipeline)
@@ -341,20 +392,20 @@ class LoopExtractorGUI:
                 str(Path(__file__).parent / "AP_2_code" / "main.py")
             ]
 
-            if self.apply_to_folder.get():
+            # Determine if input is a file or directory
+            input_path = Path(self.input_path.get())
+
+            if input_path.is_dir():
+                # Process all files in directory
                 cmd.extend(["--audio-dir", self.input_path.get()])
                 cmd.append("--analyse-all")
+                track_id = "batch"
             else:
+                # Process single file
                 cmd.extend(["--audio", self.input_path.get()])
+                track_id = input_path.stem
 
             cmd.extend(["--output-dir", self.output_path.get()])
-
-            # Add track ID (use filename)
-            input_path = Path(self.input_path.get())
-            if input_path.is_file():
-                track_id = input_path.stem
-            else:
-                track_id = "batch"
             cmd.extend(["--track-id", track_id])
 
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
@@ -368,16 +419,26 @@ class LoopExtractorGUI:
                 bufsize=1
             )
 
+            # Store process reference for cleanup
+            self.running_process = process
+
             # Stream output to status window
             for line in process.stdout:
                 self.log_status(line.rstrip())
 
             process.wait()
 
+            # Clear process reference
+            self.running_process = None
+
+            # Stop progress bar
+            self.progress_bar.stop()
+
             if process.returncode == 0:
                 self.log_status("\n" + "="*50)
                 self.log_status("✓ Analysis completed successfully!")
                 self.log_status("="*50)
+
                 messagebox.showinfo("Success", "Analysis completed successfully!")
             else:
                 self.log_status("\n" + "="*50)
@@ -386,8 +447,24 @@ class LoopExtractorGUI:
                 messagebox.showerror("Error", f"Analysis failed with code {process.returncode}")
 
         except Exception as e:
+            # Stop progress bar on error
+            self.progress_bar.stop()
+            self.running_process = None
             self.log_status(f"\n✗ Error: {e}")
             messagebox.showerror("Error", f"An error occurred: {e}")
+
+    def on_closing(self):
+        """Handle window closing - cleanup processes"""
+        # Kill any running subprocess
+        if self.running_process and self.running_process.poll() is None:
+            self.running_process.terminate()
+            try:
+                self.running_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.running_process.kill()
+
+        # Destroy the window and exit
+        self.root.destroy()
 
 
 def main():
