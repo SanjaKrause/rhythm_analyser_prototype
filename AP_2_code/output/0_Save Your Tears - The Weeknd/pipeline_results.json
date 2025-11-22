@@ -1,0 +1,87 @@
+{
+  "track_id": "0_Save Your Tears - The Weeknd",
+  "audio_file": "input_wav/0_Save Your Tears - The Weeknd.wav",
+  "steps_completed": [
+    "stem_separation",
+    "beat_detection",
+    "correct_bars",
+    "tempo_plots",
+    "onset_detection",
+    "pattern_detection",
+    "raster",
+    "raster_plots",
+    "rms_analysis",
+    "audio_examples",
+    "midi_export",
+    "loops"
+  ],
+  "errors": [],
+  "stems_dir": "output/0_Save Your Tears - The Weeknd/1_stems",
+  "npz_file": "output/0_Save Your Tears - The Weeknd/1_stems/0_Save Your Tears - The Weeknd_5stems.npz",
+  "beats_file": "output/0_Save Your Tears - The Weeknd/2_beats/0_Save Your Tears - The Weeknd_output.txt",
+  "correction_stats": {
+    "track_name": "0_Save Your Tears - The Weeknd_output",
+    "time_signature": 4,
+    "raw_bars": 105,
+    "corrected_bars": 105,
+    "dominant_pattern": "normal",
+    "usable_count": 105,
+    "base_avg_corrected": 118.01956796233705,
+    "avg_kept_corrected": 118.01956796233705
+  },
+  "tempo_plots_pdf": "output/0_Save Your Tears - The Weeknd/3.5_tempo_plots/0_Save Your Tears - The Weeknd_tempo_plots.pdf",
+  "tempo_csv": "output/0_Save Your Tears - The Weeknd/3.5_tempo_plots/0_Save Your Tears - The Weeknd_bar_tempos.csv",
+  "onset_file": "output/0_Save Your Tears - The Weeknd/4_onsets/0_Save Your Tears - The Weeknd_onsets.csv",
+  "num_onsets": 686,
+  "pattern_lengths": {
+    "drum": 1,
+    "mel": 4,
+    "pitch": 4
+  },
+  "comprehensive_csv": "output/0_Save Your Tears - The Weeknd/5_grid/0_Save Your Tears - The Weeknd_comprehensive_phases.csv",
+  "rms_values": {
+    "uncorrected_ms": 53.94834729677942,
+    "per_snippet_ms": 53.94834729677942,
+    "drum_ms": 26.86917846661254,
+    "mel_ms": 20.610893025684554,
+    "pitch_ms": 20.610893025684554,
+    "uncorrected_phase": 0.026546734306372527,
+    "per_snippet_phase": 0.026546734306372527,
+    "drum_phase": 0.013192537269519827,
+    "mel_phase": 0.01013239283105736,
+    "pitch_phase": 0.01013239283105736,
+    "pattern_lengths": {
+      "drum": 1,
+      "mel": 4,
+      "pitch": 4
+    }
+  },
+  "midi_files": [
+    "output/0_Save Your Tears - The Weeknd/8_midi/drum.mid",
+    "output/0_Save Your Tears - The Weeknd/8_midi/mel.mid",
+    "output/0_Save Your Tears - The Weeknd/8_midi/pitch.mid"
+  ],
+  "loop_files": {
+    "drum": [
+      "output/0_Save Your Tears - The Weeknd/9_loops/drum/vocals.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/drum/drums.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/drum/bass.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/drum/piano.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/drum/other.wav"
+    ],
+    "mel": [
+      "output/0_Save Your Tears - The Weeknd/9_loops/mel/vocals.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/mel/drums.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/mel/bass.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/mel/piano.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/mel/other.wav"
+    ],
+    "pitch": [
+      "output/0_Save Your Tears - The Weeknd/9_loops/pitch/vocals.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/pitch/drums.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/pitch/bass.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/pitch/piano.wav",
+      "output/0_Save Your Tears - The Weeknd/9_loops/pitch/other.wav"
+    ]
+  }
+}

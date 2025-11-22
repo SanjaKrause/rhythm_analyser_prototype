@@ -1,0 +1,12 @@
+# Ignore all pretrained model files (too large for GitHub)
+5stems/
+*.data-*
+*.index
+*.meta
+checkpoint
+.probe
+._*
+
+# Keep this .gitignore and README
+!.gitignore
+!README.md

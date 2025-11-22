@@ -1,0 +1,17 @@
+{
+  "uncorrected_ms": 101.52195569833381,
+  "per_snippet_ms": 101.52195569833381,
+  "drum_ms": 51.67835755774158,
+  "mel_ms": 51.67835755774158,
+  "pitch_ms": 107.23493971395042,
+  "uncorrected_phase": 0.030887264445112462,
+  "per_snippet_phase": 0.030887264445112462,
+  "drum_phase": 0.0157747466941211,
+  "mel_phase": 0.0157747466941211,
+  "pitch_phase": 0.03320489602308534,
+  "pattern_lengths": {
+    "drum": 1,
+    "mel": 1,
+    "pitch": 2
+  }
+}

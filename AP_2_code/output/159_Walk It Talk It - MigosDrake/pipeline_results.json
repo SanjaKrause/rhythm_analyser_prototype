@@ -1,0 +1,82 @@
+{
+  "track_id": "159_Walk It Talk It - MigosDrake",
+  "audio_file": "input_wav/159_Walk It Talk It - MigosDrake.wav",
+  "steps_completed": [
+    "stem_separation",
+    "beat_detection",
+    "correct_bars",
+    "tempo_plots",
+    "onset_detection",
+    "pattern_detection",
+    "raster",
+    "raster_plots",
+    "rms_analysis",
+    "audio_examples",
+    "midi_export_no_data",
+    "loops"
+  ],
+  "errors": [],
+  "stems_dir": "output/159_Walk It Talk It - MigosDrake/1_stems",
+  "npz_file": "output/159_Walk It Talk It - MigosDrake/1_stems/159_Walk It Talk It - MigosDrake_5stems.npz",
+  "beats_file": "output/159_Walk It Talk It - MigosDrake/2_beats/159_Walk It Talk It - MigosDrake_output.txt",
+  "correction_stats": {
+    "track_name": "159_Walk It Talk It - MigosDrake_output",
+    "time_signature": 4,
+    "raw_bars": 82,
+    "corrected_bars": 82,
+    "dominant_pattern": "normal",
+    "usable_count": 80,
+    "base_avg_corrected": 72.9302225587881,
+    "avg_kept_corrected": 72.8989751466589
+  },
+  "tempo_plots_pdf": "output/159_Walk It Talk It - MigosDrake/3.5_tempo_plots/159_Walk It Talk It - MigosDrake_tempo_plots.pdf",
+  "tempo_csv": "output/159_Walk It Talk It - MigosDrake/3.5_tempo_plots/159_Walk It Talk It - MigosDrake_bar_tempos.csv",
+  "onset_file": "output/159_Walk It Talk It - MigosDrake/4_onsets/159_Walk It Talk It - MigosDrake_onsets.csv",
+  "num_onsets": 455,
+  "pattern_lengths": {
+    "drum": 1,
+    "mel": 1,
+    "pitch": 2
+  },
+  "comprehensive_csv": "output/159_Walk It Talk It - MigosDrake/5_grid/159_Walk It Talk It - MigosDrake_comprehensive_phases.csv",
+  "rms_values": {
+    "uncorrected_ms": 101.52195569833381,
+    "per_snippet_ms": 101.52195569833381,
+    "drum_ms": 51.67835755774158,
+    "mel_ms": 51.67835755774158,
+    "pitch_ms": 107.23493971395042,
+    "uncorrected_phase": 0.030887264445112462,
+    "per_snippet_phase": 0.030887264445112462,
+    "drum_phase": 0.0157747466941211,
+    "mel_phase": 0.0157747466941211,
+    "pitch_phase": 0.03320489602308534,
+    "pattern_lengths": {
+      "drum": 1,
+      "mel": 1,
+      "pitch": 2
+    }
+  },
+  "loop_files": {
+    "drum": [
+      "output/159_Walk It Talk It - MigosDrake/9_loops/drum/vocals.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/drum/drums.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/drum/bass.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/drum/piano.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/drum/other.wav"
+    ],
+    "mel": [
+      "output/159_Walk It Talk It - MigosDrake/9_loops/mel/vocals.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/mel/drums.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/mel/bass.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/mel/piano.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/mel/other.wav"
+    ],
+    "pitch": [
+      "output/159_Walk It Talk It - MigosDrake/9_loops/pitch/vocals.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/pitch/drums.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/pitch/bass.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/pitch/piano.wav",
+      "output/159_Walk It Talk It - MigosDrake/9_loops/pitch/other.wav"
+    ]
+  }
+}
