@@ -36,6 +36,9 @@ class LoopExtractorGUI:
         # Output mode
         self.output_mode = tk.StringVar(value="daw_ready")  # "detailed" or "daw_ready"
 
+        # Export format
+        self.export_format = tk.StringVar(value="mp3")  # "wav" or "mp3"
+
         # Time selection mode
         self.use_snippet_times = tk.BooleanVar(value=False)  # Use manual time range by default
         self.manual_start_time = tk.DoubleVar(value=50.0)
@@ -364,6 +367,49 @@ class LoopExtractorGUI:
         )
         daw_steps.pack(anchor='w', pady=(0, 15))
 
+        # Export format section
+        format_label = tk.Label(
+            right_frame,
+            text="EXPORT FORMAT:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        format_label.pack(anchor='w', pady=(15, 5))
+
+        format_frame = tk.Frame(right_frame, bg='#000080')
+        format_frame.pack(anchor='w')
+
+        # WAV radio button
+        wav_radio = tk.Radiobutton(
+            format_frame,
+            text="WAV",
+            variable=self.export_format,
+            value="wav",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        wav_radio.pack(side=tk.LEFT, padx=(0, 15))
+
+        # MP3 radio button
+        mp3_radio = tk.Radiobutton(
+            format_frame,
+            text="MP3",
+            variable=self.export_format,
+            value="mp3",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        mp3_radio.pack(side=tk.LEFT)
+
         # Progress bar
         progress_frame = tk.Frame(right_frame, bg='#000080')
         progress_frame.pack(fill=tk.X, pady=(20, 10))
@@ -503,6 +549,9 @@ class LoopExtractorGUI:
             if self.output_mode.get() == "daw_ready":
                 cmd.append("--daw-ready")  # Only export drum method, stems, loops, midi
 
+            # Add export format
+            cmd.extend(["--export-format", self.export_format.get()])
+
             # Add time selection parameters
             if not self.use_snippet_times.get():
                 # Manual time mode
@@ -515,6 +564,7 @@ class LoopExtractorGUI:
 
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
             self.log_status(f"Mode: {self.output_mode.get()}")
+            self.log_status(f"Export format: {self.export_format.get().upper()}")
 
             # Log time settings
             if self.use_snippet_times.get():

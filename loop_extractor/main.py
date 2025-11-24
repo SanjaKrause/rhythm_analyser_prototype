@@ -71,6 +71,7 @@ def run_complete_pipeline(
     daw_ready: bool = False,
     manual_start: Optional[float] = None,
     manual_duration: Optional[float] = None,
+    export_format: str = 'wav',
     verbose: bool = True
 ) -> dict:
     """
@@ -802,7 +803,7 @@ def run_complete_pipeline(
                         snippet_start=snippet_offset,
                         pattern_lengths=pattern_lengths,
                         fade_duration_ms=5.0,
-                        export_format='wav',
+                        export_format=export_format,
                         methods=['drum']  # Only drum method
                     )
                 else:
@@ -814,7 +815,7 @@ def run_complete_pipeline(
                         snippet_start=snippet_offset,
                         pattern_lengths=pattern_lengths,
                         fade_duration_ms=5.0,
-                        export_format='wav'
+                        export_format=export_format
                     )
 
                 if loop_files:
@@ -910,6 +911,8 @@ Environment:
                        help='Manual start time in seconds (overrides snippet detection)')
     parser.add_argument('--manual-duration', type=float,
                        help='Manual duration in seconds (overrides default 30s snippet duration)')
+    parser.add_argument('--export-format', choices=['wav', 'mp3'], default='wav',
+                       help='Export format for stem loops (default: wav)')
     parser.add_argument('--quiet', action='store_true',
                        help='Minimize output')
 
@@ -992,6 +995,7 @@ Environment:
                     daw_ready=args.daw_ready,
                     manual_start=args.manual_start,
                     manual_duration=args.manual_duration,
+                    export_format=args.export_format,
                     verbose=not args.quiet
                 )
 
@@ -1105,6 +1109,7 @@ Environment:
             daw_ready=args.daw_ready,
             manual_start=args.manual_start,
             manual_duration=args.manual_duration,
+            export_format=args.export_format,
             verbose=not args.quiet
         )
 
