@@ -1,7 +1,7 @@
 """
 Analysis module for music timing and rhythm analysis.
 
-This module contains core analysis functions extracted from AP2 notebooks.
+This module contains core analysis functions for microtiming and rhythm analysis.
 All functions in this module use the base environment (numpy, pandas, matplotlib).
 
 Modules:

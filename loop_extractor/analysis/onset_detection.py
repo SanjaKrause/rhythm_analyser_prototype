@@ -280,7 +280,7 @@ def detect_and_save_onsets(
     """
     Detect onsets and save to CSV in one step.
 
-    This is the main entry point for onset detection in the AP2 pipeline.
+    This is the main entry point for onset detection in the Loop Extractor pipeline.
 
     Parameters
     ----------
@@ -347,7 +347,7 @@ def detect_onsets_drums(audio_path: str) -> np.ndarray:
     """
     Detect onsets optimized for drum stems.
 
-    Uses exact settings from AP2_onsetDetection_drums_rough_1st.ipynb:
+    Uses exact settings from original onset detection notebook:
     - hop_length=512: STFT hop length
     - backtrack=False: No backtracking to local minima
     - delta=0.12: Onset detection threshold
@@ -380,7 +380,7 @@ def detect_onsets_full_mix(audio_path: str) -> np.ndarray:
     """
     Detect onsets optimized for full mix audio.
 
-    Uses exact settings from AP2_onsetDetection_drums_rough_1st.ipynb:
+    Uses exact settings from original onset detection notebook:
     - hop_length=512: STFT hop length
     - backtrack=False: No backtracking to local minima
     - delta=0.12: Onset detection threshold

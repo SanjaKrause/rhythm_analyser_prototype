@@ -1,9 +1,9 @@
-# AP2 Pipeline - Quick Start Guide
+# Loop Extractor Pipeline - Quick Start Guide
 
 ## Directory Structure
 
 ```
-AP_2_code/
+loop_extractor/
 ├── input_wav/              # Place your audio files here
 ├── output_analysis/        # Pipeline output organized by track ID
 ├── main.py                 # Main pipeline script
@@ -13,9 +13,9 @@ AP_2_code/
 
 ## Setup
 
-1. **Activate the main environment:**
+1. **Activate the loop extractor environment:**
    ```bash
-   conda activate AEinBOX_13_3
+   conda activate loop_extractor_main
    ```
 
 2. **Place audio file in input folder:**
@@ -93,7 +93,7 @@ python main.py \
 
 ```
 ================================================================================
-AP2 Pipeline - Track my_track_001
+Loop Extractor Pipeline - Track my_track_001
 ================================================================================
 
 [1/7] Stem separation (Spleeter)...

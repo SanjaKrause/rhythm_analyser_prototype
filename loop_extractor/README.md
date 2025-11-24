@@ -1,7 +1,7 @@
-# AP_2_code: Music Analysis Toolkit
+# Loop Extractor: Music Analysis Toolkit
 
-A Python package for analyzing microtiming, tempo, and rhythm in music.
-Extracted and refactored from AP2 analysis notebooks into reusable, well-documented modules.
+A Python package for analyzing microtiming, tempo, and rhythm in music,
+and extracting perfectly looping audio stems.
 
 ## Overview
 
@@ -16,7 +16,7 @@ This package provides tools for:
 ## Project Structure
 
 ```
-AP_2_code/
+loop_extractor/
 ├── __init__.py
 ├── README.md
 ├── analysis/              # Core analysis (base environment)
@@ -85,7 +85,7 @@ pip install -r requirements_AEinBOX.txt
 ### Tempo Analysis
 
 ```python
-from AP_2_code.analysis import tempo
+from loop_extractor.analysis import tempo
 
 # Parse downbeats and calculate tempos
 downbeats, time_sig = tempo.parse_corrected_downbeats('track_123_downbeats_corrected.txt')
@@ -108,7 +108,7 @@ for loop in loop_tempos:
 ### RMS Analysis
 
 ```python
-from AP_2_code.analysis import rms_grid_histograms
+from loop_extractor.analysis import rms_grid_histograms
 import pandas as pd
 
 # Calculate RMS from comprehensive CSV
@@ -129,7 +129,7 @@ print(f"Improvement: {improvement:.1f}%")
 ### File I/O Utilities
 
 ```python
-from AP_2_code.utils import file_io
+from loop_extractor.utils import file_io
 
 # Find CSV files in directory
 files = file_io.find_files_by_pattern(
@@ -205,7 +205,7 @@ pytest tests/
 pytest tests/test_tempo.py
 
 # Run with coverage
-pytest --cov=AP_2_code tests/
+pytest --cov=loop_extractor tests/
 ```
 
 ## Environment Reference
@@ -235,7 +235,7 @@ Original Jupyter notebooks (in `../AP_2/`):
 
 ## License
 
-Part of the AP2 Analysis Project
+Loop Extractor - Music Analysis and Loop Extraction Tool
 
 ## TODO
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-AP2 Analysis Pipeline - Main Orchestrator
+Loop Extractor Pipeline - Main Orchestrator
 
-Complete pipeline for music microtiming analysis:
+Complete pipeline for music microtiming analysis and loop extraction:
 1. Stem separation (Spleeter)
 2. Beat detection (Beat-Transformer via subprocess)
 3. Downbeat correction
@@ -13,9 +13,9 @@ Complete pipeline for music microtiming analysis:
 6. RMS histogram analysis
 7. Audio example generation
 8. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
-9. Stem loop export (WAV loops for each stem, one loop per method: drum, mel, pitch)
+9. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
 
-Environment: AEinBOX_13_3 (main)
+Environment: loop_extractor_main
 Subprocess: new_beatnet_env (for beat detection only)
 
 Required Pretrained Models:
@@ -75,7 +75,7 @@ def run_complete_pipeline(
     verbose: bool = True
 ) -> dict:
     """
-    Run complete AP2 analysis pipeline for a single track.
+    Run complete Loop Extractor pipeline for a single track.
 
     Parameters
     ----------
@@ -112,7 +112,7 @@ def run_complete_pipeline(
 
     if verbose:
         print("=" * 80)
-        print(f"AP2 Pipeline - Track {track_id}")
+        print(f"Loop Extractor Pipeline - Track {track_id}")
         print("=" * 80)
 
     # Validate inputs
@@ -863,7 +863,7 @@ def run_complete_pipeline(
 def main():
     """Main entry point for command-line usage."""
     parser = argparse.ArgumentParser(
-        description='AP2 Music Microtiming Analysis Pipeline',
+        description='Loop Extractor - Music Microtiming Analysis and Loop Extraction Pipeline',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

@@ -1,8 +1,8 @@
 """
-Configuration for AP2 Analysis Pipeline.
+Configuration for Loop Extractor Pipeline.
 
-This module contains all configuration parameters for the complete AP2 workflow.
-Main environment: AEinBOX_13_3
+This module contains all configuration parameters for the loop extraction workflow.
+Loop extractor environment: loop_extractor_main
 Subprocess environment: new_beatnet_env (for Beat-Transformer only)
 """
 
@@ -12,14 +12,14 @@ from typing import Optional
 
 
 class Config:
-    """Main configuration class for AP2 pipeline."""
+    """Main configuration class for Loop Extractor pipeline."""
 
     # ============================================================================
     # ENVIRONMENT SETTINGS
     # ============================================================================
 
-    # Main environment (runs spleeter, analysis, everything except beat detection)
-    MAIN_ENV = "loop_extractor_main"  # Updated for ARM Mac
+    # Loop extractor environment (runs spleeter, analysis, everything except beat detection)
+    MAIN_ENV = "loop_extractor_main"
 
     # Subprocess environment (only for Beat-Transformer)
     BEAT_DETECTION_ENV = "new_beatnet_env"

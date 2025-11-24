@@ -30,7 +30,7 @@ pip install -r ../requirements_AEinBOX.txt
 # Make sure AEinBOX is activated!
 # conda activate AEinBOX
 
-from AP_2_code.stem_separation import spleeter_interface
+from loop_extractor.stem_separation import spleeter_interface
 
 # TODO: Add usage examples
 ```

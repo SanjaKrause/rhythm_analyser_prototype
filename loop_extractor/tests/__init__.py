@@ -1,8 +1,8 @@
 """
-Unit tests for AP_2_code package.
+Unit tests for loop_extractor package.
 
 Run tests with:
     pytest tests/
     pytest tests/test_tempo.py
-    pytest --cov=AP_2_code tests/
+    pytest --cov=loop_extractor tests/
 """

@@ -1,6 +1,6 @@
 # Analysis Output
 
-This directory contains all output from the AP2 pipeline.
+This directory contains all output from the Loop Extractor pipeline.
 
 ## Directory Structure
 

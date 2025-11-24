@@ -266,7 +266,7 @@ def process_audio_to_stems_and_npz(
     """
     Complete pipeline: audio → 5 stems → mel-spectrogram NPZ.
 
-    This is the main entry point for Step 1 of the AP2 pipeline.
+    This is the main entry point for Step 1 of the Loop Extractor pipeline.
 
     Parameters
     ----------

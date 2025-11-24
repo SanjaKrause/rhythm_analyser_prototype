@@ -1,6 +1,6 @@
 # Loop Extractor Python
 
-Standalone loop extraction tool based on the AP_2 pipeline.
+Standalone loop extraction and microtiming analysis tool.
 
 **Author:** Alexander Krause, TU Berlin
 
@@ -25,7 +25,7 @@ loop_extractor_python/
 ## Setup
 
 1. Create conda environments (see main_project/ENVIRONMENTS.md)
-2. Activate main environment: `conda activate loop_extractor_main`
+2. Activate loop extractor environment: `conda activate loop_extractor_main`
 3. Run pipeline: `cd loop_extractor && python main.py --audio input.wav --track-id 1 --output-dir output/`
 
 ## GUI Application
