@@ -4,6 +4,17 @@ Standalone loop extraction and microtiming analysis tool.
 
 **Author:** Alexander Krause, TU Berlin
 
+## Introduction
+
+This is the preprocessing pipeline prototype developed for my ongoing Master's thesis on rhythm science, machine learning, and groove affordance as a predictor. The pipeline analyzes music timing and extracts perfectly looping audio stems and MIDI data for creative reuse.
+
+**Use Cases:**
+- **DAW Remixing**: Extracted loops (vocals, drums, bass, piano, other) can be directly imported into your Digital Audio Workstation for remixing and production
+- **MIDI Triggering**: Generated MIDI files can trigger synthesizers, drum machines, or samplers with the exact timing from the original track
+- **Rhythm Analysis**: Microtiming data reveals groove characteristics and timing deviations that make music feel "human"
+
+See the [OUTPUT_EXAMPLES](OUTPUT_EXAMPLES/) directory for sample outputs including stem loops, MIDI files, and timing visualizations.
+
 ## Directory Structure
 
 ```

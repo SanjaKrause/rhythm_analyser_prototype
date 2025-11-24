@@ -1,0 +1,59 @@
+{
+  "track_id": "Problematic Growing",
+  "audio_file": "/Volumes/PortableSSD/mastabfiles/suno/Problematic Growing.mp3",
+  "steps_completed": [
+    "stem_separation",
+    "beat_detection",
+    "correct_bars",
+    "tempo_csv_only",
+    "onset_detection",
+    "pattern_detection",
+    "raster",
+    "raster_plots_skipped_daw",
+    "rms_skipped_daw",
+    "audio_examples",
+    "midi_export",
+    "loops"
+  ],
+  "errors": [],
+  "stems_dir": "/Volumes/PortableSSD/test/Problematic Growing/1_stems",
+  "npz_file": "/Volumes/PortableSSD/test/Problematic Growing/1_stems/Problematic Growing_5stems.npz",
+  "beats_file": "/Volumes/PortableSSD/test/Problematic Growing/2_beats/Problematic Growing_output.txt",
+  "correction_stats": {
+    "track_name": "Problematic Growing_output",
+    "time_signature": 4,
+    "raw_bars": 136,
+    "corrected_bars": 138,
+    "dominant_pattern": "factor2 double",
+    "usable_count": 0,
+    "base_avg_corrected": 154.4025292216016,
+    "avg_kept_corrected": 154.4025292216016
+  },
+  "tempo_plots_pdf": null,
+  "tempo_csv": "/Volumes/PortableSSD/test/Problematic Growing/3.5_tempo_plots/Problematic Growing_bar_tempos.csv",
+  "onset_file": "/Volumes/PortableSSD/test/Problematic Growing/4_onsets/Problematic Growing_onsets.csv",
+  "num_onsets": 504,
+  "pattern_lengths": {
+    "drum": 8,
+    "mel": 8,
+    "pitch": 8
+  },
+  "comprehensive_csv": "/Volumes/PortableSSD/test/Problematic Growing/5_grid/Problematic Growing_comprehensive_phases.csv",
+  "midi_files": {
+    "onset": [
+      "/Volumes/PortableSSD/test/Problematic Growing/8_midi_drum/drum.mid"
+    ],
+    "bass_pitch": [
+      "/Volumes/PortableSSD/test/Problematic Growing/8_midi_drum/drum_bass.mid"
+    ]
+  },
+  "loop_files": {
+    "drum": [
+      "/Volumes/PortableSSD/test/Problematic Growing/9_loops_drum/vocals.mp3",
+      "/Volumes/PortableSSD/test/Problematic Growing/9_loops_drum/drums.mp3",
+      "/Volumes/PortableSSD/test/Problematic Growing/9_loops_drum/bass.mp3",
+      "/Volumes/PortableSSD/test/Problematic Growing/9_loops_drum/piano.mp3",
+      "/Volumes/PortableSSD/test/Problematic Growing/9_loops_drum/other.mp3"
+    ]
+  }
+}
