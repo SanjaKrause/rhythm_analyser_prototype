@@ -26,6 +26,21 @@ loop_extractor_python/
 2. Activate main environment: `conda activate loop_extractor_main`
 3. Run pipeline: `cd loop_extractor && python main.py --audio input.wav --track-id 1 --output-dir output/`
 
+## GUI Application
+
+A graphical interface is available for easy operation:
+
+```bash
+python gui.py
+```
+
+The GUI supports:
+- Single file or batch folder processing
+- Visual output mode selection (Detailed Analysis or DAW Ready)
+- Manual time range selection with sliders
+- Real-time progress monitoring
+- All command-line features in a user-friendly interface
+
 ## Supported Audio Formats
 
 The pipeline supports both **WAV** and **MP3** audio files:
