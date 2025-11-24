@@ -1,6 +1,7 @@
-# Checkpoints (large files)
+# Checkpoints and pretrained models (large files)
 Beat-Transformer/checkpoint/*.pt
 *.pt
+pretrained_models/
 
 # Python
 __pycache__/

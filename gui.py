@@ -17,7 +17,7 @@ class LoopExtractorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("LOOP EXTRACTOR 2000")
-        self.root.geometry("900x550")
+        self.root.geometry("750x575")
         self.root.configure(bg='#000080')  # Dark blue background
 
         # Set up cleanup on window close
@@ -33,22 +33,13 @@ class LoopExtractorGUI:
         self.last_output_dir = None
         self.apply_to_folder = tk.BooleanVar(value=False)
 
-        # Pattern detection modes
-        self.drum_events = tk.BooleanVar(value=True)
-        self.drum_melbands = tk.BooleanVar(value=True)
-        self.bass_pitch = tk.BooleanVar(value=True)
+        # Output mode
+        self.output_mode = tk.StringVar(value="daw_ready")  # "detailed" or "daw_ready"
 
-        # Output options (pipeline steps)
-        self.step_stem_separation = tk.BooleanVar(value=True)
-        self.step_beat_detection = tk.BooleanVar(value=True)
-        self.step_downbeat_correction = tk.BooleanVar(value=True)
-        self.step_onset_detection = tk.BooleanVar(value=True)
-        self.step_pattern_detection = tk.BooleanVar(value=True)
-        self.step_grid_analysis = tk.BooleanVar(value=True)
-        self.step_rms_analysis = tk.BooleanVar(value=True)
-        self.step_audio_examples = tk.BooleanVar(value=True)
-        self.step_midi_export = tk.BooleanVar(value=True)
-        self.step_loop_export = tk.BooleanVar(value=True)
+        # Time selection mode
+        self.use_snippet_times = tk.BooleanVar(value=False)  # Use manual time range by default
+        self.manual_start_time = tk.DoubleVar(value=50.0)
+        self.manual_end_time = tk.DoubleVar(value=80.0)
 
         self.setup_ui()
 
@@ -151,55 +142,6 @@ class LoopExtractorGUI:
         )
         output_button.pack(pady=5)
 
-        # Pattern detection mode
-        pattern_label = tk.Label(
-            left_frame,
-            text="PATTERN DETECTION MODE:",
-            font=('Arial', 12, 'bold'),
-            fg='white',
-            bg='#000080'
-        )
-        pattern_label.pack(anchor='w', pady=(30, 10))
-
-        pattern_frame = tk.Frame(left_frame, bg='#000080')
-        pattern_frame.pack(anchor='w')
-
-        drum_events_check = tk.Checkbutton(
-            pattern_frame,
-            text="DRUM EVENTS",
-            variable=self.drum_events,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080'
-        )
-        drum_events_check.pack(side=tk.LEFT, padx=(0, 20))
-
-        melbands_check = tk.Checkbutton(
-            pattern_frame,
-            text="DRUM MELBANDS",
-            variable=self.drum_melbands,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080'
-        )
-        melbands_check.pack(side=tk.LEFT, padx=(0, 20))
-
-        bass_check = tk.Checkbutton(
-            pattern_frame,
-            text="BASS PITCH",
-            variable=self.bass_pitch,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080'
-        )
-        bass_check.pack(side=tk.LEFT)
-
         # Run button
         self.run_button = tk.Button(
             left_frame,
@@ -222,56 +164,205 @@ class LoopExtractorGUI:
         # Debug: bind additional click event
         self.run_button.bind('<Button-1>', lambda e: print("DEBUG: Button clicked!"))
 
+        # Time selection section
+        time_frame = tk.Frame(left_frame, bg='#000080')
+        time_frame.pack(fill=tk.X, pady=(10, 10))
+
+        time_label = tk.Label(
+            time_frame,
+            text="TIME RANGE:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        time_label.pack(anchor='w', pady=(0, 10))
+
+        # Radio button: Use snippet times
+        snippet_radio = tk.Radiobutton(
+            time_frame,
+            text="Use snippet times (30s)",
+            variable=self.use_snippet_times,
+            value=True,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        snippet_radio.pack(anchor='w', pady=(0, 8))
+
+        # Radio button: Manual time range
+        manual_radio = tk.Radiobutton(
+            time_frame,
+            text="Manual time range:",
+            variable=self.use_snippet_times,
+            value=False,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        manual_radio.pack(anchor='w', pady=(0, 8))
+
+        # Sliders container (centered)
+        sliders_container = tk.Frame(time_frame, bg='#000080')
+        sliders_container.pack(pady=(5, 0))
+
+        # Start time slider
+        start_slider_frame = tk.Frame(sliders_container, bg='#000080')
+        start_slider_frame.pack(pady=(0, 8))
+
+        start_label = tk.Label(
+            start_slider_frame,
+            text="Start:",
+            font=('Arial', 9),
+            fg='white',
+            bg='#000080',
+            width=6,
+            anchor='w'
+        )
+        start_label.pack(side=tk.LEFT)
+
+        start_slider = tk.Scale(
+            start_slider_frame,
+            from_=0,
+            to=300,
+            orient=tk.HORIZONTAL,
+            variable=self.manual_start_time,
+            bg='#000080',
+            fg='white',
+            highlightbackground='#000080',
+            troughcolor='#0000FF',
+            activebackground='#0000CC',
+            showvalue=False,
+            length=200
+        )
+        start_slider.pack(side=tk.LEFT, padx=5)
+
+        self.start_value_label = tk.Label(
+            start_slider_frame,
+            text=f"{int(self.manual_start_time.get())}s",
+            font=('Arial', 9),
+            fg='#00FF00',
+            bg='#000080',
+            width=5,
+            anchor='w'
+        )
+        self.start_value_label.pack(side=tk.LEFT)
+
+        # End time slider
+        end_slider_frame = tk.Frame(sliders_container, bg='#000080')
+        end_slider_frame.pack(pady=(0, 0))
+
+        end_label = tk.Label(
+            end_slider_frame,
+            text="End:",
+            font=('Arial', 9),
+            fg='white',
+            bg='#000080',
+            width=6,
+            anchor='w'
+        )
+        end_label.pack(side=tk.LEFT)
+
+        end_slider = tk.Scale(
+            end_slider_frame,
+            from_=0,
+            to=300,
+            orient=tk.HORIZONTAL,
+            variable=self.manual_end_time,
+            bg='#000080',
+            fg='white',
+            highlightbackground='#000080',
+            troughcolor='#0000FF',
+            activebackground='#0000CC',
+            showvalue=False,
+            length=200
+        )
+        end_slider.pack(side=tk.LEFT, padx=5)
+
+        self.end_value_label = tk.Label(
+            end_slider_frame,
+            text=f"{int(self.manual_end_time.get())}s",
+            font=('Arial', 9),
+            fg='#00FF00',
+            bg='#000080',
+            width=5,
+            anchor='w'
+        )
+        self.end_value_label.pack(side=tk.LEFT)
+
+        # Update labels when sliders move
+        self.manual_start_time.trace_add('write', lambda *args: self.start_value_label.config(text=f"{int(self.manual_start_time.get())}s"))
+        self.manual_end_time.trace_add('write', lambda *args: self.end_value_label.config(text=f"{int(self.manual_end_time.get())}s"))
+
         # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         outputs_label = tk.Label(
             right_frame,
-            text="PIPELINE STEPS:",
+            text="OUTPUT MODE:",
             font=('Arial', 14, 'bold'),
             fg='white',
             bg='#000080'
         )
         outputs_label.pack(anchor='w', pady=(0, 10))
 
-        # Create 5x2 grid of checkboxes
-        steps_grid = tk.Frame(right_frame, bg='#000080')
-        steps_grid.pack(anchor='w', fill=tk.X)
+        # Radio button: Detailed Analysis + Plots
+        detailed_radio = tk.Radiobutton(
+            right_frame,
+            text="Detailed Analysis + Plots",
+            variable=self.output_mode,
+            value="detailed",
+            font=('Arial', 12, 'bold'),
+            fg='#00FF00',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='#00FF00'
+        )
+        detailed_radio.pack(anchor='w', pady=(0, 5))
 
-        steps = [
-            ("1. Stem Separation", self.step_stem_separation),
-            ("2. Beat Detection", self.step_beat_detection),
-            ("3. Downbeat Correction", self.step_downbeat_correction),
-            ("4. Onset Detection", self.step_onset_detection),
-            ("5. Pattern Detection", self.step_pattern_detection),
-            ("6. Grid Analysis", self.step_grid_analysis),
-            ("7. RMS Analysis", self.step_rms_analysis),
-            ("8. Audio Examples", self.step_audio_examples),
-            ("9. MIDI Export", self.step_midi_export),
-            ("10. Loop Export", self.step_loop_export),
-        ]
+        # Detailed mode steps
+        detailed_steps = tk.Label(
+            right_frame,
+            text="  • Stems\n  • Beat Detection\n  • Downbeat Correction\n  • Onset Detection\n  • Pattern Detection (all methods)\n  • Grid Analysis\n  • RMS Analysis\n  • Tempo Plots\n  • Raster Plots\n  • Audio Examples\n  • MIDI Export (all methods)\n  • Loop Export (all methods)",
+            font=('Arial', 9),
+            fg='white',
+            bg='#000080',
+            justify=tk.LEFT
+        )
+        detailed_steps.pack(anchor='w', pady=(0, 15))
 
-        # Create 5 rows x 2 columns
-        for i, (text, var) in enumerate(steps):
-            row = i % 5
-            col = i // 5
+        # Radio button: DAW Ready Loops
+        daw_radio = tk.Radiobutton(
+            right_frame,
+            text="DAW Ready Loops",
+            variable=self.output_mode,
+            value="daw_ready",
+            font=('Arial', 12, 'bold'),
+            fg='#00FF00',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='#00FF00'
+        )
+        daw_radio.pack(anchor='w', pady=(0, 5))
 
-            check = tk.Checkbutton(
-                steps_grid,
-                text=text,
-                variable=var,
-                font=('Arial', 10),
-                fg='white',
-                bg='#000080',
-                selectcolor='#000080',
-                activebackground='#000080',
-                activeforeground='white'
-            )
-            check.grid(row=row, column=col, sticky='w', padx=(0, 20), pady=2)
-
-        steps_grid.columnconfigure(0, weight=1)
-        steps_grid.columnconfigure(1, weight=1)
+        # DAW Ready mode steps
+        daw_steps = tk.Label(
+            right_frame,
+            text="  • Stems\n  • Loops (drum pattern method only)\n  • MIDI (drum pattern method only)",
+            font=('Arial', 9),
+            fg='white',
+            bg='#000080',
+            justify=tk.LEFT
+        )
+        daw_steps.pack(anchor='w', pady=(0, 15))
 
         # Progress bar
         progress_frame = tk.Frame(right_frame, bg='#000080')
@@ -389,7 +480,7 @@ class LoopExtractorGUI:
             # Build command
             cmd = [
                 sys.executable,
-                str(Path(__file__).parent / "AP_2_code" / "main.py")
+                str(Path(__file__).parent / "loop_extractor" / "main.py")
             ]
 
             # Determine if input is a file or directory
@@ -408,7 +499,29 @@ class LoopExtractorGUI:
             cmd.extend(["--output-dir", self.output_path.get()])
             cmd.extend(["--track-id", track_id])
 
+            # Add mode-specific flags
+            if self.output_mode.get() == "daw_ready":
+                cmd.append("--daw-ready")  # Only export drum method, stems, loops, midi
+
+            # Add time selection parameters
+            if not self.use_snippet_times.get():
+                # Manual time mode
+                start_time = self.manual_start_time.get()
+                end_time = self.manual_end_time.get()
+                duration = end_time - start_time
+
+                cmd.extend(["--manual-start", str(start_time)])
+                cmd.extend(["--manual-duration", str(duration)])
+
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
+            self.log_status(f"Mode: {self.output_mode.get()}")
+
+            # Log time settings
+            if self.use_snippet_times.get():
+                self.log_status(f"Time: Automatic snippet detection (30s)")
+            else:
+                self.log_status(f"Time: Manual range {start_time}s - {end_time}s (duration: {duration}s)")
+            self.log_status("")
 
             # Run pipeline
             process = subprocess.Popen(
