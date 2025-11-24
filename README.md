@@ -102,10 +102,11 @@ python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir outpu
 
 ## Configuration
 
-All paths have been updated to use the new location:
-- `/Users/alexk/mastab/loop_extractor_python/`
-
-Check `loop_extractor/config.py` for all configuration options.
+The pipeline can be customized through various configuration options. Check [loop_extractor/config.py](loop_extractor/config.py) for:
+- Model paths and parameters
+- Audio processing settings
+- Output directory structure
+- Tempo and beat detection parameters
 
 ## Requirements
 
