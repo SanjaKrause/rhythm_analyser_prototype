@@ -45,6 +45,20 @@ The GUI supports:
 - Real-time progress monitoring
 - All command-line features in a user-friendly interface
 
+## Example Plots
+
+The pipeline generates various visualizations to analyze timing and tempo:
+
+### Tempo Analysis
+![Tempo Plot](screenshots/tempoplot.png)
+
+Bar-by-bar tempo comparison showing different tempo estimation methods across the track.
+
+### Microtiming Raster Plot
+![Raster Plot](screenshots/raster%20plot.png)
+
+Timing deviation analysis showing how drum onsets align with the detected grid across different correction methods.
+
 ## Supported Audio Formats
 
 The pipeline supports both **WAV** and **MP3** audio files:
