@@ -2,6 +2,8 @@
 
 Standalone loop extraction tool based on the AP_2 pipeline.
 
+**Author:** Alexander Krause, TU Berlin
+
 ## Directory Structure
 
 ```
