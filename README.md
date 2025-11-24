@@ -136,18 +136,6 @@ If you use this tool in your research, please cite the following papers:
 - Paper: https://archives.ismir.net/ismir2022/latebreaking/000003.pdf
 - GitHub: https://github.com/groupmm/libf0
 
-### Librosa (Audio Analysis)
-```bibtex
-@inproceedings{mcfee2015librosa,
-  title={librosa: Audio and music signal analysis in python},
-  author={McFee, Brian and Raffel, Colin and Liang, Dawen and Ellis, Daniel PW and McVicar, Matt and Battenberg, Eric and Nieto, Oriol},
-  booktitle={Proceedings of the 14th python in science conference},
-  volume={8},
-  pages={18--25},
-  year={2015}
-}
-```
-
 ### Microtiming Analysis
 ```bibtex
 @article{ainsworth2025microtiming,
