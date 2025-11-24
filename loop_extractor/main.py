@@ -66,7 +66,7 @@ def run_complete_pipeline(
     pattern_file: Optional[str] = None,
     snippet_offset_file: Optional[str] = None,
     onset_file: Optional[str] = None,
-    skip_existing: bool = True,
+    skip_existing: bool = False,
     create_audio_examples: bool = True,
     daw_ready: bool = False,
     manual_start: Optional[float] = None,
@@ -901,8 +901,6 @@ Environment:
     parser.add_argument('--pattern-file', help='Path to pattern lengths CSV')
     parser.add_argument('--snippet-file', help='Path to snippet offsets CSV')
 
-    parser.add_argument('--no-skip', action='store_true',
-                       help='Reprocess even if output exists')
     parser.add_argument('--no-audio-examples', action='store_true',
                        help='Skip audio example generation')
     parser.add_argument('--daw-ready', action='store_true',
@@ -990,7 +988,7 @@ Environment:
                     pattern_file=args.pattern_file,
                     snippet_offset_file=args.snippet_file,
                     onset_file=args.onset_file,
-                    skip_existing=not args.no_skip,
+                    skip_existing=False,
                     create_audio_examples=not args.no_audio_examples,
                     daw_ready=args.daw_ready,
                     manual_start=args.manual_start,
@@ -1104,7 +1102,7 @@ Environment:
             pattern_file=args.pattern_file,
             snippet_offset_file=args.snippet_file,
             onset_file=args.onset_file,
-            skip_existing=not args.no_skip,
+            skip_existing=False,
             create_audio_examples=not args.no_audio_examples,
             daw_ready=args.daw_ready,
             manual_start=args.manual_start,
