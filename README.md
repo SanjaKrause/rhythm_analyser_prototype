@@ -34,7 +34,7 @@ A graphical interface is available for easy operation:
 python gui.py
 ```
 
-![Loop Extractor 2000 GUI](https://github.com/user-attachments/assets/c8e8c0f5-7a6f-4c9e-8e25-e3f3e3c5e1a6)
+![Loop Extractor 2000 GUI](screenshots/gui_screenshot.png)
 
 The GUI supports:
 - Single file or batch folder processing
