@@ -3,6 +3,7 @@
 Standalone loop extraction and microtiming analysis tool.
 
 **Author:** Alexander Krause, TU Berlin
+**Co-Author:** Claude Code (Anthropic)
 
 ## Introduction
 
