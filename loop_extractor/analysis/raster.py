@@ -198,16 +198,37 @@ def load_snippet_offset(overview_file: str, track_id: str) -> float:
             break
 
     if id_col is None:
+        print(f"DEBUG load_snippet_offset: No ID column found in CSV")
         return 0.0
 
     # Try to find row by numeric ID first
     track_row = df[df[id_col].astype(str) == str(track_id)]
+    print(f"DEBUG load_snippet_offset: track_id='{track_id}', numeric lookup found {len(track_row)} rows")
 
-    # If not found, try matching by song name
+    # If not found, try extracting numeric ID from filename (e.g., "0_Save Your Tears - The Weeknd" -> "0")
+    if len(track_row) == 0 and '_' in str(track_id):
+        potential_id = str(track_id).split('_')[0]
+        if potential_id.isdigit():
+            track_row = df[df[id_col].astype(str) == potential_id]
+            print(f"DEBUG load_snippet_offset: extracted ID '{potential_id}' from filename, found {len(track_row)} rows")
+
+    # If still not found, try matching by song name (exact match)
     if len(track_row) == 0 and 'songname' in df.columns:
         track_row = df[df['songname'].astype(str).str.lower() == str(track_id).lower()]
+        print(f"DEBUG load_snippet_offset: exact songname lookup found {len(track_row)} rows")
+
+    # If still not found, try partial match (in case filename has artist suffix like "Song - Artist")
+    if len(track_row) == 0 and 'songname' in df.columns and ' - ' in str(track_id):
+        # Extract song name before " - " (e.g., "Save Your Tears - The Weeknd" -> "Save Your Tears")
+        song_part = str(track_id).split(' - ')[0]
+        # Also handle "0_Save Your Tears - The Weeknd" -> "Save Your Tears"
+        if '_' in song_part:
+            song_part = song_part.split('_', 1)[1]
+        track_row = df[df['songname'].astype(str).str.lower() == song_part.lower()]
+        print(f"DEBUG load_snippet_offset: partial songname lookup '{song_part}' found {len(track_row)} rows")
 
     if len(track_row) == 0:
+        print(f"DEBUG load_snippet_offset: track_id '{track_id}' not found in CSV after all attempts")
         return 0.0
 
     # Find offset column: prioritize "corrected offset ms"
@@ -229,9 +250,13 @@ def load_snippet_offset(overview_file: str, track_id: str) -> float:
                 break
 
     if offset_col is None:
+        print(f"DEBUG load_snippet_offset: No offset column found in CSV")
         return 0.0
 
-    return track_row.iloc[0][offset_col] / 1000.0  # Convert ms to seconds
+    offset_ms = track_row.iloc[0][offset_col]
+    offset_s = offset_ms / 1000.0
+    print(f"DEBUG load_snippet_offset: Found offset = {offset_ms} ms = {offset_s} seconds")
+    return offset_s  # Convert ms to seconds
 
 
 # ============================================================================
