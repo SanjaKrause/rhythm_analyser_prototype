@@ -129,6 +129,11 @@ def run_complete_pipeline(
     results = {
         'track_id': track_id,
         'audio_file': str(audio_file),
+        'time_range': {
+            'manual_start': manual_start,
+            'manual_duration': manual_duration,
+            'auto_detect': manual_start is None
+        },
         'steps_completed': [],
         'errors': []
     }
@@ -248,13 +253,32 @@ def run_complete_pipeline(
                 snippet_offset = manual_start
             elif snippet_offset_file and Path(snippet_offset_file).exists():
                 snippet_offset = raster.load_snippet_offset(snippet_offset_file, track_id)
+                # If track not found in CSV (returns 0.0), use default fallback
+                if snippet_offset == 0.0:
+                    snippet_offset = 30.0
+                    if verbose:
+                        print(f"  Track '{track_id}' not found in snippet CSV, using default: {snippet_offset}s")
             elif config.OVERVIEW_CSV.exists():
                 snippet_offset = raster.load_snippet_offset(str(config.OVERVIEW_CSV), track_id)
+                # If track not found in CSV (returns 0.0), use default fallback
+                if snippet_offset == 0.0:
+                    snippet_offset = 30.0
+                    if verbose:
+                        print(f"  Track '{track_id}' not found in snippet CSV, using default: {snippet_offset}s")
             else:
-                snippet_offset = None
+                # No CSV available, use default
+                snippet_offset = 30.0
+                if verbose:
+                    print(f"  No snippet CSV available, using default: {snippet_offset}s")
 
             # Determine snippet duration
             snippet_duration = manual_duration if manual_duration is not None else config.CORRECT_BARS_SNIPPET_DURATION_S
+
+            # Store actual time range used
+            results['time_range']['actual_start'] = snippet_offset
+            results['time_range']['actual_duration'] = snippet_duration
+            if snippet_offset is not None:
+                results['time_range']['actual_end'] = snippet_offset + snippet_duration
 
             # Create tempo plots (or just CSV in DAW mode)
             tempo_files = tempo_plots.create_tempo_plots(

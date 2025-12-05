@@ -171,7 +171,7 @@ def load_snippet_offset(overview_file: str, track_id: str) -> float:
     overview_file : str
         Path to overview CSV with snippet offsets
     track_id : str
-        Track identifier
+        Track identifier (can be numeric ID or song name)
 
     Returns
     -------
@@ -200,8 +200,12 @@ def load_snippet_offset(overview_file: str, track_id: str) -> float:
     if id_col is None:
         return 0.0
 
-    # Find row for this track
+    # Try to find row by numeric ID first
     track_row = df[df[id_col].astype(str) == str(track_id)]
+
+    # If not found, try matching by song name
+    if len(track_row) == 0 and 'songname' in df.columns:
+        track_row = df[df['songname'].astype(str).str.lower() == str(track_id).lower()]
 
     if len(track_row) == 0:
         return 0.0
