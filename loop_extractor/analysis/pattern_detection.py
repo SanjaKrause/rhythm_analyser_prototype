@@ -683,7 +683,8 @@ def detect_pattern_lengths(
     bar_starts: np.ndarray,
     bar_ends: np.ndarray,
     tsig: int,
-    snippet: Optional[Tuple[float, float]] = None
+    snippet: Optional[Tuple[float, float]] = None,
+    use_all_bars: bool = False
 ) -> Dict[str, int]:
     """
     Detect pattern lengths using all three methods with circular convolution.
@@ -709,6 +710,9 @@ def detect_pattern_lengths(
         Time signature (beats per bar)
     snippet : tuple or None
         (start_time, end_time) to limit analysis to snippet
+    use_all_bars : bool, optional
+        If True, use all bars regardless of snippet boundaries.
+        If False (default), only use FULL bars within snippet boundaries.
 
     Returns
     -------
@@ -729,6 +733,17 @@ def detect_pattern_lengths(
     {'drum': 4, 'mel': 4, 'pitch': 8}
     """
     print(f"\n  [Pattern Detection] Running all 3 methods...")
+
+    # Filter bars to snippet if needed
+    if snippet and not use_all_bars:
+        s0, s1 = snippet
+        # Only include FULL bars: bar_start >= s0 AND bar_end <= s1
+        mask = (bar_starts >= s0) & (bar_ends <= s1)
+        bar_starts = bar_starts[mask]
+        bar_ends = bar_ends[mask]
+        print(f"    Using {len(bar_starts)} full bars within snippet [{s0:.2f}s - {s1:.2f}s]")
+    else:
+        print(f"    Using all {len(bar_starts)} corrected bars")
 
     # Load onset times
     df_onsets = pd.read_csv(onset_csv_path)

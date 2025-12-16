@@ -422,28 +422,33 @@ def run_complete_pipeline(
                     snippet = (snippet_offset, snippet_offset + 30.0)
 
             # Filter bars to snippet if provided
+            # Only include FULL bars: bar_start >= snippet_start AND bar_end <= snippet_end
             if snippet:
                 s0, s1 = snippet
-                mask = (bar_starts < s1) & (bar_ends > s0)
-                bar_starts_snip = bar_starts[mask]
-                bar_ends_snip = bar_ends[mask]
+                mask = (bar_starts >= s0) & (bar_ends <= s1)
+                bar_starts_snippet = bar_starts[mask]
+                bar_ends_snippet = bar_ends[mask]
+                if verbose:
+                    print(f"    Filtered to {len(bar_starts_snippet)} full bars within snippet [{s0:.2f}s - {s1:.2f}s]")
             else:
-                bar_starts_snip = bar_starts
-                bar_ends_snip = bar_ends
+                bar_starts_snippet = bar_starts
+                bar_ends_snippet = bar_ends
 
             # Onset file should exist from Step 4
             if onset_file is None:
                 onset_file = paths['onsets_file']
 
-            # Run pattern detection
+            # Run pattern detection with pre-filtered bars
+            # use_all_bars=True since we already filtered the bars in main.py
             pattern_lengths = pattern_detection.detect_pattern_lengths(
                 onset_csv_path=str(onset_file),
                 drums_wav_path=str(drum_stem),
                 bass_wav_path=str(bass_stem),
-                bar_starts=bar_starts_snip,
-                bar_ends=bar_ends_snip,
+                bar_starts=bar_starts_snippet,  # Pre-filtered bars
+                bar_ends=bar_ends_snippet,      # Pre-filtered bars
                 tsig=tsig,
-                snippet=snippet
+                snippet=snippet,
+                use_all_bars=True  # Skip internal filtering since main.py already filtered
             )
 
             results['pattern_lengths'] = pattern_lengths
