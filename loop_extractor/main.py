@@ -440,7 +440,7 @@ def run_complete_pipeline(
 
             # Run pattern detection with pre-filtered bars
             # use_all_bars=True since we already filtered the bars in main.py
-            pattern_lengths = pattern_detection.detect_pattern_lengths(
+            pattern_detection_result = pattern_detection.detect_pattern_lengths(
                 onset_csv_path=str(onset_file),
                 drums_wav_path=str(drum_stem),
                 bass_wav_path=str(bass_stem),
@@ -451,7 +451,14 @@ def run_complete_pipeline(
                 use_all_bars=True  # Skip internal filtering since main.py already filtered
             )
 
+            # Extract pattern lengths and snippet info
+            pattern_lengths = {k: v for k, v in pattern_detection_result.items() if k != 'snippet_info'}
             results['pattern_lengths'] = pattern_lengths
+
+            # Store snippet info separately
+            if 'snippet_info' in pattern_detection_result:
+                results['snippet_info'] = pattern_detection_result['snippet_info']
+
             results['steps_completed'].append('pattern_detection')
 
             if verbose:
@@ -459,7 +466,7 @@ def run_complete_pipeline(
 
     except Exception as e:
         # Fall back to defaults if pattern detection fails
-        pattern_lengths = {'drum': 4, 'mel': 4, 'pitch': 4}
+        pattern_lengths = {'drum': 4, 'mel': 4, 'pitch': 4, 'lepa': 4, 'aicc': 4}
         error_msg = f"Step 4.5 failed: {e} - using defaults {pattern_lengths}"
         results['errors'].append(error_msg)
         if verbose:
@@ -1115,7 +1122,7 @@ Environment:
 
         # Merge all plot PDFs
         try:
-            from analysis.merge_plots import merge_plots
+            from batch_analysis.merge_plots import merge_plots
             print("\n" + "=" * 80)
             print("MERGING PLOTS")
             print("=" * 80)
@@ -1125,6 +1132,26 @@ Environment:
             print("Install required packages: pip install PyPDF2 Pillow reportlab")
         except Exception as e:
             print(f"\n⚠️  PDF merging failed: {e}")
+
+        # Create pattern length summary pie charts
+        try:
+            from batch_analysis.pattern_length_summary import create_pattern_length_summary
+            create_pattern_length_summary(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  Pattern length summary skipped: {ie}")
+            print("Install required packages: pip install matplotlib")
+        except Exception as e:
+            print(f"\n⚠️  Pattern length summary failed: {e}")
+
+        # Create loop statistics histograms
+        try:
+            from batch_analysis.loop_statistics import create_loop_statistics
+            create_loop_statistics(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  Loop statistics skipped: {ie}")
+            print("Install required packages: pip install matplotlib numpy")
+        except Exception as e:
+            print(f"\n⚠️  Loop statistics failed: {e}")
 
         # Exit with error code if any files failed
         if batch_results['failed']:

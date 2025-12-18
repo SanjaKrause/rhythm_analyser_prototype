@@ -1,10 +1,12 @@
 """
-Pattern length detection using drum onsets, mel-band, and bass pitch methods.
+Pattern length detection using drum onsets, mel-band, bass pitch, Lepa BIC, and Lepa AICc methods.
 
-This module implements three pattern detection methods with circular cross-correlation:
-1. Drum Onset Method - Binary onset detection from drum CSV files
-2. Mel-Band Method - Log-mel spectrogram analysis from drums.wav
-3. Bass Pitch Method - F0 (pitch) analysis from bass.wav using Melodia
+This module implements five pattern detection methods:
+1. Drum Onset Method - Binary onset detection from drum CSV files with circular cross-correlation
+2. Mel-Band Method - Log-mel spectrogram analysis from drums.wav with circular cross-correlation
+3. Bass Pitch Method - F0 (pitch) analysis from bass.wav using Melodia with circular cross-correlation
+4. Lepa Style (BIC) - Bar length first-differencing with Bayesian Information Criterion model selection
+5. Lepa Style (AICc) - Bar length first-differencing with AICc and delta rule parsimony tie-breaker
 
 Each method computes bar-lag periodicity and selects best power-of-2 pattern length.
 
@@ -16,6 +18,7 @@ import numpy as np
 import pandas as pd
 import librosa
 import soundfile as sf
+import math
 from pathlib import Path
 from typing import Tuple, Optional, Dict
 from libf0.salience import salience as melodia_f0
@@ -673,6 +676,239 @@ def pitch_analyze(
 
 
 # ============================================================================
+# LEPA STYLE (BIC) METHOD
+# ============================================================================
+
+def detect_pattern_length_bic(
+    bar_lengths_ms: np.ndarray,
+    pl_candidates: Tuple[int, ...] = (1, 2, 4)
+) -> Tuple[int, Dict[int, float]]:
+    """
+    Detects the most likely pattern length (PL) from bar lengths
+    using first differencing and BIC-based model selection.
+
+    This method implements the Lepa Style approach: it removes drift by computing
+    first differences of bar lengths, then fits phase-specific means for each
+    candidate pattern length. The best pattern length is selected using the
+    Bayesian Information Criterion (BIC), which balances model fit with complexity.
+
+    Parameters
+    ----------
+    bar_lengths_ms : np.ndarray
+        Bar durations in milliseconds
+    pl_candidates : tuple of int, optional
+        Candidate pattern lengths to test (default: (1, 2, 4))
+
+    Returns
+    -------
+    tuple of (int, dict)
+        - best_pl: Best pattern length according to minimum BIC
+        - bic_values: Dictionary mapping pattern length to BIC value
+
+    Raises
+    ------
+    ValueError
+        If less than 2 bars are provided
+
+    Notes
+    -----
+    The method follows these steps:
+    1. Compute first differences: dL[b] = L[b] - L[b-1] (removes drift)
+    2. For each candidate PL, compute phase means: mu[r] = mean(dL where bar % PL == r)
+    3. Apply sum-to-zero constraint: mu[r] -= mean(mu)
+    4. Compute SSE and BIC: BIC = n*log(SSE/n) + (PL-1)*log(n)
+    5. Select PL with minimum BIC
+
+    Examples
+    --------
+    >>> bar_lengths = np.array([2400, 2450, 2380, 2420, 2400, 2440, 2390, 2410])
+    >>> best_pl, bic_vals = detect_pattern_length_bic(bar_lengths)
+    >>> print(f"Best pattern length: {best_pl}")
+    Best pattern length: 2
+    """
+    B = len(bar_lengths_ms)
+    if B < 2:
+        raise ValueError("At least two bars are required.")
+
+    # First differences (drift removal)
+    dL = np.array([
+        bar_lengths_ms[b] - bar_lengths_ms[b - 1]
+        for b in range(1, B)
+    ])
+    n = len(dL)
+
+    bic_values = {}
+
+    for PL in pl_candidates:
+        # Phase means
+        mu = np.zeros(PL, dtype=float)
+        cnt = np.zeros(PL, dtype=int)
+
+        for i, val in enumerate(dL, start=2):  # Start from bar 2 (index in original bars)
+            r = i % PL
+            mu[r] += val
+            cnt[r] += 1
+
+        # Compute means (avoid division by zero)
+        for r in range(PL):
+            if cnt[r] > 0:
+                mu[r] /= cnt[r]
+
+        # Center phase means (sum-to-zero constraint)
+        mean_mu = np.mean(mu)
+        mu = mu - mean_mu
+
+        # Sum of Squared Errors
+        sse = 0.0
+        for i, val in enumerate(dL, start=2):
+            r = i % PL
+            err = val - mu[r]
+            sse += err * err
+
+        # Bayesian Information Criterion
+        k = PL - 1  # Number of free parameters (PL means with sum-to-zero constraint)
+        if sse > 0:
+            bic = n * math.log(sse / n) + k * math.log(n)
+        else:
+            bic = -np.inf  # Perfect fit (though unlikely)
+
+        bic_values[PL] = bic
+
+    # Select pattern length with minimum BIC
+    best_pl = min(bic_values, key=bic_values.get)
+
+    return best_pl, bic_values
+
+
+def detect_pattern_length_aicc(
+    bar_lengths_ms: np.ndarray,
+    pl_candidates: Tuple[int, ...] = (1, 2, 4),
+    use_delta_rule: bool = True,
+    delta_threshold: float = 2.0
+) -> Tuple[int, Dict[int, float], Dict[int, float]]:
+    """
+    Detects the most likely pattern length (PL) from bar lengths
+    using first differencing and AICc-based model selection.
+
+    This method is similar to BIC but uses Akaike Information Criterion with
+    correction for small sample sizes (AICc). If use_delta_rule=True, it computes
+    Delta-AICc and applies a parsimony tie-breaker: if multiple models have
+    Delta < delta_threshold, choose the smallest PL.
+
+    Parameters
+    ----------
+    bar_lengths_ms : np.ndarray
+        Bar durations in milliseconds
+    pl_candidates : tuple of int, optional
+        Candidate pattern lengths to test (default: (1, 2, 4))
+    use_delta_rule : bool, optional
+        If True, use Delta-AICc rule with parsimony tie-breaker (default: True)
+    delta_threshold : float, optional
+        Threshold for Delta-AICc to consider models equivalent (default: 2.0)
+
+    Returns
+    -------
+    tuple of (int, dict, dict or None)
+        - best_pl: Best pattern length according to AICc
+        - aicc_values: Dictionary mapping pattern length to AICc value
+        - delta_values: Dictionary mapping pattern length to Delta-AICc (None if use_delta_rule=False)
+
+    Raises
+    ------
+    ValueError
+        If less than 2 bars are provided
+
+    Notes
+    -----
+    The method follows these steps:
+    1. Compute first differences: dL[b] = L[b] - L[b-1] (removes drift)
+    2. For each candidate PL, compute phase means: mu[r] = mean(dL where bar % PL == r)
+    3. Apply sum-to-zero constraint: mu[r] -= mean(mu)
+    4. Compute SSE, AIC, and AICc: AICc = AIC + 2*k*(k+1)/(n-k-1)
+    5. If use_delta_rule: compute Delta-AICc and apply parsimony tie-breaker
+    6. Select PL with minimum AICc (or smallest PL among near-equivalent models)
+
+    Examples
+    --------
+    >>> bar_lengths = np.array([2400, 2450, 2380, 2420, 2400, 2440, 2390, 2410])
+    >>> best_pl, aicc_vals, delta_vals = detect_pattern_length_aicc(bar_lengths)
+    >>> print(f"Best pattern length: {best_pl}")
+    Best pattern length: 2
+    """
+    B = len(bar_lengths_ms)
+    if B < 2:
+        raise ValueError("At least two bars are required.")
+
+    # First differences (drift removal)
+    dL = np.array([
+        bar_lengths_ms[b] - bar_lengths_ms[b - 1]
+        for b in range(1, B)
+    ])
+    n = len(dL)
+
+    aicc_values = {}
+
+    for PL in pl_candidates:
+        # Number of free parameters:
+        # (PL-1) phase means under sum-to-zero + 1 variance => k = PL
+        k = PL
+
+        # AICc requires n > k + 1
+        if n <= (k + 1):
+            aicc_values[PL] = float("inf")
+            continue
+
+        # Phase means
+        mu = np.zeros(PL, dtype=float)
+        cnt = np.zeros(PL, dtype=int)
+
+        for i, val in enumerate(dL, start=2):  # Start from bar 2 (index in original bars)
+            r = i % PL
+            mu[r] += val
+            cnt[r] += 1
+
+        # Compute means (avoid division by zero)
+        for r in range(PL):
+            if cnt[r] > 0:
+                mu[r] /= cnt[r]
+
+        # Center phase means (sum-to-zero constraint)
+        mean_mu = np.mean(mu)
+        mu = mu - mean_mu
+
+        # Sum of Squared Errors
+        sse = 0.0
+        for i, val in enumerate(dL, start=2):
+            r = i % PL
+            err = val - mu[r]
+            sse += err * err
+
+        # AIC (up to additive constants)
+        aic = n * math.log(sse / n) + 2 * k
+
+        # AICc
+        aicc = aic + (2 * k * (k + 1)) / (n - k - 1)
+        aicc_values[PL] = aicc
+
+    # Default selection: min AICc
+    best_pl = min(aicc_values, key=aicc_values.get)
+
+    if not use_delta_rule:
+        return best_pl, aicc_values, None
+
+    # Delta-AICc
+    min_aicc = min(aicc_values.values())
+    delta_values = {PL: (aicc_values[PL] - min_aicc) for PL in aicc_values}
+
+    # Optional delta decision rule with parsimony tie-breaker
+    near_best = sorted([PL for PL in pl_candidates if delta_values[PL] < delta_threshold])
+    if len(near_best) > 1:
+        best_pl = near_best[0]  # choose smallest PL
+
+    return best_pl, aicc_values, delta_values
+
+
+# ============================================================================
 # MAIN DETECTION FUNCTION
 # ============================================================================
 
@@ -687,12 +923,14 @@ def detect_pattern_lengths(
     use_all_bars: bool = False
 ) -> Dict[str, int]:
     """
-    Detect pattern lengths using all three methods with circular convolution.
+    Detect pattern lengths using all five methods.
 
-    This function runs all 3 pattern detection methods:
-    1. Drum Onset Method - from onset CSV
-    2. Mel-Band Method - from drums.wav
-    3. Bass Pitch Method - from bass.wav
+    This function runs all 5 pattern detection methods:
+    1. Drum Onset Method - from onset CSV with circular cross-correlation
+    2. Mel-Band Method - from drums.wav with circular cross-correlation
+    3. Bass Pitch Method - from bass.wav with circular cross-correlation
+    4. Lepa Style (BIC) - Bar length first-differencing with BIC model selection
+    5. Lepa Style (AICc) - Bar length first-differencing with AICc model selection
 
     Parameters
     ----------
@@ -717,7 +955,9 @@ def detect_pattern_lengths(
     Returns
     -------
     dict
-        Dictionary with keys 'drum', 'mel', 'pitch' containing best_pow2_L values
+        Dictionary with keys:
+        - 'drum', 'mel', 'pitch', 'lepa', 'aicc': pattern lengths (int)
+        - 'snippet_info': dict with snippet timing and length information
 
     Examples
     --------
@@ -730,9 +970,19 @@ def detect_pattern_lengths(
     ...     tsig=4
     ... )
     >>> print(pattern_lengths)
-    {'drum': 4, 'mel': 4, 'pitch': 8}
+    {'drum': 4, 'mel': 4, 'pitch': 8, 'lepa': 2, 'aicc': 2, 'snippet_info': {...}}
     """
-    print(f"\n  [Pattern Detection] Running all 3 methods...")
+    print(f"\n  [Pattern Detection] Running all 5 methods...")
+
+    # Store original bar count
+    original_num_bars = len(bar_starts)
+
+    # Store requested snippet boundaries
+    if snippet:
+        snippet_requested_start, snippet_requested_end = snippet
+    else:
+        snippet_requested_start = None
+        snippet_requested_end = None
 
     # Filter bars to snippet if needed
     if snippet and not use_all_bars:
@@ -744,6 +994,10 @@ def detect_pattern_lengths(
         print(f"    Using {len(bar_starts)} full bars within snippet [{s0:.2f}s - {s1:.2f}s]")
     else:
         print(f"    Using all {len(bar_starts)} corrected bars")
+
+    # Calculate usable snippet boundaries (actual bar boundaries)
+    snippet_usable_start = float(bar_starts[0]) if len(bar_starts) > 0 else 0.0
+    snippet_usable_end = float(bar_ends[-1]) if len(bar_ends) > 0 else 0.0
 
     # Load onset times
     df_onsets = pd.read_csv(onset_csv_path)
@@ -795,7 +1049,74 @@ def detect_pattern_lengths(
         print(f"    Bass Pitch method failed: {e}")
         results['pitch'] = 4  # Default fallback
 
+    # Method 4: Lepa Style (BIC)
+    try:
+        print(f"    Running Lepa Style (BIC) method...")
+        # Compute bar lengths in milliseconds
+        bar_lengths_ms = (bar_ends - bar_starts) * 1000.0
+        best_pl, bic_values = detect_pattern_length_bic(bar_lengths_ms, pl_candidates=(1, 2, 4))
+        results['lepa'] = int(best_pl)
+        print(f"    Lepa Style (BIC): L={results['lepa']} (BIC values: {bic_values})")
+    except Exception as e:
+        print(f"    Lepa Style (BIC) method failed: {e}")
+        results['lepa'] = 4  # Default fallback
+
+    # Method 5: Lepa Style (AICc)
+    try:
+        print(f"    Running Lepa Style (AICc) method...")
+        # Compute bar lengths in milliseconds (reuse from method 4)
+        bar_lengths_ms = (bar_ends - bar_starts) * 1000.0
+        best_pl, aicc_values, delta_values = detect_pattern_length_aicc(
+            bar_lengths_ms,
+            pl_candidates=(1, 2, 4),
+            use_delta_rule=True,
+            delta_threshold=2.0
+        )
+        results['aicc'] = int(best_pl)
+        if delta_values:
+            print(f"    Lepa Style (AICc): L={results['aicc']} (AICc: {aicc_values}, Delta: {delta_values})")
+        else:
+            print(f"    Lepa Style (AICc): L={results['aicc']} (AICc values: {aicc_values})")
+    except Exception as e:
+        print(f"    Lepa Style (AICc) method failed: {e}")
+        results['aicc'] = 4  # Default fallback
+
+    # Calculate snippet information
+    num_full_bars = len(bar_starts)
+    usable_duration_s = snippet_usable_end - snippet_usable_start
+
+    # Calculate number of complete loops for each method
+    num_loops_drum = num_full_bars // results['drum'] if results['drum'] > 0 else 0
+    num_loops_mel = num_full_bars // results['mel'] if results['mel'] > 0 else 0
+    num_loops_pitch = num_full_bars // results['pitch'] if results['pitch'] > 0 else 0
+    num_loops_lepa = num_full_bars // results['lepa'] if results['lepa'] > 0 else 0
+    num_loops_aicc = num_full_bars // results['aicc'] if results['aicc'] > 0 else 0
+
+    # Add snippet info to results
+    snippet_info = {
+        'usable_start_s': float(snippet_usable_start),
+        'usable_end_s': float(snippet_usable_end),
+        'usable_duration_s': float(usable_duration_s),
+        'num_full_bars': int(num_full_bars),
+        'num_complete_loops': {
+            'drum': int(num_loops_drum),
+            'mel': int(num_loops_mel),
+            'pitch': int(num_loops_pitch),
+            'lepa': int(num_loops_lepa),
+            'aicc': int(num_loops_aicc)
+        }
+    }
+
+    # Add requested snippet times if provided
+    if snippet_requested_start is not None and snippet_requested_end is not None:
+        snippet_info['requested_start_s'] = float(snippet_requested_start)
+        snippet_info['requested_end_s'] = float(snippet_requested_end)
+        snippet_info['requested_duration_s'] = float(snippet_requested_end - snippet_requested_start)
+
+    results['snippet_info'] = snippet_info
+
     print(f"  [Pattern Detection] Complete: {results}")
+    print(f"  [Snippet Info] {usable_duration_s:.2f}s (usable), {num_full_bars} bars, Loops: drum={num_loops_drum}, mel={num_loops_mel}, pitch={num_loops_pitch}, lepa={num_loops_lepa}, aicc={num_loops_aicc}")
     return results
 
 

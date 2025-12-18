@@ -200,14 +200,16 @@ def create_raster_comparison_plot(
     rms_values: Optional[dict] = None
 ):
     """
-    Create 5-panel raster plot comparing all correction methods.
+    Create 7-panel raster plot comparing all correction methods.
 
-    Matches the format from AP2_plot_raster_gridshift.ipynb with 5 subplots:
+    Matches the format from AP2_plot_raster_gridshift.ipynb with 7 subplots:
     1. Uncorrected
     2. Per-snippet
     3. Loop-based drum
     4. Loop-based mel
     5. Loop-based pitch
+    6. Loop-based lepa (BIC)
+    7. Loop-based aicc (AICc)
 
     Parameters
     ----------
@@ -243,10 +245,10 @@ def create_raster_comparison_plot(
     n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 10
     fig_height = max(8, min(20, 0.15 * n_bars))
 
-    # Create figure with 5 subplots
-    fig = plt.figure(figsize=(12, fig_height * 2.5))
-    gs = fig.add_gridspec(5, 1, height_ratios=[1, 1, 1, 1, 1], hspace=0.3)
-    axes = [fig.add_subplot(gs[i]) for i in range(5)]
+    # Create figure with 7 subplots
+    fig = plt.figure(figsize=(12, fig_height * 3.5))
+    gs = fig.add_gridspec(7, 1, height_ratios=[1, 1, 1, 1, 1, 1, 1], hspace=0.3)
+    axes = [fig.add_subplot(gs[i]) for i in range(7)]
 
     # Get RMS values if provided
     rms_uncorr = rms_values.get('uncorrected_ms') if rms_values else None
@@ -254,6 +256,8 @@ def create_raster_comparison_plot(
     rms_drum = rms_values.get('drum_ms') if rms_values else None
     rms_mel = rms_values.get('mel_ms') if rms_values else None
     rms_pitch = rms_values.get('pitch_ms') if rms_values else None
+    rms_lepa = rms_values.get('lepa_ms') if rms_values else None
+    rms_aicc = rms_values.get('aicc_ms') if rms_values else None
 
     # Plot 1: Uncorrected (no references)
     plot_raster_single(
@@ -354,6 +358,64 @@ def create_raster_comparison_plot(
         axes[4].text(0.5, 0.5, 'No pitch loop method data',
                      ha='center', va='center', transform=axes[4].transAxes)
         axes[4].set_title(f"Onset raster — Track {track_id} — Loop-based pitch")
+
+    # Plot 6: Loop-based lepa (BIC)
+    lepa_col = None
+    for col in df.columns:
+        if col.startswith('phase_lepa'):
+            lepa_col = col
+            break
+
+    if lepa_col:
+        # Extract pattern length from column name if present
+        # Column format: phase_lepa(L=4)
+        pattern_len_lepa = None
+        if '(L=' in lepa_col and ')' in lepa_col:
+            try:
+                pattern_len_lepa = int(lepa_col.split('(L=')[1].split(')')[0])
+            except:
+                pass
+
+        title_lepa = f"Loop-based lepa (BIC) (L={pattern_len_lepa})" if pattern_len_lepa else "Loop-based lepa (BIC)"
+        method_name_lepa = f"lepa(L={pattern_len_lepa})" if pattern_len_lepa else "lepa"
+        plot_raster_single(
+            axes[5], df, lepa_col,
+            title_lepa, track_id, rms_ms=rms_lepa,
+            ref_onsets=ref_onsets, method_name=method_name_lepa
+        )
+    else:
+        axes[5].text(0.5, 0.5, 'No lepa loop method data',
+                     ha='center', va='center', transform=axes[5].transAxes)
+        axes[5].set_title(f"Onset raster — Track {track_id} — Loop-based lepa (BIC)")
+
+    # Plot 7: Loop-based aicc (AICc)
+    aicc_col = None
+    for col in df.columns:
+        if col.startswith('phase_aicc'):
+            aicc_col = col
+            break
+
+    if aicc_col:
+        # Extract pattern length from column name if present
+        # Column format: phase_aicc(L=4)
+        pattern_len_aicc = None
+        if '(L=' in aicc_col and ')' in aicc_col:
+            try:
+                pattern_len_aicc = int(aicc_col.split('(L=')[1].split(')')[0])
+            except:
+                pass
+
+        title_aicc = f"Loop-based aicc (AICc) (L={pattern_len_aicc})" if pattern_len_aicc else "Loop-based aicc (AICc)"
+        method_name_aicc = f"aicc(L={pattern_len_aicc})" if pattern_len_aicc else "aicc"
+        plot_raster_single(
+            axes[6], df, aicc_col,
+            title_aicc, track_id, rms_ms=rms_aicc,
+            ref_onsets=ref_onsets, method_name=method_name_aicc
+        )
+    else:
+        axes[6].text(0.5, 0.5, 'No aicc loop method data',
+                     ha='center', va='center', transform=axes[6].transAxes)
+        axes[6].set_title(f"Onset raster — Track {track_id} — Loop-based aicc (AICc)")
 
     # Overall title
     fig.suptitle(f"Track {track_id} — Raster Plots — All Correction Methods",

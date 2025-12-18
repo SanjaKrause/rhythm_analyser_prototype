@@ -190,11 +190,17 @@ def calculate_rms_from_csv(
                 pattern_lengths['mel'] = int(re.search(r'L=(\d+)', col).group(1))
             elif 'phase_pitch(L=' in col:
                 pattern_lengths['pitch'] = int(re.search(r'L=(\d+)', col).group(1))
+            elif 'phase_lepa(L=' in col:
+                pattern_lengths['lepa'] = int(re.search(r'L=(\d+)', col).group(1))
+            elif 'phase_aicc(L=' in col:
+                pattern_lengths['aicc'] = int(re.search(r'L=(\d+)', col).group(1))
 
         # Get column names for each method
         col_drum = [c for c in df.columns if 'phase_drum(L=' in c][0]
         col_mel = [c for c in df.columns if 'phase_mel(L=' in c][0]
         col_pitch = [c for c in df.columns if 'phase_pitch(L=' in c][0]
+        col_lepa = [c for c in df.columns if 'phase_lepa(L=' in c][0] if [c for c in df.columns if 'phase_lepa(L=' in c] else None
+        col_aicc = [c for c in df.columns if 'phase_aicc(L=' in c][0] if [c for c in df.columns if 'phase_aicc(L=' in c] else None
 
         # Get column names for standard methods
         col_std_l1 = [c for c in df.columns if 'phase_standard_L1(L=' in c][0] if [c for c in df.columns if 'phase_standard_L1(L=' in c] else None
@@ -207,11 +213,15 @@ def calculate_rms_from_csv(
         phases_drum = df[col_drum].dropna().values
         phases_mel = df[col_mel].dropna().values
         phases_pitch = df[col_pitch].dropna().values
+        phases_lepa = df[col_lepa].dropna().values if col_lepa else None
+        phases_aicc = df[col_aicc].dropna().values if col_aicc else None
 
         # Get grid time column names
         grid_col_drum = [c for c in df.columns if 'grid_time_drum(L=' in c][0]
         grid_col_mel = [c for c in df.columns if 'grid_time_mel(L=' in c][0]
         grid_col_pitch = [c for c in df.columns if 'grid_time_pitch(L=' in c][0]
+        grid_col_lepa = [c for c in df.columns if 'grid_time_lepa(L=' in c][0] if [c for c in df.columns if 'grid_time_lepa(L=' in c] else None
+        grid_col_aicc = [c for c in df.columns if 'grid_time_aicc(L=' in c][0] if [c for c in df.columns if 'grid_time_aicc(L=' in c] else None
 
         # Get grid time column names for standard methods
         grid_col_std_l1 = [c for c in df.columns if 'grid_time_standard_L1(L=' in c][0] if [c for c in df.columns if 'grid_time_standard_L1(L=' in c] else None
@@ -234,6 +244,16 @@ def calculate_rms_from_csv(
             'pitch_phase': calculate_phase_rms(phases_pitch),
             'pattern_lengths': pattern_lengths
         }
+
+        # Add lepa method if it exists
+        if col_lepa and phases_lepa is not None:
+            rms_values['lepa_ms'] = calculate_phase_rms_ms(df, col_lepa, grid_col_lepa)
+            rms_values['lepa_phase'] = calculate_phase_rms(phases_lepa)
+
+        # Add aicc method if it exists
+        if col_aicc and phases_aicc is not None:
+            rms_values['aicc_ms'] = calculate_phase_rms_ms(df, col_aicc, grid_col_aicc)
+            rms_values['aicc_phase'] = calculate_phase_rms(phases_aicc)
 
         # Add standard loop methods if they exist
         if col_std_l1:

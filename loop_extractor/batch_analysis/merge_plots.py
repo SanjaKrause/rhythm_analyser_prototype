@@ -12,6 +12,7 @@ Usage:
 """
 
 import sys
+import shutil
 from pathlib import Path
 from PyPDF2 import PdfMerger
 from PIL import Image
@@ -49,12 +50,12 @@ def merge_plots(output_dir: Path):
     output_dir : Path
         The batch output directory containing individual track folders
     """
-    # Create _batch_analysis folder
-    batch_dir = output_dir / '_batch_analysis'
+    # Create batch_analysis folder
+    batch_dir = output_dir / 'batch_analysis'
     batch_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get all track directories
-    track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and not d.name.startswith('_')])
+    # Get all track directories (exclude batch_analysis and any other special folders)
+    track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']])
 
     if not track_dirs:
         print('No track directories found!')
@@ -79,6 +80,10 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
+    # Create single temp directory for all PNG conversions
+    temp_dir = batch_dir / '_temp'
+    temp_dir.mkdir(exist_ok=True)
+
     # 2. Merge raster comparison plots (PNG files in 5_grid folder)
     print('\nLooking for raster comparison plots...')
     raster_comparison_pngs = []
@@ -90,8 +95,6 @@ def merge_plots(output_dir: Path):
 
     if raster_comparison_pngs:
         print(f'\nConverting and merging {len(raster_comparison_pngs)} raster comparison PNGs...')
-        temp_dir = batch_dir / '_temp'
-        temp_dir.mkdir(exist_ok=True)
 
         merger = PdfMerger()
         for i, png in enumerate(raster_comparison_pngs):
@@ -102,8 +105,6 @@ def merge_plots(output_dir: Path):
         output_pdf = batch_dir / 'all_raster_comparison.pdf'
         merger.write(str(output_pdf))
         merger.close()
-
-        # Note: temp files left in _temp folder for debugging
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
@@ -118,8 +119,6 @@ def merge_plots(output_dir: Path):
 
     if raster_standard_pngs:
         print(f'\nConverting and merging {len(raster_standard_pngs)} raster standard PNGs...')
-        temp_dir = batch_dir / '_temp'
-        temp_dir.mkdir(exist_ok=True)
 
         merger = PdfMerger()
         for i, png in enumerate(raster_standard_pngs):
@@ -131,9 +130,11 @@ def merge_plots(output_dir: Path):
         merger.write(str(output_pdf))
         merger.close()
 
-        # Note: temp files left in _temp folder for debugging
-
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # Clean up temporary files at the end
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
 
     print('\n✓ All plots merged successfully!')
 
