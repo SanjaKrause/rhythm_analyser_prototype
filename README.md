@@ -117,6 +117,22 @@ python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir outpu
 python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir output/ --daw-ready
 ```
 
+**Batch Tempo Plot Merging**
+
+When using `--analyse-all`, the pipeline automatically merges all individual tempo plot PDFs into one combined PDF. This merged PDF is saved in `output/_batch_analysis/all_tempo_plots.pdf`.
+
+Individual tempo plots remain in each track's `3.5_tempo_plots/` folder.
+
+**Dependencies**
+
+PDF merging requires PyPDF2:
+
+```bash
+pip install PyPDF2
+```
+
+If PyPDF2 is not installed, batch processing will still complete successfully, but PDF merging will be skipped.
+
 ## Configuration
 
 The pipeline can be customized through various configuration options. Check [loop_extractor/config.py](loop_extractor/config.py) for:

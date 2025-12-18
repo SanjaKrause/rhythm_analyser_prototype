@@ -149,6 +149,32 @@ flowchart TD
     style Output fill:#e1ffe1
 ```
 
+### How 3-Beat and 5-Beat Bars are Corrected
+
+The downbeat correction automatically fixes bars that were misdetected as having 3 or 5 beats when the dominant time signature is 4/4:
+
+| Misdetected Bar | Actual Beats | Duration vs 4/4 | Tempo Classification | Correction Action |
+|----------------|--------------|-----------------|---------------------|-------------------|
+| **3-beat bar** | 3 beats | 75% of normal | ~1.33x tempo → "double" | **MERGED** with next bar to create one 4/4 bar |
+| **5-beat bar** | 5 beats | 125% of normal | ~0.8x tempo → "half" | **SPLIT** into two bars (4+4 beats) |
+
+**Example**: If BeatTransformer detects a sequence like:
+```
+Bar 1: 4 beats ✓
+Bar 2: 3 beats ✗ (too short)
+Bar 3: 1 beat   (remainder from merge)
+Bar 4: 4 beats ✓
+```
+
+After correction:
+```
+Bar 1: 4 beats ✓
+Bar 2: 4 beats ✓ (merged Bar 2 + Bar 3)
+Bar 3: 4 beats ✓
+```
+
+This tempo-based classification and correction ensures consistent 4/4 bars for downstream analysis, even when the beat detection model makes occasional errors.
+
 ---
 
 ## Detailed Step 5: Pattern Length Detection Methods
@@ -685,56 +711,6 @@ graph TB
     style Input fill:#e1f5ff,stroke:#000,color:#000
     style Processing fill:#ffe1f5,stroke:#000,color:#000
     style Outputs fill:#e1ffe1,stroke:#000,color:#000
-```
-
----
-
-## Key Concepts Visualization
-
-### Equidistant Grid Concept
-
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
-graph LR
-    subgraph Detected["<b>Detected Downbeats May Vary</b>"]
-        D1[Bar 0: 0.000s] --> D2[Bar 1: 2.010s<br/>slightly late]
-        D2 --> D3[Bar 2: 3.995s<br/>slightly early]
-        D3 --> D4[Bar 3: 6.005s<br/>slightly late]
-        D4 --> D5[Bar 4: 8.000s]
-    end
-
-    subgraph Equidistant["<b>Equidistant Grid Correction</b>"]
-        E1[Bar 0: 0.000s] --> E2[Bar 1: 2.000s<br/>CORRECTED]
-        E2 --> E3[Bar 2: 4.000s<br/>CORRECTED]
-        E3 --> E4[Bar 3: 6.000s<br/>CORRECTED]
-        E4 --> E5[Bar 4: 8.000s]
-    end
-
-    Detected -.->|Apply Equidistant Grid| Equidistant
-
-    style Detected fill:#ffcccc,stroke:#000,color:#000
-    style Equidistant fill:#ccffcc,stroke:#000,color:#000
-```
-
-### Circular Cross-Correlation
-
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
-graph TD
-    V1[Vector 1:<br/>1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0] --> FFT1[FFT]
-    V2[Vector 2:<br/>1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0] --> FFT2[FFT]
-
-    FFT1 --> Mult["V1 * conj(V2)"]
-    FFT2 --> Mult
-
-    Mult --> IFFT[Inverse FFT]
-    IFFT --> MaxShift[Find Max Over<br/>All Circular Shifts]
-    MaxShift --> Norm["Normalize by<br/>norm(V1) * norm(V2)"]
-    Norm --> Sim[Similarity Score<br/>Range: 0-1]
-
-    style V1 fill:#e1f5ff
-    style V2 fill:#e1f5ff
-    style Sim fill:#e1ffe1
 ```
 
 ---

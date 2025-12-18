@@ -1113,6 +1113,19 @@ Environment:
         print(f"\nBatch results saved to: {batch_results_file}")
         print("=" * 80)
 
+        # Merge all plot PDFs
+        try:
+            from analysis.merge_plots import merge_plots
+            print("\n" + "=" * 80)
+            print("MERGING PLOTS")
+            print("=" * 80)
+            merge_plots(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  PDF merging skipped: {ie}")
+            print("Install required packages: pip install PyPDF2 Pillow reportlab")
+        except Exception as e:
+            print(f"\n⚠️  PDF merging failed: {e}")
+
         # Exit with error code if any files failed
         if batch_results['failed']:
             sys.exit(1)

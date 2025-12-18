@@ -1,0 +1,5 @@
+track_id,success,steps_completed,time_signature,raw_bars,corrected_bars,dominant_pattern,avg_tempo_bpm,pattern_drum,pattern_mel,pattern_pitch,num_onsets
+Dancing All Night,True,12,4,60,59,normal,99.43486982515192,4,1,2,449
+Feel the Spark,True,12,4,97,97,normal,125.01508173738365,8,1,8,676
+Problematic Growing,True,12,4,136,138,factor2 double,154.4025292216016,8,8,8,504
+Together we are one,True,12,4,56,56,normal,99.98707233067414,1,1,4,501

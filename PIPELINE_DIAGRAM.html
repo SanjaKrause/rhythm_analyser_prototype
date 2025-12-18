@@ -1,0 +1,792 @@
+<!DOCTYPE html><html><head>
+      <title>PIPELINE_DIAGRAM</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:////Users/alexk/.vscode/extensions/shd101wyy.markdown-preview-enhanced-0.8.20/crossnote/dependencies/katex/katex.min.css">
+      
+      
+      <script type="text/javascript" src="file:////Users/alexk/.vscode/extensions/shd101wyy.markdown-preview-enhanced-0.8.20/crossnote/dependencies/mermaid/mermaid.min.js" charset="UTF-8"></script>
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <!-- The content below will be included at the end of the <head> element. --><script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script></head><body for="html-export">
+    
+    
+      <div class="crossnote markdown-preview  ">
+      
+<h1 id="loop-extractor-pipeline---mermaid-diagram">Loop Extractor Pipeline - Mermaid Diagram </h1>
+<p><strong>Author:</strong> Alexander Krause, TU Berlin<br>
+<strong>Co-Author:</strong> Claude Code (Anthropic)</p>
+<hr>
+<h2 id="main-pipeline-flow">Main Pipeline Flow </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5ff','primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','secondaryColor':'#fff4e1','tertiaryColor':'#ffe1f5','clusterBkg':'#f9f9f9','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start([Mixed Audio&lt;br/&gt;WAV/MP3]) --&gt; Step1
+
+    subgraph Step1["&lt;b&gt;STEP 1: STEM SEPARATION&lt;/b&gt;"]
+        A1[Spleeter 5-stem U-Net] --&gt; A2[5 Stem WAV Files]
+        A2 --&gt; A3[vocals.wav]
+        A2 --&gt; A4[drums.wav]
+        A2 --&gt; A5[bass.wav]
+        A2 --&gt; A6[piano.wav]
+        A2 --&gt; A7[other.wav]
+        A1 --&gt; A8[Mel-Spectrogram Conversion&lt;br/&gt;44.1kHz, 4096 FFT, 128 mels]
+        A8 --&gt; A9[5-stem NPZ file&lt;br/&gt;Shape: 5, T, 128]
+    end
+
+    Step1 --&gt; Step2
+    Step1 --&gt; Step4
+
+    subgraph Step2["&lt;b&gt;STEP 2: BEAT DETECTION&lt;/b&gt;"]
+        B1[5-stem NPZ] --&gt; B2[Beat-Transformer&lt;br/&gt;9-layer Dilated Transformer]
+        B2 --&gt; B3[Beat Activations]
+        B2 --&gt; B4[Downbeat Activations]
+        B3 --&gt; B5[Madmom DBN&lt;br/&gt;HMM, 55-215 BPM]
+        B4 --&gt; B5
+        B5 --&gt; B6[Raw Beats/Downbeats&lt;br/&gt;beat_pos, bar_num, times]
+    end
+
+    subgraph Step4["&lt;b&gt;STEP 4: ONSET DETECTION&lt;/b&gt;"]
+        D1[drums.wav] --&gt; D2[Librosa HFC&lt;br/&gt;hop=512, delta=0.12]
+        D2 --&gt; D3[Onset Times CSV]
+    end
+
+    Step2 --&gt; Step3
+
+    subgraph Step3["&lt;b&gt;STEP 3: DOWNBEAT CORRECTION&lt;/b&gt;"]
+        C1[Raw Downbeats] --&gt; C2[Bar Tempo Calculation]
+        C2 --&gt; C3[Factor-of-2 Classification&lt;br/&gt;normal/double/half]
+        C3 --&gt; C4{Determine&lt;br/&gt;Dominant Pattern}
+        C4 --&gt;|normal| C5[MERGE double bars&lt;br/&gt;SPLIT half bars]
+        C4 --&gt;|factor2| C5
+        C5 --&gt; C6[BPM Threshold Adjust]
+        C6 --&gt; C7[Corrected Downbeats TXT&lt;br/&gt;+ Time Signature&lt;br/&gt;+ Usable Bars Mask]
+    end
+
+    Step3 --&gt; Step5
+    Step3 --&gt; Step6
+    Step4 --&gt; Step5
+    Step4 --&gt; Step6
+
+    subgraph Step5["&lt;b&gt;STEP 5: PATTERN LENGTH DETECTION&lt;/b&gt;"]
+        E1[Method 1: Drum Onset&lt;br/&gt;Binary vectors + Circular xcorr] --&gt; E4[Best L = 4 bars]
+        E2[Method 2: Mel-Band&lt;br/&gt;Spectrograms + Band-wise corr] --&gt; E5[Best L = 2 bars]
+        E3[Method 3: Bass Pitch&lt;br/&gt;F0 extraction + Z-score norm] --&gt; E6[Best L = 4 bars]
+        E4 --&gt; E7{Pattern Lengths&lt;br/&gt;drum: 4, mel: 2, pitch: 4}
+        E5 --&gt; E7
+        E6 --&gt; E7
+    end
+
+    subgraph Step6["&lt;b&gt;STEP 6: GRID CREATION &amp; CORRECTION&lt;/b&gt;"]
+        F1[A: Uncorrected Grid&lt;br/&gt;Raw downbeats, 16 ticks/bar] --&gt; F4[comprehensive_phases.csv]
+        F2[B: Per-Snippet Correction&lt;br/&gt;1 ref offset for snippet] --&gt; F4
+        F3[C: Loop-Based Correction&lt;br/&gt;Equidistant grid per loop&lt;br/&gt;Methods: drum, mel, pitch, L1, L2, L4] --&gt; F4
+        F4 --&gt; F5[Columns:&lt;br/&gt;onset_time, bar, tick&lt;br/&gt;phase_*, grid_time_*&lt;br/&gt;for all methods]
+    end
+
+    Step5 --&gt; Step6
+    Step6 --&gt; Analysis
+
+    subgraph Analysis["&lt;b&gt;ANALYSIS &amp; OUTPUTS&lt;/b&gt;"]
+        G1[RMS Calculation&lt;br/&gt;Quantify correction quality]
+        G2[Audio Examples&lt;br/&gt;Click tracks for each method]
+        G3[Raster Plots&lt;br/&gt;2 plots: comparison &amp; standard]
+        G4[Tempo Analysis&lt;br/&gt;8-panel plots + CSV]
+        G5[MIDI Export&lt;br/&gt;Onset + Bass Pitch]
+        G6[Stem Loops&lt;br/&gt;Perfect loops with crossfade]
+    end
+
+    Analysis --&gt; Final[pipeline_results.json&lt;br/&gt;Complete summary]
+
+    style Step1 fill:#e1f5ff,stroke:#000,color:#000
+    style Step2 fill:#fff4e1,stroke:#000,color:#000
+    style Step3 fill:#ffe1f5,stroke:#000,color:#000
+    style Step4 fill:#fff4e1,stroke:#000,color:#000
+    style Step5 fill:#e1ffe1,stroke:#000,color:#000
+    style Step6 fill:#f5e1ff,stroke:#000,color:#000
+    style Analysis fill:#ffffcc,stroke:#000,color:#000
+    style Final fill:#ffcccc,stroke:#000,color:#000
+</div><hr>
+<h2 id="detailed-step-3-downbeat-correction-logic">Detailed Step 3: Downbeat Correction Logic </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start[Raw Downbeats] --&gt; CalcTempo[Calculate Bar Tempos&lt;br/&gt;tempo = 60/duration × time_sig]
+    CalcTempo --&gt; Median[Calculate Median Tempo&lt;br/&gt;e.g., 120 BPM]
+
+    Median --&gt; Classify1[Initial Classification&lt;br/&gt;For each bar: classify vs median]
+
+    Classify1 --&gt; CheckHalf{Is tempo in&lt;br/&gt;half range?&lt;br/&gt;0.45× to 0.55× median}
+    CheckHalf --&gt;|Yes| ClassHalf1[Class: half]
+    CheckHalf --&gt;|No| CheckDouble{Is tempo in&lt;br/&gt;double range?&lt;br/&gt;1.8× to 2.2× median}
+    CheckDouble --&gt;|Yes| ClassDouble1[Class: double]
+    CheckDouble --&gt;|No| ClassNormal1[Class: normal&lt;br/&gt;Everything else]
+
+    ClassNormal1 --&gt; Count1
+    ClassDouble1 --&gt; Count1
+    ClassHalf1 --&gt; Count1[Count Classifications]
+
+    Count1 --&gt; BPMCheck{BPM Threshold Check:&lt;br/&gt;Are &gt;50% bars &gt; 135 BPM?}
+    BPMCheck --&gt;|Yes| Rebase[Calculate new base:&lt;br/&gt;median high bars / 2&lt;br/&gt;Example: 140 → 70 BPM]
+    BPMCheck --&gt;|No| UseCounts[Use initial counts]
+
+    Rebase --&gt; Reclassify[RECLASSIFY ALL bars&lt;br/&gt;using new base]
+    Reclassify --&gt; Count2[Recount&lt;br/&gt;Most become double]
+    Count2 --&gt; Dominant
+    UseCounts --&gt; Dominant
+
+    Dominant{n_normal &gt;=&lt;br/&gt;n_double + n_half?}
+    Dominant --&gt;|Yes| DomNormal[Dominant = normal]
+    Dominant --&gt;|No| DomFactor{n_double &gt;= n_half?}
+    DomFactor --&gt;|Yes| DomDouble[Dominant = factor2&lt;br/&gt;Orientation = double]
+    DomFactor --&gt;|No| DomHalf[Dominant = factor2&lt;br/&gt;Orientation = half]
+
+    DomNormal --&gt; ApplyNormal[MERGE double-classified bars&lt;br/&gt;SPLIT half-classified bars&lt;br/&gt;Keep normal bars unchanged]
+    DomDouble --&gt; ApplyDouble[SPLIT normal-classified bars&lt;br/&gt;Keep double/half bars unchanged]
+    DomHalf --&gt; ApplyHalf[MERGE normal-classified bars&lt;br/&gt;Keep double/half bars unchanged]
+
+    ApplyNormal --&gt; Output[Corrected Downbeats]
+    ApplyDouble --&gt; Output
+    ApplyHalf --&gt; Output
+
+    style Start fill:#e1f5ff
+    style BPMCheck fill:#ffcccc
+    style Rebase fill:#fff4e1
+    style Reclassify fill:#ffe1f5
+    style Output fill:#e1ffe1
+</div><h3 id="how-3-beat-and-5-beat-bars-are-corrected">How 3-Beat and 5-Beat Bars are Corrected </h3>
+<p>The downbeat correction automatically fixes bars that were misdetected as having 3 or 5 beats when the dominant time signature is 4/4:</p>
+<table>
+<thead>
+<tr>
+<th>Misdetected Bar</th>
+<th>Actual Beats</th>
+<th>Duration vs 4/4</th>
+<th>Tempo Classification</th>
+<th>Correction Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>3-beat bar</strong></td>
+<td>3 beats</td>
+<td>75% of normal</td>
+<td>~1.33x tempo → "double"</td>
+<td><strong>MERGED</strong> with next bar to create one 4/4 bar</td>
+</tr>
+<tr>
+<td><strong>5-beat bar</strong></td>
+<td>5 beats</td>
+<td>125% of normal</td>
+<td>~0.8x tempo → "half"</td>
+<td><strong>SPLIT</strong> into two bars (4+4 beats)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong>: If BeatTransformer detects a sequence like:</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>Bar 1: 4 beats ✓
+Bar 2: 3 beats ✗ (too short)
+Bar 3: 1 beat   (remainder from merge)
+Bar 4: 4 beats ✓
+</code></pre><p>After correction:</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>Bar 1: 4 beats ✓
+Bar 2: 4 beats ✓ (merged Bar 2 + Bar 3)
+Bar 3: 4 beats ✓
+</code></pre><p>This tempo-based classification and correction ensures consistent 4/4 bars for downstream analysis, even when the beat detection model makes occasional errors.</p>
+<hr>
+<h2 id="detailed-step-5-pattern-length-detection-methods">Detailed Step 5: Pattern Length Detection Methods </h2>
+<p><strong>Important</strong>: By default, the three methods analyze only <strong>FULL bars within the snippet boundaries</strong> (bars where both start AND end times fall within the snippet). This ensures pattern detection focuses on the analyzed region. You can optionally set <code>use_all_bars=True</code> to analyze all corrected bars regardless of snippet boundaries.</p>
+<p>Each method creates an N×N similarity matrix comparing every bar to every other bar, then extracts the diagonal at lag L to measure periodicity. The median similarity at each lag determines the best pattern length.</p>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart LR
+    subgraph Method1["&lt;b&gt;Drum Onset Method&lt;/b&gt;"]
+        D1[Full Bars in Snippet&lt;br/&gt;default] --&gt; D2[Create Binary Vectors&lt;br/&gt;16 positions per bar]
+        D2 --&gt; D3[Compute Similarity Matrix&lt;br/&gt;N×N circular xcorr]
+        D3 --&gt; D4[Bar-Lag Profile&lt;br/&gt;median of diagonal L]
+        D4 --&gt; D5[Choose Best Power-of-2&lt;br/&gt;from 1,2,4,8 bars]
+        D5 --&gt; D6[Example: L = 4 bars]
+    end
+
+    subgraph Method2["&lt;b&gt;Mel-Band Method&lt;/b&gt;"]
+        M1[Full Bars in Snippet&lt;br/&gt;default] --&gt; M2[Log-Mel Spectrogram&lt;br/&gt;48 mels, 22050 Hz]
+        M2 --&gt; M3[Extract Bar Patches&lt;br/&gt;Resample to 64 frames]
+        M3 --&gt; M4[Band-wise Circular XCorr&lt;br/&gt;N×N sum across 48 bands]
+        M4 --&gt; M5[Bar-Lag Profile&lt;br/&gt;median of diagonal L]
+        M5 --&gt; M6[Choose Best Power-of-2&lt;br/&gt;from 1,2,4,8 bars]
+        M6 --&gt; M7[Example: L = 2 bars]
+    end
+
+    subgraph Method3["&lt;b&gt;Bass Pitch Method&lt;/b&gt;"]
+        P1[Full Bars in Snippet&lt;br/&gt;default] --&gt; P2[F0 Extraction&lt;br/&gt;Melodia Algorithm]
+        P2 --&gt; P3[Normalize Per Bar&lt;br/&gt;Z-score normalization]
+        P3 --&gt; P4[Beat-aligned XCorr&lt;br/&gt;N×N, shifts: 0,4,8,12]
+        P4 --&gt; P5[Bar-Lag Profile&lt;br/&gt;median of diagonal L]
+        P5 --&gt; P6[Choose Best Power-of-2&lt;br/&gt;from 1,2,4,8 bars]
+        P6 --&gt; P7[Example: L = 4 bars]
+    end
+
+    D6 --&gt; Combine{Pattern Lengths}
+    M7 --&gt; Combine
+    P7 --&gt; Combine
+    Combine --&gt; Output[drum: 4&lt;br/&gt;mel: 2&lt;br/&gt;pitch: 4]
+
+    style Method1 fill:#e1f5ff,stroke:#000,color:#000
+    style Method2 fill:#ffe1f5,stroke:#000,color:#000
+    style Method3 fill:#e1ffe1,stroke:#000,color:#000
+</div><hr>
+<h2 id="method-1-drum-onset-pattern-detection-detailed">Method 1: Drum Onset Pattern Detection (Detailed) </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start[Input: Onset CSV + Bar Times] --&gt; Filter{Filter Bars}
+    Filter --&gt;|Default| FullBars[Only FULL bars&lt;br/&gt;bar_start &gt;= snippet_start&lt;br/&gt;bar_end &lt;= snippet_end]
+    Filter --&gt;|use_all_bars=True| AllBars[All corrected bars]
+
+    FullBars --&gt; LoadOnsets[Load Onset Times&lt;br/&gt;from CSV]
+    AllBars --&gt; LoadOnsets
+
+    LoadOnsets --&gt; FilterOnsets[Filter Onsets&lt;br/&gt;to Snippet Range]
+
+    FilterOnsets --&gt; CreateVectors[For Each Bar:&lt;br/&gt;Create Binary Vector]
+
+    subgraph VectorCreation["&lt;b&gt;Binary Vector Creation&lt;/b&gt;"]
+        VC1[Initialize 16 bins&lt;br/&gt;zeros array] --&gt; VC2[For each onset in bar]
+        VC2 --&gt; VC3[Calculate relative position&lt;br/&gt;rel = onset - bar_start / bar_duration]
+        VC3 --&gt; VC4[Convert to bin index&lt;br/&gt;k = floor rel * 16]
+        VC4 --&gt; VC5[Set vector at k = 1.0&lt;br/&gt;Presence only, no accumulation]
+        VC5 --&gt; VC6{More onsets&lt;br/&gt;in this bar?}
+        VC6 --&gt;|Yes| VC2
+        VC6 --&gt;|No| VC7[Binary Vector:&lt;br/&gt;e.g., 1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]
+    end
+
+    CreateVectors --&gt; VectorCreation
+    VectorCreation --&gt; SimMatrix[Build N×N&lt;br/&gt;Similarity Matrix]
+
+    subgraph Similarity["&lt;b&gt;Circular Cross-Correlation&lt;/b&gt;"]
+        S1[For each pair i,j:&lt;br/&gt;vectors vi, vj] --&gt; S2[FFT both vectors&lt;br/&gt;Vi = fft vi&lt;br/&gt;Vj = fft vj]
+        S2 --&gt; S3[Multiply in frequency&lt;br/&gt;Vi * conj Vj]
+        S3 --&gt; S4[Inverse FFT&lt;br/&gt;corr = ifft Vi * conj Vj]
+        S4 --&gt; S5[Extract beat-aligned shifts&lt;br/&gt;every 4 positions 0,4,8,12]
+        S5 --&gt; S6[Find maximum correlation&lt;br/&gt;max_corr = max corr]
+        S6 --&gt; S7[Normalize&lt;br/&gt;sim_i,j = max_corr / norm vi * norm vj]
+    end
+
+    SimMatrix --&gt; Similarity
+    Similarity --&gt; LagProfile[Extract Bar-Lag Profile]
+
+    subgraph LagExtraction["&lt;b&gt;Lag Profile Extraction&lt;/b&gt;"]
+        L1[For lag = 1 to N-1] --&gt; L2[Get diagonal L&lt;br/&gt;sim_0,L, sim_1,L+1, ..., sim_N-L,N]
+        L2 --&gt; L3[Compute median&lt;br/&gt;profile_L = median diagonal_L]
+        L3 --&gt; L4{More lags?}
+        L4 --&gt;|Yes| L1
+        L4 --&gt;|No| L5[Profile:&lt;br/&gt;lag → similarity]
+    end
+
+    LagProfile --&gt; LagExtraction
+    LagExtraction --&gt; Choose[Choose Best Power-of-2]
+
+    subgraph PowerOf2["&lt;b&gt;Power-of-2 Selection&lt;/b&gt;"]
+        P1[Filter to L in 1,2,4,8] --&gt; P2[Find local maxima&lt;br/&gt;profile_L-1 &lt; profile_L &gt; profile_L+1]
+        P2 --&gt; P3{Local maxima&lt;br/&gt;exist exclude L=1?}
+        P3 --&gt;|Yes| P4[Return smallest L&lt;br/&gt;with best value]
+        P3 --&gt;|No| P5[Return smallest L&lt;br/&gt;with globally best value]
+        P4 --&gt; P6[Best L&lt;br/&gt;e.g., L = 4 bars]
+        P5 --&gt; P6
+    end
+
+    Choose --&gt; PowerOf2
+    PowerOf2 --&gt; Output[drum: L]
+
+    style VectorCreation fill:#e1f5ff,stroke:#000,color:#000
+    style Similarity fill:#ffe1f5,stroke:#000,color:#000
+    style LagExtraction fill:#e1ffe1,stroke:#000,color:#000
+    style PowerOf2 fill:#fff4e1,stroke:#000,color:#000
+    style Output fill:#ffcccc,stroke:#000,color:#000
+</div><hr>
+<h2 id="method-2-mel-band-pattern-detection-detailed">Method 2: Mel-Band Pattern Detection (Detailed) </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start[Input: drums.wav + Bar Times] --&gt; Filter{Filter Bars}
+    Filter --&gt;|Default| FullBars[Only FULL bars&lt;br/&gt;bar_start &gt;= snippet_start&lt;br/&gt;bar_end &lt;= snippet_end]
+    Filter --&gt;|use_all_bars=True| AllBars[All corrected bars]
+
+    FullBars --&gt; LoadAudio[Load Audio&lt;br/&gt;sr=22050 Hz, mono]
+    AllBars --&gt; LoadAudio
+
+    LoadAudio --&gt; ComputeMel[Compute Log-Mel Spectrogram]
+
+    subgraph MelComputation["&lt;b&gt;Mel-Spectrogram Computation&lt;/b&gt;"]
+        M1[STFT Parameters:&lt;br/&gt;n_fft=2048&lt;br/&gt;hop=512&lt;br/&gt;n_mels=48] --&gt; M2[Mel filterbank&lt;br/&gt;20 Hz - 10 kHz]
+        M2 --&gt; M3[Power spectrogram&lt;br/&gt;S_mel = mel_filter @ abs STFT squared]
+        M3 --&gt; M4[Convert to dB&lt;br/&gt;D = 10 * log10 S_mel]
+        M4 --&gt; M5[Min-Max Normalize&lt;br/&gt;D_norm = D - min / max - min]
+        M5 --&gt; M6[Result: 48 × T matrix&lt;br/&gt;48 mel bands, T time frames]
+    end
+
+    ComputeMel --&gt; MelComputation
+    MelComputation --&gt; ExtractPatches[For Each Bar:&lt;br/&gt;Extract &amp; Resample Patch]
+
+    subgraph PatchExtraction["&lt;b&gt;Bar Patch Extraction&lt;/b&gt;"]
+        PE1[Convert bar times to frames&lt;br/&gt;fps = sr / hop_length&lt;br/&gt;a = floor t0 * fps&lt;br/&gt;b = ceil t1 * fps] --&gt; PE2[Extract patch&lt;br/&gt;P = D_norm mels, a:b]
+        PE2 --&gt; PE3[Resample to fixed 64 frames&lt;br/&gt;Time warping via interpolation]
+        PE3 --&gt; PE4{Bar duration&lt;br/&gt;varies?}
+        PE4 --&gt;|Yes| PE5[Stretch/compress&lt;br/&gt;to 64 frames]
+        PE4 --&gt;|No| PE6[Already 64 frames]
+        PE5 --&gt; PE7[Result: 48 × 64 patch&lt;br/&gt;Normalized bar representation]
+        PE6 --&gt; PE7
+    end
+
+    ExtractPatches --&gt; PatchExtraction
+    PatchExtraction --&gt; SimMatrix[Build N×N&lt;br/&gt;Similarity Matrix]
+
+    subgraph Similarity["&lt;b&gt;Band-wise Circular XCorr&lt;/b&gt;"]
+        S1[For each pair i,j:&lt;br/&gt;patches Pi, Pj&lt;br/&gt;each 48 × 64] --&gt; S2[Initialize accumulator&lt;br/&gt;acc = zeros 64&lt;br/&gt;denom = 0]
+        S2 --&gt; S3[For each mel band m=0..47]
+        S3 --&gt; S4[Get band vectors&lt;br/&gt;ri = Pi_m,:, qj = Pj_m,:]
+        S4 --&gt; S5[FFT both vectors&lt;br/&gt;Ri = fft ri&lt;br/&gt;Qj = fft qj]
+        S5 --&gt; S6[Circular correlation&lt;br/&gt;corr = ifft Ri * conj Qj]
+        S6 --&gt; S7[Accumulate&lt;br/&gt;acc += corr&lt;br/&gt;denom += norm ri * norm qj]
+        S7 --&gt; S8{More bands?}
+        S8 --&gt;|Yes| S3
+        S8 --&gt;|No| S9[Find maximum shift&lt;br/&gt;max_corr = max acc]
+        S9 --&gt; S10[Normalize across all bands&lt;br/&gt;sim_i,j = max_corr / denom]
+    end
+
+    SimMatrix --&gt; Similarity
+    Similarity --&gt; LagProfile[Extract Bar-Lag Profile]
+
+    subgraph LagExtraction["&lt;b&gt;Lag Profile Extraction&lt;/b&gt;"]
+        L1[For lag = 1 to N-1] --&gt; L2[Get diagonal L&lt;br/&gt;sim_0,L, sim_1,L+1, ..., sim_N-L,N]
+        L2 --&gt; L3[Compute median&lt;br/&gt;profile_L = median diagonal_L]
+        L3 --&gt; L4{More lags?}
+        L4 --&gt;|Yes| L1
+        L4 --&gt;|No| L5[Profile:&lt;br/&gt;lag → similarity]
+    end
+
+    LagProfile --&gt; LagExtraction
+    LagExtraction --&gt; Choose[Choose Best Power-of-2]
+
+    subgraph PowerOf2["&lt;b&gt;Power-of-2 Selection&lt;/b&gt;"]
+        P1[Filter to L in 1,2,4,8] --&gt; P2[Find local maxima&lt;br/&gt;profile_L-1 &lt; profile_L &gt; profile_L+1]
+        P2 --&gt; P3{Local maxima&lt;br/&gt;exist exclude L=1?}
+        P3 --&gt;|Yes| P4[Return smallest L&lt;br/&gt;with best value]
+        P3 --&gt;|No| P5[Return smallest L&lt;br/&gt;with globally best value]
+        P4 --&gt; P6[Best L&lt;br/&gt;e.g., L = 2 bars]
+        P5 --&gt; P6
+    end
+
+    Choose --&gt; PowerOf2
+    PowerOf2 --&gt; Output[mel: L]
+
+    style MelComputation fill:#e1f5ff,stroke:#000,color:#000
+    style PatchExtraction fill:#ffe1f5,stroke:#000,color:#000
+    style Similarity fill:#e1ffe1,stroke:#000,color:#000
+    style LagExtraction fill:#fff4e1,stroke:#000,color:#000
+    style PowerOf2 fill:#f5e1ff,stroke:#000,color:#000
+    style Output fill:#ffcccc,stroke:#000,color:#000
+</div><hr>
+<h2 id="method-3-bass-pitch-pattern-detection-detailed">Method 3: Bass Pitch Pattern Detection (Detailed) </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start[Input: bass.wav + Bar Times] --&gt; Filter{Filter Bars}
+    Filter --&gt;|Default| FullBars[Only FULL bars&lt;br/&gt;bar_start &gt;= snippet_start&lt;br/&gt;bar_end &lt;= snippet_end]
+    Filter --&gt;|use_all_bars=True| AllBars[All corrected bars]
+
+    FullBars --&gt; LoadAudio[Load Audio Snippet]
+    AllBars --&gt; LoadAudio
+
+    LoadAudio --&gt; F0Extract[F0 Extraction&lt;br/&gt;Melodia Algorithm]
+
+    subgraph F0Extraction["&lt;b&gt;F0 Extraction Melodia&lt;/b&gt;"]
+        F1[Load bass.wav&lt;br/&gt;Snippet region only] --&gt; F2[STFT Parameters:&lt;br/&gt;n_fft=2048&lt;br/&gt;hop=256&lt;br/&gt;sr=original]
+        F2 --&gt; F3[Compute Salience&lt;br/&gt;55 Hz - 1760 Hz]
+        F3 --&gt; F4[Salience = Sum of harmonic peaks&lt;br/&gt;weighted by amplitude]
+        F4 --&gt; F5[Peak extraction&lt;br/&gt;per time frame]
+        F5 --&gt; F6[Voicing detection&lt;br/&gt;threshold salience]
+        F6 --&gt; F7[Output F0 time series&lt;br/&gt;f0 t, unvoiced = 0 or NaN]
+        F7 --&gt; F8[Save to bass_f0.csv&lt;br/&gt;time, f0_hz columns]
+    end
+
+    F0Extract --&gt; F0Extraction
+    F0Extraction --&gt; CreateVectors[For Each Bar:&lt;br/&gt;Create Pitch Vector]
+
+    subgraph VectorCreation["&lt;b&gt;Pitch Vector Normalization&lt;/b&gt;"]
+        VC1[Filter F0 to bar range&lt;br/&gt;t0 &lt;= t &lt; t1&lt;br/&gt;f0 &gt; 0, finite] --&gt; VC2{Any pitch&lt;br/&gt;in this bar?}
+        VC2 --&gt;|No| VC3[Return zeros 16]
+        VC2 --&gt;|Yes| VC4[Get segment times &amp; F0&lt;br/&gt;seg_t, seg_f0]
+        VC4 --&gt; VC5[Resample to 16 bins&lt;br/&gt;Linearly interpolate&lt;br/&gt;f_res = interp x_new, seg_t, seg_f0]
+        VC5 --&gt; VC6[Z-score normalize&lt;br/&gt;f_res -= mean f_res&lt;br/&gt;f_res /= std f_res + 1e-9]
+        VC6 --&gt; VC7[Result: 16-element vector&lt;br/&gt;Normalized pitch contour]
+        VC3 --&gt; VC7
+    end
+
+    CreateVectors --&gt; VectorCreation
+    VectorCreation --&gt; SimMatrix[Build N×N&lt;br/&gt;Similarity Matrix]
+
+    subgraph Similarity["&lt;b&gt;Beat-Aligned Circular XCorr&lt;/b&gt;"]
+        S1[For each pair i,j:&lt;br/&gt;vectors vi, vj&lt;br/&gt;each 16 elements] --&gt; S2[Compute beat-aligned shifts&lt;br/&gt;step = 16 / time_sig&lt;br/&gt;shifts = 0, step, 2*step, 3*step&lt;br/&gt;e.g., 4/4: 0,4,8,12]
+        S2 --&gt; S3[For each shift s]
+        S3 --&gt; S4[Rotate vector&lt;br/&gt;vj_rot = roll vj, s]
+        S4 --&gt; S5[Compute dot product&lt;br/&gt;dot = vi · vj_rot]
+        S5 --&gt; S6[Normalize&lt;br/&gt;sim = dot / norm vi * norm vj]
+        S6 --&gt; S7{More shifts?}
+        S7 --&gt;|Yes| S3
+        S7 --&gt;|No| S8[Take maximum&lt;br/&gt;sim_i,j = max all shifts sim]
+    end
+
+    SimMatrix --&gt; Similarity
+    Similarity --&gt; LagProfile[Extract Bar-Lag Profile]
+
+    subgraph LagExtraction["&lt;b&gt;Lag Profile Extraction&lt;/b&gt;"]
+        L1[For lag = 1 to N-1] --&gt; L2[Get diagonal L&lt;br/&gt;sim_0,L, sim_1,L+1, ..., sim_N-L,N]
+        L2 --&gt; L3[Compute median&lt;br/&gt;profile_L = median diagonal_L]
+        L3 --&gt; L4{More lags?}
+        L4 --&gt;|Yes| L1
+        L4 --&gt;|No| L5[Profile:&lt;br/&gt;lag → similarity]
+    end
+
+    LagProfile --&gt; LagExtraction
+    LagExtraction --&gt; Choose[Choose Best Power-of-2]
+
+    subgraph PowerOf2["&lt;b&gt;Power-of-2 Selection&lt;/b&gt;"]
+        P1[Filter to L in 1,2,4,8] --&gt; P2[Find local maxima&lt;br/&gt;profile_L-1 &lt; profile_L &gt; profile_L+1]
+        P2 --&gt; P3{Local maxima&lt;br/&gt;exist exclude L=1?}
+        P3 --&gt;|Yes| P4[Return smallest L&lt;br/&gt;with best value]
+        P3 --&gt;|No| P5[Return smallest L&lt;br/&gt;with globally best value]
+        P4 --&gt; P6[Best L&lt;br/&gt;e.g., L = 4 bars]
+        P5 --&gt; P6
+    end
+
+    Choose --&gt; PowerOf2
+    PowerOf2 --&gt; Output[pitch: L]
+
+    style F0Extraction fill:#e1f5ff,stroke:#000,color:#000
+    style VectorCreation fill:#ffe1f5,stroke:#000,color:#000
+    style Similarity fill:#e1ffe1,stroke:#000,color:#000
+    style LagExtraction fill:#fff4e1,stroke:#000,color:#000
+    style PowerOf2 fill:#f5e1ff,stroke:#000,color:#000
+    style Output fill:#ffcccc,stroke:#000,color:#000
+</div><hr>
+<h2 id="pattern-detection-similarity-matrix-visualization">Pattern Detection: Similarity Matrix Visualization </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart LR
+    subgraph Step1["&lt;b&gt;1. Build Similarity Matrix&lt;/b&gt;"]
+        S1["Compare every bar to every other bar&lt;br/&gt;using circular cross-correlation&lt;br/&gt;&lt;br/&gt;Result: N×N matrix&lt;br/&gt;where matrix_i,j = similarity bar_i, bar_j&lt;br/&gt;&lt;br/&gt;Diagonal = 1.0 perfect self-similarity&lt;br/&gt;High values = similar bars&lt;br/&gt;Low values = different bars"]
+    end
+
+    subgraph Step2["&lt;b&gt;2. Extract Diagonals&lt;/b&gt;"]
+        S2["Diagonal at lag L contains&lt;br/&gt;bar-to-bar similarities L bars apart&lt;br/&gt;&lt;br/&gt;Lag 1: sim_0,1, sim_1,2, sim_2,3, ...&lt;br/&gt;Lag 2: sim_0,2, sim_1,3, sim_2,4, ...&lt;br/&gt;Lag 4: sim_0,4, sim_1,5, sim_2,6, ...&lt;br/&gt;&lt;br/&gt;If pattern repeats every L bars,&lt;br/&gt;diagonal L will have HIGH values"]
+    end
+
+    subgraph Step3["&lt;b&gt;3. Compute Median&lt;/b&gt;"]
+        S3["For each lag L:&lt;br/&gt;median_L = median of diagonal_L&lt;br/&gt;&lt;br/&gt;This gives the typical similarity&lt;br/&gt;between bars L bars apart&lt;br/&gt;&lt;br/&gt;Peak at lag L means&lt;br/&gt;pattern length = L bars"]
+    end
+
+    subgraph Step4["&lt;b&gt;4. Power-of-2 Selection&lt;/b&gt;"]
+        S4["Filter to L in 1, 2, 4, 8&lt;br/&gt;&lt;br/&gt;Find local maxima&lt;br/&gt;where median_L &gt; median_L-1&lt;br/&gt;and median_L &gt; median_L+1&lt;br/&gt;&lt;br/&gt;Return smallest L with best value&lt;br/&gt;&lt;br/&gt;Example: If median_4 = 0.91 is highest&lt;br/&gt;Result: Pattern length L = 4 bars"]
+    end
+
+    Step1 --&gt; Step2
+    Step2 --&gt; Step3
+    Step3 --&gt; Step4
+
+    style Step1 fill:#e1f5ff,stroke:#000,color:#000
+    style Step2 fill:#ffe1f5,stroke:#000,color:#000
+    style Step3 fill:#e1ffe1,stroke:#000,color:#000
+    style Step4 fill:#fff4e1,stroke:#000,color:#000
+</div><h3 id="example-8-bar-pattern-with-l4-repetition">Example: 8-Bar Pattern with L=4 Repetition </h3>
+<p><strong>Similarity Matrix (8×8):</strong></p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>       Bar0  Bar1  Bar2  Bar3  Bar4  Bar5  Bar6  Bar7
+Bar0 │ 1.00  0.45  0.32  0.28  0.92  0.41  0.29  0.25 │
+Bar1 │ 0.45  1.00  0.43  0.31  0.44  0.89  0.40  0.28 │
+Bar2 │ 0.32  0.43  1.00  0.42  0.31  0.43  0.87  0.39 │
+Bar3 │ 0.28  0.31  0.42  1.00  0.27  0.30  0.41  0.85 │
+Bar4 │ 0.92  0.44  0.31  0.27  1.00  0.43  0.30  0.26 │
+Bar5 │ 0.41  0.89  0.43  0.30  0.43  1.00  0.42  0.29 │
+Bar6 │ 0.29  0.40  0.87  0.41  0.30  0.42  1.00  0.40 │
+Bar7 │ 0.25  0.28  0.39  0.85  0.26  0.29  0.40  1.00 │
+</code></pre><p><strong>Diagonal Extraction:</strong></p>
+<ul>
+<li><strong>Lag 1:</strong> [0.45, 0.43, 0.42, 0.27, 0.43, 0.42, 0.40] → median = <strong>0.42</strong></li>
+<li><strong>Lag 2:</strong> [0.32, 0.31, 0.42, 0.31, 0.43, 0.87] → median = <strong>0.37</strong></li>
+<li><strong>Lag 3:</strong> [0.28, 0.31, 0.42, 0.27, 0.30, 0.41] → median = <strong>0.31</strong></li>
+<li><strong>Lag 4:</strong> [<strong>0.92</strong>, 0.89, <strong>0.87</strong>, <strong>0.85</strong>] → median = <strong>0.88</strong> ⭐ <strong>PEAK!</strong></li>
+<li><strong>Lag 5:</strong> [0.41, 0.43, 0.41] → median = <strong>0.41</strong></li>
+</ul>
+<p><strong>Result:</strong> L = 4 bars (highest median at lag 4)</p>
+<p><strong>Interpretation:</strong></p>
+<ul>
+<li>Bar 0 and Bar 4 are very similar (0.92)</li>
+<li>Bar 1 and Bar 5 are very similar (0.89)</li>
+<li>Bar 2 and Bar 6 are very similar (0.87)</li>
+<li>Bar 3 and Bar 7 are very similar (0.85)</li>
+<li>This indicates a <strong>4-bar repeating pattern</strong></li>
+</ul>
+<hr>
+<h2 id="detailed-step-6-grid-correction-methods">Detailed Step 6: Grid Correction Methods </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Input[Corrected Downbeats + Onsets] --&gt; Split{Choose Correction Method}
+
+    Split --&gt; Uncorrected
+    Split --&gt; PerSnippet
+    Split --&gt; LoopBased
+
+    subgraph Uncorrected["&lt;b&gt;A: Uncorrected Grid&lt;/b&gt;"]
+        U1[Use Raw Downbeats] --&gt; U2[Create 16 Ticks Per Bar&lt;br/&gt;Based on bar duration]
+        U2 --&gt; U3[Match Onsets to&lt;br/&gt;Nearest Tick]
+        U3 --&gt; U4[Calculate Phase&lt;br/&gt;onset - grid / step]
+    end
+
+    subgraph PerSnippet["&lt;b&gt;B: Per-Snippet Correction&lt;/b&gt;"]
+        PS1[Find Reference Offset&lt;br/&gt;Priority ticks: 0,8,4,12] --&gt; PS2{Found within&lt;br/&gt;50% tolerance?}
+        PS2 --&gt;|Yes| PS3[ref_offset = onset - grid]
+        PS2 --&gt;|No| PS4[ref_offset = 0]
+        PS3 --&gt; PS5[Shift ALL Grid Times&lt;br/&gt;grid + ref_offset]
+        PS4 --&gt; PS5
+        PS5 --&gt; PS6[Calculate Phases&lt;br/&gt;with corrected grid]
+    end
+
+    subgraph LoopBased["&lt;b&gt;C: Loop-Based Correction&lt;/b&gt;"]
+        LB1[Divide into Loops&lt;br/&gt;Pattern: L=1,2,4,8 bars] --&gt; LB2[For Each Loop:&lt;br/&gt;Create Equidistant Grid]
+        LB2 --&gt; LB3[Duration / pattern × 16]
+        LB3 --&gt; LB4[Find Loop Ref Offset&lt;br/&gt;Search all bars]
+        LB4 --&gt; LB5{Found?}
+        LB5 --&gt;|Yes| LB6[Shift Loop Grid]
+        LB5 --&gt;|No| LB7[Use offset = 0]
+        LB6 --&gt; LB8[Calculate Phases]
+        LB7 --&gt; LB8
+        LB8 --&gt; LB9{More loops?}
+        LB9 --&gt;|Yes| LB2
+        LB9 --&gt;|No| LB10[Combine All Loops]
+    end
+
+    U4 --&gt; Output
+    PS6 --&gt; Output
+    LB10 --&gt; Output[comprehensive_phases.csv&lt;br/&gt;All methods combined]
+
+    style Uncorrected fill:#e1f5ff,stroke:#000,color:#000
+    style PerSnippet fill:#ffe1f5,stroke:#000,color:#000
+    style LoopBased fill:#e1ffe1,stroke:#000,color:#000
+</div><hr>
+<h2 id="output-generation-flow">Output Generation Flow </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart LR
+    Input[comprehensive_phases.csv] --&gt; Split{Generate Outputs}
+
+    Split --&gt; RMS
+    Split --&gt; Audio
+    Split --&gt; Plots
+    Split --&gt; Tempo
+    Split --&gt; MIDI
+    Split --&gt; Loops
+
+    subgraph RMS["&lt;b&gt;RMS Calculation&lt;/b&gt;"]
+        R1[For Each Method:&lt;br/&gt;Calculate RMS phase] --&gt; R2[RMS in phase units]
+        R1 --&gt; R3[RMS in milliseconds]
+        R2 --&gt; R4[rms_summary.json]
+        R3 --&gt; R4
+    end
+
+    subgraph Audio["&lt;b&gt;Audio Examples&lt;/b&gt;"]
+        A1[For Each Method:&lt;br/&gt;Create Click Track] --&gt; A2[3kHz, 50ms clicks&lt;br/&gt;on downbeats]
+        A2 --&gt; A3[Mix with Original]
+        A3 --&gt; A4[8 MP3 files:&lt;br/&gt;uncorrected, per_snippet,&lt;br/&gt;drum, mel, pitch,&lt;br/&gt;L1, L2, L4]
+        A4 --&gt; A5[+ original.mp3]
+    end
+
+    subgraph Plots["&lt;b&gt;Raster Plots&lt;/b&gt;"]
+        P1[Plot 1: Comparison&lt;br/&gt;5 panels] --&gt; P4[raster_comparison.png]
+        P2[Plot 2: Standard&lt;br/&gt;5 panels] --&gt; P5[raster_standard.png]
+    end
+
+    subgraph Tempo["&lt;b&gt;Tempo Analysis&lt;/b&gt;"]
+        T1[8-panel Plot&lt;br/&gt;Uncorrected vs Corrected] --&gt; T3[tempo_plots.pdf]
+        T2[Bar-by-bar Tempo CSV] --&gt; T4[bar_tempos.csv]
+    end
+
+    subgraph MIDI["&lt;b&gt;MIDI Export&lt;/b&gt;"]
+        M1[Onset MIDI:&lt;br/&gt;7 files per method] --&gt; M3[8_midi/onset/]
+        M2[Bass Pitch MIDI:&lt;br/&gt;7 files per method] --&gt; M4[8_midi/bass_pitch/]
+    end
+
+    subgraph Loops["&lt;b&gt;Stem Loops&lt;/b&gt;"]
+        L1[For Each Method:&lt;br/&gt;Extract Loop Range] --&gt; L2[Apply 5ms Crossfade]
+        L2 --&gt; L3[Export 5 Stems&lt;br/&gt;vocals, drums, bass,&lt;br/&gt;piano, other]
+        L3 --&gt; L4[7 method folders&lt;br/&gt;× 5 stems each]
+    end
+
+    R4 --&gt; Final
+    A5 --&gt; Final
+    P4 --&gt; Final
+    P5 --&gt; Final
+    T3 --&gt; Final
+    T4 --&gt; Final
+    M3 --&gt; Final
+    M4 --&gt; Final
+    L4 --&gt; Final[pipeline_results.json&lt;br/&gt;Complete Summary]
+
+    style RMS fill:#e1f5ff,stroke:#000,color:#000
+    style Audio fill:#fff4e1,stroke:#000,color:#000
+    style Plots fill:#ffe1f5,stroke:#000,color:#000
+    style Tempo fill:#e1ffe1,stroke:#000,color:#000
+    style MIDI fill:#f5e1ff,stroke:#000,color:#000
+    style Loops fill:#ffffcc,stroke:#000,color:#000
+    style Final fill:#ffcccc,stroke:#000,color:#000
+</div><hr>
+<h2 id="complete-pipeline-architecture">Complete Pipeline Architecture </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+graph TB
+    subgraph Input["&lt;b&gt;Input&lt;/b&gt;"]
+        I1[Mixed Audio&lt;br/&gt;WAV/MP3]
+    end
+
+    subgraph Processing["&lt;b&gt;Core Processing Steps&lt;/b&gt;"]
+        S1[Step 1: Stem Separation&lt;br/&gt;Spleeter U-Net]
+        S2[Step 2: Beat Detection&lt;br/&gt;Beat-Transformer + DBN]
+        S3[Step 3: Downbeat Correction&lt;br/&gt;Factor-of-2 Fix]
+        S4[Step 4: Onset Detection&lt;br/&gt;Librosa HFC]
+        S5[Step 5: Pattern Detection&lt;br/&gt;3 Methods]
+        S6[Step 6: Grid Correction&lt;br/&gt;Multiple Methods]
+    end
+
+    subgraph Outputs["&lt;b&gt;Analysis Outputs&lt;/b&gt;"]
+        O1[RMS Metrics]
+        O2[Audio Examples]
+        O3[Raster Plots]
+        O4[Tempo Plots]
+        O5[MIDI Files]
+        O6[Stem Loops]
+        O7[Results JSON]
+    end
+
+    I1 --&gt; S1
+    S1 --&gt; S2
+    S1 --&gt; S4
+    S2 --&gt; S3
+    S3 --&gt; S5
+    S3 --&gt; S6
+    S4 --&gt; S5
+    S4 --&gt; S6
+    S5 --&gt; S6
+
+    S6 --&gt; O1
+    S6 --&gt; O2
+    S6 --&gt; O3
+    S6 --&gt; O4
+    S6 --&gt; O5
+    S6 --&gt; O6
+
+    O1 --&gt; O7
+    O2 --&gt; O7
+    O3 --&gt; O7
+    O4 --&gt; O7
+    O5 --&gt; O7
+    O6 --&gt; O7
+
+    style Input fill:#e1f5ff,stroke:#000,color:#000
+    style Processing fill:#ffe1f5,stroke:#000,color:#000
+    style Outputs fill:#e1ffe1,stroke:#000,color:#000
+</div><hr>
+<h2 id="data-dependencies">Data Dependencies </h2>
+<div class="mermaid">%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+graph TD
+    Audio[Audio File] --&gt; Stems[5 Stems]
+    Stems --&gt; NPZ[Mel-Spec NPZ]
+    Stems --&gt; Drums[drums.wav]
+    Stems --&gt; Bass[bass.wav]
+
+    NPZ --&gt; Beats[Raw Beats]
+    Beats --&gt; CorrectedBeats[Corrected Downbeats]
+
+    Drums --&gt; Onsets[Onset Times]
+
+    CorrectedBeats --&gt; Patterns[Pattern Lengths]
+    Onsets --&gt; Patterns
+    Drums --&gt; Patterns
+    Bass --&gt; Patterns
+
+    CorrectedBeats --&gt; Phases[Phase Calculations]
+    Onsets --&gt; Phases
+    Patterns --&gt; Phases
+
+    Phases --&gt; Outputs[All Analysis Outputs]
+
+    style Audio fill:#e1f5ff
+    style CorrectedBeats fill:#ffe1f5
+    style Phases fill:#e1ffe1
+    style Outputs fill:#ffffcc
+</div><hr>
+<h2 id="legend">Legend </h2>
+<ul>
+<li><strong>Blue boxes</strong>: Input/intermediate audio data</li>
+<li><strong>Pink boxes</strong>: Beat/rhythm detection</li>
+<li><strong>Green boxes</strong>: Pattern/timing analysis</li>
+<li><strong>Purple boxes</strong>: Grid correction</li>
+<li><strong>Yellow boxes</strong>: Final outputs</li>
+<li><strong>Red boxes</strong>: Summary/results files</li>
+</ul>
+<hr>
+<h2 id="notes">Notes </h2>
+<ul>
+<li>Steps 2 and 4 can run in parallel</li>
+<li>Step 6 produces the most important output: <code>comprehensive_phases.csv</code></li>
+<li>All correction methods are calculated simultaneously and stored in one CSV</li>
+<li>Users can compare methods using RMS metrics or by listening to audio examples</li>
+</ul>
+
+      </div>
+      
+      
+    
+    
+    <script type="module">
+// TODO: If ZenUML gets integrated into mermaid in the future,
+//      we can remove the following lines.
+
+
+var MERMAID_CONFIG = ({"startOnLoad":false});
+if (typeof MERMAID_CONFIG !== 'undefined') {
+  MERMAID_CONFIG.startOnLoad = false
+  MERMAID_CONFIG.cloneCssStyles = false
+  MERMAID_CONFIG.theme = "default"
+}
+
+mermaid.initialize(MERMAID_CONFIG || {})
+if (typeof(window['Reveal']) !== 'undefined') {
+  function mermaidRevealHelper(event) {
+    var currentSlide = event.currentSlide
+    var diagrams = currentSlide.querySelectorAll('.mermaid')
+    for (var i = 0; i < diagrams.length; i++) {
+      var diagram = diagrams[i]
+      if (!diagram.hasAttribute('data-processed')) {
+        mermaid.init(null, diagram, ()=> {
+          Reveal.slide(event.indexh, event.indexv)
+        })
+      }
+    }
+  }
+  Reveal.addEventListener('slidetransitionend', mermaidRevealHelper)
+  Reveal.addEventListener('ready', mermaidRevealHelper)
+  await mermaid.run({
+    nodes: document.querySelectorAll('.mermaid')
+  })
+} else {
+  await mermaid.run({
+    nodes: document.querySelectorAll('.mermaid')
+  })
+}
+</script>
+    
+    
+    
+  
+    </body></html>

@@ -196,6 +196,11 @@ def calculate_rms_from_csv(
         col_mel = [c for c in df.columns if 'phase_mel(L=' in c][0]
         col_pitch = [c for c in df.columns if 'phase_pitch(L=' in c][0]
 
+        # Get column names for standard methods
+        col_std_l1 = [c for c in df.columns if 'phase_standard_L1(L=' in c][0] if [c for c in df.columns if 'phase_standard_L1(L=' in c] else None
+        col_std_l2 = [c for c in df.columns if 'phase_standard_L2(L=' in c][0] if [c for c in df.columns if 'phase_standard_L2(L=' in c] else None
+        col_std_l4 = [c for c in df.columns if 'phase_standard_L4(L=' in c][0] if [c for c in df.columns if 'phase_standard_L4(L=' in c] else None
+
         # Extract phase values (only rows with actual onsets)
         phases_uncorr = df['phase_uncorrected'].dropna().values
         phases_per_snippet = df['phase_per_snippet'].dropna().values
@@ -207,6 +212,11 @@ def calculate_rms_from_csv(
         grid_col_drum = [c for c in df.columns if 'grid_time_drum(L=' in c][0]
         grid_col_mel = [c for c in df.columns if 'grid_time_mel(L=' in c][0]
         grid_col_pitch = [c for c in df.columns if 'grid_time_pitch(L=' in c][0]
+
+        # Get grid time column names for standard methods
+        grid_col_std_l1 = [c for c in df.columns if 'grid_time_standard_L1(L=' in c][0] if [c for c in df.columns if 'grid_time_standard_L1(L=' in c] else None
+        grid_col_std_l2 = [c for c in df.columns if 'grid_time_standard_L2(L=' in c][0] if [c for c in df.columns if 'grid_time_standard_L2(L=' in c] else None
+        grid_col_std_l4 = [c for c in df.columns if 'grid_time_standard_L4(L=' in c][0] if [c for c in df.columns if 'grid_time_standard_L4(L=' in c] else None
 
         # Calculate RMS in both units
         rms_values = {
@@ -224,6 +234,20 @@ def calculate_rms_from_csv(
             'pitch_phase': calculate_phase_rms(phases_pitch),
             'pattern_lengths': pattern_lengths
         }
+
+        # Add standard loop methods if they exist
+        if col_std_l1:
+            phases_std_l1 = df[col_std_l1].dropna().values
+            rms_values['standard_L1_ms'] = calculate_phase_rms_ms(df, col_std_l1, grid_col_std_l1)
+            rms_values['standard_L1_phase'] = calculate_phase_rms(phases_std_l1)
+        if col_std_l2:
+            phases_std_l2 = df[col_std_l2].dropna().values
+            rms_values['standard_L2_ms'] = calculate_phase_rms_ms(df, col_std_l2, grid_col_std_l2)
+            rms_values['standard_L2_phase'] = calculate_phase_rms(phases_std_l2)
+        if col_std_l4:
+            phases_std_l4 = df[col_std_l4].dropna().values
+            rms_values['standard_L4_ms'] = calculate_phase_rms_ms(df, col_std_l4, grid_col_std_l4)
+            rms_values['standard_L4_phase'] = calculate_phase_rms(phases_std_l4)
 
         return rms_values
 

@@ -369,6 +369,149 @@ def create_raster_comparison_plot(
     print(f"  ✓ Raster comparison plot saved to {output_file}")
 
 
+def create_raster_standard_plot(
+    csv_file: str,
+    output_file: str,
+    track_id: str,
+    rms_values: Optional[dict] = None
+):
+    """
+    Create 5-panel raster plot comparing standard loop correction methods.
+
+    Shows comparison of:
+    1. Uncorrected
+    2. Standard L=1 (1-bar loop)
+    3. Standard L=2 (2-bar loop)
+    4. Standard L=4 (4-bar loop)
+    5. Per-snippet
+
+    Parameters
+    ----------
+    csv_file : str
+        Path to comprehensive phases CSV
+    output_file : str
+        Output PNG/PDF file path
+    track_id : str
+        Track identifier
+    rms_values : dict, optional
+        Dictionary with RMS values for each method
+
+    Examples
+    --------
+    >>> create_raster_standard_plot(
+    ...     'track_comprehensive_phases.csv',
+    ...     'track_raster_standard.png',
+    ...     'track_123'
+    ... )
+    """
+    # Load data
+    df = pd.read_csv(csv_file)
+
+    # Load reference onsets if available
+    ref_onsets = None
+    csv_path = Path(csv_file)
+    ref_file = csv_path.parent / f"{csv_path.stem}_reference_onsets.csv"
+    if ref_file.exists():
+        ref_onsets = pd.read_csv(ref_file)
+        print(f"  Loaded {len(ref_onsets)} reference onsets for standard plot")
+
+    # Determine number of bars for figure height
+    n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 10
+    fig_height = max(8, min(20, 0.15 * n_bars))
+
+    # Create figure with 5 subplots
+    fig = plt.figure(figsize=(12, fig_height * 2.5))
+    gs = fig.add_gridspec(5, 1, height_ratios=[1, 1, 1, 1, 1], hspace=0.3)
+    axes = [fig.add_subplot(gs[i]) for i in range(5)]
+
+    # Get RMS values if provided
+    rms_uncorr = rms_values.get('uncorrected_ms') if rms_values else None
+    rms_std_l1 = rms_values.get('standard_L1_ms') if rms_values else None
+    rms_std_l2 = rms_values.get('standard_L2_ms') if rms_values else None
+    rms_std_l4 = rms_values.get('standard_L4_ms') if rms_values else None
+    rms_per_snip = rms_values.get('per_snippet_ms') if rms_values else None
+
+    # Plot 1: Uncorrected (no references)
+    plot_raster_single(
+        axes[0], df, 'phase_uncorrected',
+        'Uncorrected', track_id, rms_ms=rms_uncorr
+    )
+
+    # Plot 2: Standard L=1
+    std_l1_col = None
+    for col in df.columns:
+        if col.startswith('phase_standard_L1'):
+            std_l1_col = col
+            break
+
+    if std_l1_col:
+        plot_raster_single(
+            axes[1], df, std_l1_col,
+            'Standard L=1 (1-bar loop)', track_id, rms_ms=rms_std_l1,
+            ref_onsets=ref_onsets, method_name='standard_L1(L=1)'
+        )
+    else:
+        axes[1].text(0.5, 0.5, 'No standard L=1 data',
+                     ha='center', va='center', transform=axes[1].transAxes)
+        axes[1].set_title(f"Onset raster — Track {track_id} — Standard L=1")
+
+    # Plot 3: Standard L=2
+    std_l2_col = None
+    for col in df.columns:
+        if col.startswith('phase_standard_L2'):
+            std_l2_col = col
+            break
+
+    if std_l2_col:
+        plot_raster_single(
+            axes[2], df, std_l2_col,
+            'Standard L=2 (2-bar loop)', track_id, rms_ms=rms_std_l2,
+            ref_onsets=ref_onsets, method_name='standard_L2(L=2)'
+        )
+    else:
+        axes[2].text(0.5, 0.5, 'No standard L=2 data',
+                     ha='center', va='center', transform=axes[2].transAxes)
+        axes[2].set_title(f"Onset raster — Track {track_id} — Standard L=2")
+
+    # Plot 4: Standard L=4
+    std_l4_col = None
+    for col in df.columns:
+        if col.startswith('phase_standard_L4'):
+            std_l4_col = col
+            break
+
+    if std_l4_col:
+        plot_raster_single(
+            axes[3], df, std_l4_col,
+            'Standard L=4 (4-bar loop)', track_id, rms_ms=rms_std_l4,
+            ref_onsets=ref_onsets, method_name='standard_L4(L=4)'
+        )
+    else:
+        axes[3].text(0.5, 0.5, 'No standard L=4 data',
+                     ha='center', va='center', transform=axes[3].transAxes)
+        axes[3].set_title(f"Onset raster — Track {track_id} — Standard L=4")
+
+    # Plot 5: Per-snippet
+    plot_raster_single(
+        axes[4], df, 'phase_per_snippet_remapped',
+        'Per snippet', track_id, rms_ms=rms_per_snip,
+        ref_onsets=ref_onsets, method_name='per_snippet'
+    )
+
+    # Overall title
+    fig.suptitle(f"Track {track_id} — Raster Plots — Standard Loop Methods",
+                fontsize=13, fontweight="bold")
+    plt.subplots_adjust(top=0.96, bottom=0.05, hspace=0.3)
+
+    # Save
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"  ✓ Raster standard plot saved to {output_file}")
+
+
 def create_all_plots(
     csv_file: str,
     output_dir: str,
@@ -417,11 +560,20 @@ def create_all_plots(
             with open(rms_file_in_dir, 'r') as f:
                 rms_values = json.load(f)
 
-    # Create 5-panel raster comparison plot
+    # Create 5-panel raster comparison plot (drum/mel/pitch methods)
     print("  Creating raster comparison plot...")
     create_raster_comparison_plot(
         csv_file,
         str(output_dir / f"{track_id}_raster_comparison.png"),
+        track_id,
+        rms_values=rms_values
+    )
+
+    # Create 5-panel standard raster plot (standard L=1, L=2, L=4)
+    print("  Creating standard raster plot...")
+    create_raster_standard_plot(
+        csv_file,
+        str(output_dir / f"{track_id}_raster_standard.png"),
         track_id,
         rms_values=rms_values
     )

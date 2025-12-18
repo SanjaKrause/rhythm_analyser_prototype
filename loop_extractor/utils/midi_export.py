@@ -602,9 +602,9 @@ def comprehensive_csv_to_onset_midi(
         print(f"  ⚠️  No onset times found in comprehensive CSV")
         return midi_files
 
-    # Process each method: per_snippet, drum, mel, pitch
+    # Process each method: per_snippet, drum, mel, pitch, standard_L1, standard_L2, standard_L4
     if methods is None:
-        methods = ['per_snippet', 'drum', 'mel', 'pitch']
+        methods = ['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
 
     for method in methods:
         # Determine pattern length
@@ -754,9 +754,9 @@ def comprehensive_csv_to_pitch_midi(
         print(f"  ⚠️  Bass F0 CSV not found: {f0_csv_path}")
         return midi_files
 
-    # Process each method: per_snippet, drum, mel, pitch
+    # Process each method: per_snippet, drum, mel, pitch, standard_L1, standard_L2, standard_L4
     if methods is None:
-        methods = ['per_snippet', 'drum', 'mel', 'pitch']
+        methods = ['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
 
     for method in methods:
         # Determine pattern length

@@ -31,16 +31,16 @@ class LoopExtractorGUI:
         self.output_path = tk.StringVar()
         self.last_input_dir = None
         self.last_output_dir = None
-        self.apply_to_folder = tk.BooleanVar(value=False)
+        self.apply_to_folder = tk.BooleanVar(value=True)  # Default: apply to all files
 
         # Output mode
-        self.output_mode = tk.StringVar(value="daw_ready")  # "detailed" or "daw_ready"
+        self.output_mode = tk.StringVar(value="detailed")  # Default: detailed analysis + plots
 
         # Export format
         self.export_format = tk.StringVar(value="mp3")  # "wav" or "mp3"
 
         # Time selection mode
-        self.use_snippet_times = tk.BooleanVar(value=False)  # Use manual time range by default
+        self.use_snippet_times = tk.BooleanVar(value=True)  # Default: use snippet times
         self.manual_start_time = tk.DoubleVar(value=50.0)
         self.manual_end_time = tk.DoubleVar(value=80.0)
 

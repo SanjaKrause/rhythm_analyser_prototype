@@ -365,7 +365,7 @@ def create_audio_examples(
     import pandas as pd
 
     if methods is None:
-        methods = ['uncorrected', 'per_snippet', 'drum', 'mel', 'pitch']
+        methods = ['uncorrected', 'per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
 
     print(f"\nCreating audio examples...")
 
@@ -398,7 +398,7 @@ def create_audio_examples(
         elif method == 'per_snippet':
             col_name = 'grid_time_per_snippet'
         else:
-            # Loop-based methods (drum, mel, pitch)
+            # Loop-based methods (drum, mel, pitch, standard_L1, standard_L2, standard_L4)
             # Find column matching method
             matching_cols = [c for c in df.columns if f'grid_time_{method}' in c]
             if not matching_cols:
@@ -421,7 +421,7 @@ def create_audio_examples(
         mixed = mix_audio_with_clicks(audio_snippet, click_track, click_volume_db=0.0)
 
         # Export
-        # Use simple naming: uncorrected.mp3, per_snippet.mp3, drum.mp3, etc.
+        # Use simple naming: uncorrected.mp3, per_snippet.mp3, drum.mp3, standard_L1.mp3, etc.
         method_name = method if method in ['uncorrected', 'per_snippet'] else method
         output_file = output_dir / f"{method_name}.mp3"
         export_audio_to_mp3(mixed, str(output_file), sr)
@@ -549,9 +549,9 @@ def export_stem_loops(
     # Stem names (matching Spleeter 5-stem output)
     stem_names = ['vocals', 'drums', 'bass', 'piano', 'other']
 
-    # Methods to process (including per_snippet with fixed 4-bar loop)
+    # Methods to process (including per_snippet with fixed 4-bar loop and standard L=1, L=2, L=4)
     if methods is None:
-        methods = ['per_snippet', 'drum', 'mel', 'pitch']
+        methods = ['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
 
     exported_files = {}
 
