@@ -76,6 +76,9 @@ Bar-by-bar tempo comparison showing different tempo estimation methods across th
 
 Timing deviation analysis showing how drum onsets align with the detected grid across different correction methods.
 
+### Microtiming Deviation Plots
+Pattern-folded visualization showing onset deviations from the metrical grid. Each plot displays multiple loops as colored lines, revealing the microtiming characteristics for different correction methods (Uncorrected, Per-Snippet, Standard L=1/L=2/L=4).
+
 ## Supported Audio Formats
 
 The pipeline supports both **WAV** and **MP3** audio files:

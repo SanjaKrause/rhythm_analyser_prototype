@@ -77,12 +77,13 @@ flowchart TD
     Step6 --> Analysis
 
     subgraph Analysis["<b>ANALYSIS & OUTPUTS</b>"]
-        G1[RMS Calculation<br/>Quantify correction quality]
-        G2[Audio Examples<br/>Click tracks for each method]
-        G3[Raster Plots<br/>2 plots: comparison & standard]
-        G4[Tempo Analysis<br/>8-panel plots + CSV]
-        G5[MIDI Export<br/>Onset + Bass Pitch]
-        G6[Stem Loops<br/>Perfect loops with crossfade]
+        G1[Raster Plots<br/>2 plots: comparison & standard]
+        G2[Microtiming Plots<br/>Pattern-folded deviation plots]
+        G3[RMS Calculation<br/>Quantify correction quality]
+        G4[Audio Examples<br/>Click tracks for each method]
+        G5[Tempo Analysis<br/>8-panel plots + CSV]
+        G6[MIDI Export<br/>Onset + Bass Pitch]
+        G7[Stem Loops<br/>Perfect loops with crossfade]
     end
 
     Analysis --> Final[pipeline_results.json<br/>Complete summary]
@@ -614,9 +615,10 @@ flowchart LR
         A4 --> A5[+ original.mp3]
     end
 
-    subgraph Plots["<b>Raster Plots</b>"]
-        P1[Plot 1: Comparison<br/>5 panels] --> P4[raster_comparison.png]
-        P2[Plot 2: Standard<br/>5 panels] --> P5[raster_standard.png]
+    subgraph Plots["<b>Raster & Microtiming Plots</b>"]
+        P1[Plot 1: Raster Comparison<br/>5 panels] --> P4[raster_comparison.png]
+        P2[Plot 2: Raster Standard<br/>5 panels] --> P5[raster_standard.png]
+        P3[Plot 3: Microtiming<br/>5 pattern-folded plots] --> P6[microtiming_plots.pdf]
     end
 
     subgraph Tempo["<b>Tempo Analysis</b>"]
@@ -639,6 +641,7 @@ flowchart LR
     A5 --> Final
     P4 --> Final
     P5 --> Final
+    P6 --> Final
     T3 --> Final
     T4 --> Final
     M3 --> Final
@@ -675,13 +678,14 @@ graph TB
     end
 
     subgraph Outputs["<b>Analysis Outputs</b>"]
-        O1[RMS Metrics]
-        O2[Audio Examples]
-        O3[Raster Plots]
-        O4[Tempo Plots]
-        O5[MIDI Files]
-        O6[Stem Loops]
-        O7[Results JSON]
+        O1[Raster Plots]
+        O2[Microtiming Plots]
+        O3[RMS Metrics]
+        O4[Audio Examples]
+        O5[Tempo Plots]
+        O6[MIDI Files]
+        O7[Stem Loops]
+        O8[Results JSON]
     end
 
     I1 --> S1
@@ -700,13 +704,15 @@ graph TB
     S6 --> O4
     S6 --> O5
     S6 --> O6
+    S6 --> O7
 
-    O1 --> O7
-    O2 --> O7
-    O3 --> O7
-    O4 --> O7
-    O5 --> O7
-    O6 --> O7
+    O1 --> O8
+    O2 --> O8
+    O3 --> O8
+    O4 --> O8
+    O5 --> O8
+    O6 --> O8
+    O7 --> O8
 
     style Input fill:#e1f5ff,stroke:#000,color:#000
     style Processing fill:#ffe1f5,stroke:#000,color:#000

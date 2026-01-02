@@ -6,6 +6,8 @@ Merges:
 - All tempo plots into all_tempo_plots.pdf
 - All raster comparison plots into all_raster_comparison.pdf
 - All raster standard plots into all_raster_standard.pdf
+- All microtiming plots into all_microtiming_plots.pdf
+- All rhythm histograms into all_rhythm_histograms.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -130,6 +132,44 @@ def merge_plots(output_dir: Path):
         merger.write(str(output_pdf))
         merger.close()
 
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 4. Merge microtiming plots (PDF files in 5_grid folder)
+    print('\nLooking for microtiming plots...')
+    microtiming_pdfs = []
+    for track_dir in track_dirs:
+        microtiming_pdf = track_dir / '5_grid' / f'{track_dir.name}_microtiming_plots.pdf'
+        if microtiming_pdf.exists():
+            microtiming_pdfs.append(microtiming_pdf)
+            print(f'  Found microtiming: {track_dir.name}')
+
+    if microtiming_pdfs:
+        print(f'\nMerging {len(microtiming_pdfs)} microtiming PDFs...')
+        output_pdf = batch_dir / 'all_microtiming_plots.pdf'
+        merger = PdfMerger()
+        for pdf in microtiming_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 5. Merge rhythm histograms (PDF files in 5.5_rhythm folder)
+    print('\nLooking for rhythm histograms...')
+    rhythm_pdfs = []
+    for track_dir in track_dirs:
+        rhythm_pdf = track_dir / '5.5_rhythm' / f'{track_dir.name}_rhythm_histograms.pdf'
+        if rhythm_pdf.exists():
+            rhythm_pdfs.append(rhythm_pdf)
+            print(f'  Found rhythm histogram: {track_dir.name}')
+
+    if rhythm_pdfs:
+        print(f'\nMerging {len(rhythm_pdfs)} rhythm histogram PDFs...')
+        output_pdf = batch_dir / 'all_rhythm_histograms.pdf'
+        merger = PdfMerger()
+        for pdf in rhythm_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # Clean up temporary files at the end

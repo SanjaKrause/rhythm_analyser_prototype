@@ -197,6 +197,12 @@ This document explains the internal workings of each step in the Loop Extractor 
                                                                    │  Output:           │
                                                                    │  • raster_comparison.png │
                                                                    │  • raster_standard.png   │
+                                                                   │  • microtiming_plots.pdf │
+                                                                   │                          │
+                                                                   │  Pattern-folded plots:   │
+                                                                   │  • Uncorrected           │
+                                                                   │  • Per-Snippet           │
+                                                                   │  • Standard L=1/L=2/L=4  │
                                                                    └────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1447,6 +1453,82 @@ onset_time(s),bar,tick_uncorrected,phase_uncorrected,grid_time_uncorrected(s),ph
 - Compare phase columns to see which method provides best correction
 - Lower phase deviation (closer to 0) = better grid alignment
 - RMS of phases quantifies overall correction quality
+
+---
+
+## 7. Microtiming Deviation Plots
+
+**File:** [loop_extractor/utils/microtiming_plots.py](loop_extractor/utils/microtiming_plots.py)
+
+### Purpose
+Visualize onset deviations from the metrical grid using pattern-folded raster plots, revealing microtiming characteristics across multiple loops and correction methods.
+
+### Method
+
+**Pattern Folding:**
+1. **Data Organization**: Divide bars into complete loops based on pattern length (L=1, L=2, or L=4 bars)
+2. **Fold into Pattern**: Map each loop's onsets to 16th-note positions within the pattern (0 to L×16)
+3. **Calculate Deviations**: `deviation_ms = (onset_time - grid_time) × 1000`
+4. **Visualize Multiple Loops**: Plot each loop as a colored line showing how onsets deviate from grid
+
+**Key Features:**
+- **X-axis**: 16th-note positions within pattern (0-16 for L=1, 0-32 for L=2, 0-64 for L=4)
+- **Y-axis**: Deviation in milliseconds (negative = early, positive = late)
+- **Multiple loops**: Each complete loop shown as separate colored line
+- **Grid reference**: Horizontal red dashed line at y=0 represents perfect grid alignment
+- **Bar boundaries**: Vertical gray dotted lines every 16 ticks mark bar divisions
+
+**Implementation Details:**
+```python
+# Filter finite values only
+mask = np.isfinite(deviations)
+xs = ticks[mask]
+ys = deviations[mask]
+
+# Sort by tick position for proper line connections
+order_idx = np.argsort(xs)
+xs_sorted = xs[order_idx]
+ys_sorted = ys[order_idx]
+
+# Single plot call with marker parameter
+ax.plot(xs_sorted, ys_sorted, linewidth=1.5, alpha=0.7, color=color,
+       marker='o', markersize=4, markerfacecolor=color, markeredgecolor='none',
+       label=f'Loop {i+1} (Bars {start_bar}-{end_bar})')
+```
+
+### Output
+
+**File:** `5_grid/{track_id}_microtiming_plots.pdf`
+
+**5 Plots (one page each):**
+1. **Uncorrected**: Raw onset deviations vs uncorrected grid (L=4 folding)
+2. **Per-Snippet**: Deviations after single snippet-wide offset correction (L=4 folding)
+3. **Standard L=1**: Deviations with 1-bar loop correction (L=1 folding)
+4. **Standard L=2**: Deviations with 2-bar loop correction (L=2 folding)
+5. **Standard L=4**: Deviations with 4-bar loop correction (L=4 folding)
+
+Each plot includes:
+- RMS value in title showing overall deviation magnitude
+- Legend identifying each loop by bar range
+- Grid reference line (y=0)
+- Bar boundary markers
+
+### Interpretation
+
+**What to Look For:**
+- **Systematic patterns**: Consistent deviation shapes across loops reveal intentional microtiming (groove)
+- **Loop consistency**: Similar shapes between loops suggest stable performance
+- **Loop variation**: Different shapes indicate expressive timing changes or performance variation
+- **RMS values**: Lower RMS indicates better grid alignment (more "quantized" feel)
+- **Deviation magnitude**: Typical values 10-50ms; <10ms often imperceptible, >50ms noticeable
+
+**Comparison Across Methods:**
+- **Uncorrected**: Shows raw timing including tempo drift
+- **Per-Snippet**: Removes global offset but keeps within-snippet timing intact
+- **Standard L=1/L=2/L=4**: Different pattern lengths reveal timing at different structural levels
+
+**Musical Insight:**
+These plots reveal the "human feel" in music - the subtle timing deviations that make performances groovy. Perfectly quantized music would show all loops as straight lines at y=0, while expressive performances show characteristic deviation patterns that repeat across loops.
 
 ---
 

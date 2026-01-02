@@ -56,7 +56,7 @@ config = config_module.config
 from stem_separation import spleeter_interface
 from beat_detection import transformer
 from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots
-from utils import audio_export, raster_plots, midi_export
+from utils import audio_export, raster_plots, midi_export, microtiming_plots
 
 
 def run_complete_pipeline(
@@ -573,6 +573,106 @@ def run_complete_pipeline(
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
+        # Don't raise - continue to microtiming plots
+
+    # ========================================================================
+    # STEP 5.6: MICROTIMING PLOTS
+    # ========================================================================
+    try:
+        if daw_ready:
+            if verbose:
+                print("\n[5.6/7] Microtiming plots - SKIPPED (DAW ready mode)")
+            results['steps_completed'].append('microtiming_plots_skipped_daw')
+        elif not paths['comprehensive_csv'].exists():
+            if verbose:
+                print("\n[5.6/7] Microtiming plots - SKIPPED (no comprehensive CSV)")
+            results['steps_completed'].append('microtiming_plots_skipped')
+        else:
+            # Check if microtiming plots already exist
+            grid_output_dir = paths['comprehensive_csv'].parent
+            microtiming_files_exist = (grid_output_dir / f'{track_id}_microtiming_plots.pdf').exists()
+
+            if skip_existing and microtiming_files_exist:
+                if verbose:
+                    print("\n[5.6/7] Microtiming plots - SKIPPED (exists)")
+                results['steps_completed'].append('microtiming_plots_skipped')
+            else:
+                if verbose:
+                    print("\n[5.6/7] Generating microtiming deviation plots...")
+
+                # Get snippet info from pattern detection results
+                snippet_info = results.get('snippet_info')
+
+                microtiming_pdf = microtiming_plots.create_microtiming_plots(
+                    str(paths['comprehensive_csv']),
+                    track_id,
+                    str(grid_output_dir),
+                    snippet_info=snippet_info
+                )
+
+                results['microtiming_plots_pdf'] = microtiming_pdf
+                results['steps_completed'].append('microtiming_plots')
+
+                if verbose:
+                    print(f"  ✓ Microtiming plots created")
+
+    except Exception as e:
+        error_msg = f"Step 5.6 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+        # Don't raise - continue to rhythm histograms
+
+    # ========================================================================
+    # STEP 5.7: RHYTHM HISTOGRAMS
+    # ========================================================================
+    try:
+        from utils import rhythm_histograms
+
+        if daw_ready:
+            if verbose:
+                print("\n[5.7/7] Rhythm histograms - SKIPPED (DAW ready mode)")
+            results['steps_completed'].append('rhythm_histograms_skipped_daw')
+        elif not paths['comprehensive_csv'].exists():
+            if verbose:
+                print("\n[5.7/7] Rhythm histograms - SKIPPED (no comprehensive CSV)")
+            results['steps_completed'].append('rhythm_histograms_skipped')
+        else:
+            # Define rhythm output directory based on the track directory
+            track_dir = Path(output_dir) / track_id
+            rhythm_output_dir = track_dir / '5.5_rhythm'
+
+            # Check if rhythm histograms already exist
+            rhythm_files_exist = (rhythm_output_dir / f'{track_id}_rhythm_histograms.pdf').exists()
+
+            if skip_existing and rhythm_files_exist:
+                if verbose:
+                    print("\n[5.7/7] Rhythm histograms - SKIPPED (exists)")
+                results['steps_completed'].append('rhythm_histograms_skipped')
+            else:
+                if verbose:
+                    print("\n[5.7/7] Generating rhythm histograms...")
+
+                rhythm_files = rhythm_histograms.create_rhythm_histograms(
+                    str(paths['comprehensive_csv']),
+                    track_id,
+                    str(rhythm_output_dir)
+                )
+
+                if rhythm_files:
+                    results['rhythm_histograms_pdf'] = rhythm_files.get('pdf')
+                    results['rhythm_histograms_csv'] = rhythm_files.get('csv')
+
+                results['steps_completed'].append('rhythm_histograms')
+
+                if verbose:
+                    print(f"  ✓ Rhythm histograms created")
+
+    except Exception as e:
+        error_msg = f"Step 5.7 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to RMS analysis
 
     # ========================================================================
@@ -684,12 +784,55 @@ def run_complete_pipeline(
         results['steps_completed'].append('audio_examples_disabled')
 
     # ========================================================================
-    # STEP 8: MIDI EXPORT
+    # STEP 8: LEPA DATA EXPORT
     # ========================================================================
     try:
         if not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[8/8] MIDI export - SKIPPED (no comprehensive CSV)")
+                print("\n[8/8] LEPA export - SKIPPED (no comprehensive CSV)")
+            results['steps_completed'].append('lepa_export_skipped')
+        else:
+            # Define LEPA output directory
+            lepa_output_dir = Path(output_dir) / track_id / '10_output_for_lepa'
+
+            # Check if LEPA export already exists
+            lepa_file_exists = (lepa_output_dir / f'{track_id}_bar_durations.csv').exists()
+
+            if skip_existing and lepa_file_exists:
+                if verbose:
+                    print("\n[8/8] LEPA export - SKIPPED (exists)")
+                results['steps_completed'].append('lepa_export_skipped')
+            else:
+                if verbose:
+                    print("\n[8/8] Exporting LEPA bar duration data...")
+
+                from utils import lepa_export
+
+                lepa_csv = lepa_export.export_bar_durations(
+                    str(paths['comprehensive_csv']),
+                    track_id,
+                    str(lepa_output_dir)
+                )
+
+                if lepa_csv:
+                    results['lepa_export_csv'] = lepa_csv
+                    results['steps_completed'].append('lepa_export')
+                    if verbose:
+                        print(f"  ✓ LEPA data exported")
+
+    except Exception as e:
+        error_msg = f"Step 8 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 9: MIDI EXPORT
+    # ========================================================================
+    try:
+        if not paths['comprehensive_csv'].exists():
+            if verbose:
+                print("\n[9/9] MIDI export - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('midi_export_skipped')
         else:
             # Check if MIDI files already exist
@@ -790,18 +933,18 @@ def run_complete_pipeline(
                         print(f"  ⚠️  No MIDI files created")
 
     except Exception as e:
-        error_msg = f"Step 8 failed: {e}"
+        error_msg = f"Step 9 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 9: STEM LOOP EXPORT
+    # STEP 10: STEM LOOP EXPORT
     # ========================================================================
     try:
         if not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[9/9] Stem loop export - SKIPPED (no comprehensive CSV)")
+                print("\n[10/10] Stem loop export - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('loops_skipped')
         else:
             # Check if loop files already exist (check for any method subdirectory)
@@ -813,11 +956,11 @@ def run_complete_pipeline(
 
             if skip_existing and loops_exist:
                 if verbose:
-                    print("\n[9/9] Stem loop export - SKIPPED (exists)")
+                    print("\n[10/10] Stem loop export - SKIPPED (exists)")
                 results['steps_completed'].append('loops_skipped')
             else:
                 if verbose:
-                    print("\n[9/9] Stem loop export...")
+                    print("\n[10/10] Stem loop export...")
 
                 # Load snippet offset
                 if snippet_offset_file and Path(snippet_offset_file).exists():
@@ -1152,6 +1295,16 @@ Environment:
             print("Install required packages: pip install matplotlib numpy")
         except Exception as e:
             print(f"\n⚠️  Loop statistics failed: {e}")
+
+        # Export LEPA data
+        try:
+            from batch_analysis.lepa_data_export import export_lepa_data
+            export_lepa_data(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  LEPA data export skipped: {ie}")
+            print("Install required packages: pip install pandas")
+        except Exception as e:
+            print(f"\n⚠️  LEPA data export failed: {e}")
 
         # Exit with error code if any files failed
         if batch_results['failed']:
