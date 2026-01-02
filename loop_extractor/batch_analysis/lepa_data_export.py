@@ -123,6 +123,12 @@ def export_lepa_data(output_dir: Path):
             # Calculate bar durations (difference between consecutive bar starts)
             bar_durations_ms = np.diff(bar_starts_ms, append=bar_starts_ms[-1] + np.median(np.diff(bar_starts_ms)))
 
+            # Only include songs with 12 or more bars
+            num_bars = len(bars)
+            if num_bars < 12:
+                print(f"  Skipped: {track_dir.name} (only {num_bars} bars, need >= 12)")
+                continue
+
             # Create records for this track
             for idx, row in bars.iterrows():
                 bar_num = int(row['bar_number'])
@@ -140,7 +146,6 @@ def export_lepa_data(output_dir: Path):
                 })
 
             tracks_processed += 1
-            num_bars = len(bars)
             print(f"  Read: {track_dir.name} ({num_bars} bars)")
 
         except Exception as e:
