@@ -1,8 +1,11 @@
 """
-Raster plot generation and phase calculations.
+Simplified raster plot generation and phase calculations.
 
 This module calculates phase deviations of onsets from expected grid positions
-using multiple correction methods: uncorrected, per-snippet, and loop-based.
+using 3 correction methods:
+1. Uncorrected (raw downbeat-based grid)
+2. Per-snippet correction (finds first onset at 1/16th position)
+3. 4-bar loop correction (equidistant grid across 4 bars)
 
 Environment: AEinBOX_13_3 (numpy, pandas)
 """
@@ -17,7 +20,6 @@ import sys
 _parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(_parent_dir))
 
-# Import from config.py (not config/__init__.py)
 import importlib.util
 spec = importlib.util.spec_from_file_location("config_module", _parent_dir / "config.py")
 config_module = importlib.util.module_from_spec(spec)
@@ -31,15 +33,17 @@ config = config_module.config
 
 SNIPPET_DURATION_S = config.CORRECT_BARS_SNIPPET_DURATION_S
 GRID_SUBDIV_PER_BEAT = 4  # Sixteenth notes
-MAX_MATCH_FRAC = 0.5  # Max distance for onset matching (0.5 × step duration)
-DEVIATION_MS_DIGITS = 2
+MAX_MATCH_FRAC_BEFORE = 0.49  # Max distance before grid position (prevents overlap)
+MAX_MATCH_FRAC_AFTER = 0.51  # Max distance after grid position (prevents overlap)
+SEARCH_WINDOW_START_PHASE = 0.5  # Search window before 1/16th for reference onset
+SEARCH_WINDOW_END_PHASE = 0.75  # Search window after 1/16th for reference onset
 
 
 # ============================================================================
 # INPUT PARSING
 # ============================================================================
 
-def parse_corrected_downbeats(corrected_file: str) -> Tuple[List[float], int, np.ndarray]:
+def parse_corrected_downbeats(corrected_file: str) -> Tuple[List[float], int]:
     """
     Parse corrected downbeats file.
 
@@ -51,15 +55,7 @@ def parse_corrected_downbeats(corrected_file: str) -> Tuple[List[float], int, np
     Returns
     -------
     tuple
-        (downbeat_times: List[float], time_signature: int, usable_mask: np.ndarray)
-
-    Examples
-    --------
-    >>> downbeats, tsig, usable = parse_corrected_downbeats('track_corrected.txt')
-    >>> tsig
-    4
-    >>> len(downbeats)
-    84
+        (downbeat_times: List[float], time_signature: int)
     """
     # Read file to get metadata
     with open(corrected_file, 'r') as f:
@@ -82,10 +78,7 @@ def parse_corrected_downbeats(corrected_file: str) -> Tuple[List[float], int, np
     if 'next_downbeat_time(s)' in df.columns:
         downbeat_times.append(df['next_downbeat_time(s)'].iloc[-1])
 
-    # Extract usable mask
-    usable_mask = df['usable'].values if 'usable' in df.columns else np.ones(len(df), dtype=bool)
-
-    return downbeat_times, tsig, usable_mask
+    return downbeat_times, tsig
 
 
 def load_onsets(onset_file: str) -> np.ndarray:
@@ -101,12 +94,6 @@ def load_onsets(onset_file: str) -> np.ndarray:
     -------
     np.ndarray
         Array of onset times in seconds
-
-    Examples
-    --------
-    >>> onsets = load_onsets('track_onsets.csv')
-    >>> len(onsets)
-    1234
     """
     df = pd.read_csv(onset_file)
 
@@ -120,71 +107,23 @@ def load_onsets(onset_file: str) -> np.ndarray:
         return df.iloc[:, 0].values
 
 
-def load_pattern_lengths(pattern_file: str, track_id: str) -> Dict[str, int]:
-    """
-    Load pattern lengths for drum, mel, and pitch methods.
-
-    Parameters
-    ----------
-    pattern_file : str
-        Path to pattern length summary CSV
-    track_id : str
-        Track identifier
-
-    Returns
-    -------
-    dict
-        Dictionary with keys 'drum', 'mel', 'pitch' mapping to pattern lengths
-
-    Examples
-    --------
-    >>> lengths = load_pattern_lengths('pattern_summary.csv', '123')
-    >>> lengths
-    {'drum': 4, 'mel': 2, 'pitch': 4}
-    """
-    df = pd.read_csv(pattern_file)
-
-    # Find row for this track
-    track_row = df[df['song_id'].astype(str) == str(track_id)]
-
-    if len(track_row) == 0:
-        # Default to 4-bar patterns
-        return {'drum': 4, 'mel': 4, 'pitch': 4}
-
-    row = track_row.iloc[0]
-
-    return {
-        'drum': int(row.get('drum_L_pow2', 4)),
-        'mel': int(row.get('mel_L_pow2', 4)),
-        'pitch': int(row.get('pitch_L_pow2', 4))
-    }
-
-
 def load_snippet_offset(overview_file: str, track_id: str) -> float:
     """
     Load snippet start offset for a track.
-
-    Matches the notebook logic: looks for columns with 'corrected', 'offset', and 'ms'.
 
     Parameters
     ----------
     overview_file : str
         Path to overview CSV with snippet offsets
     track_id : str
-        Track identifier (can be numeric ID or song name)
+        Track identifier
 
     Returns
     -------
     float
         Snippet offset in seconds
-
-    Examples
-    --------
-    >>> offset = load_snippet_offset('overview.csv', '123')
-    >>> offset
-    10.5
     """
-    # Load CSV with semicolon separator (as in notebook)
+    # Load CSV with semicolon separator
     df = pd.read_csv(overview_file, sep=';', engine='python')
 
     # Normalize column names (strip whitespace, lowercase)
@@ -203,29 +142,16 @@ def load_snippet_offset(overview_file: str, track_id: str) -> float:
     # Try to find row by numeric ID first
     track_row = df[df[id_col].astype(str) == str(track_id)]
 
-    # If not found, try extracting numeric ID from filename (e.g., "0_Save Your Tears - The Weeknd" -> "0")
+    # If not found, try extracting numeric ID from filename
     if len(track_row) == 0 and '_' in str(track_id):
         potential_id = str(track_id).split('_')[0]
         if potential_id.isdigit():
             track_row = df[df[id_col].astype(str) == potential_id]
 
-    # If still not found, try matching by song name (exact match)
-    if len(track_row) == 0 and 'songname' in df.columns:
-        track_row = df[df['songname'].astype(str).str.lower() == str(track_id).lower()]
-
-    # If still not found, try partial match (in case filename has artist suffix like "Song - Artist")
-    if len(track_row) == 0 and 'songname' in df.columns and ' - ' in str(track_id):
-        # Extract song name before " - " (e.g., "Save Your Tears - The Weeknd" -> "Save Your Tears")
-        song_part = str(track_id).split(' - ')[0]
-        # Also handle "0_Save Your Tears - The Weeknd" -> "Save Your Tears"
-        if '_' in song_part:
-            song_part = song_part.split('_', 1)[1]
-        track_row = df[df['songname'].astype(str).str.lower() == song_part.lower()]
-
     if len(track_row) == 0:
         return 0.0
 
-    # Find offset column: prioritize "corrected offset ms"
+    # Find offset column
     def normalize_col_name(s):
         return s.replace('_', ' ').replace('  ', ' ')
 
@@ -248,47 +174,12 @@ def load_snippet_offset(overview_file: str, track_id: str) -> float:
 
     offset_ms = track_row.iloc[0][offset_col]
     offset_s = offset_ms / 1000.0
-    return offset_s  # Convert ms to seconds
+    return offset_s
 
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-def find_nearest_onset(target_time: float, onsets: np.ndarray) -> Tuple[float, float]:
-    """
-    Find onset nearest to target time.
-
-    Parameters
-    ----------
-    target_time : float
-        Target time in seconds
-    onsets : np.ndarray
-        Array of onset times
-
-    Returns
-    -------
-    tuple
-        (nearest_onset_time, distance)
-
-    Examples
-    --------
-    >>> onsets = np.array([1.0, 2.0, 3.0])
-    >>> nearest, dist = find_nearest_onset(2.1, onsets)
-    >>> nearest
-    2.0
-    >>> dist
-    0.1
-    """
-    if len(onsets) == 0:
-        return np.nan, np.inf
-
-    idx = np.argmin(np.abs(onsets - target_time))
-    nearest = onsets[idx]
-    distance = abs(nearest - target_time)
-
-    return nearest, distance
-
 
 def calculate_snippet_bars(
     downbeats: List[float],
@@ -311,13 +202,6 @@ def calculate_snippet_bars(
     -------
     tuple
         (first_bar_idx, last_bar_idx) - inclusive range
-
-    Examples
-    --------
-    >>> downbeats = [0, 2, 4, 6, 8, 10, 12]
-    >>> first, last = calculate_snippet_bars(downbeats, 3.0, 6.0)
-    >>> first, last
-    (1, 4)
     """
     snippet_end = snippet_start + snippet_duration
 
@@ -337,23 +221,137 @@ def calculate_snippet_bars(
     return first_bar_idx, last_bar_idx
 
 
+def find_nearest_onset(target_time: float, onsets: np.ndarray) -> Tuple[float, float]:
+    """
+    Find onset nearest to target time.
+
+    Parameters
+    ----------
+    target_time : float
+        Target time in seconds
+    onsets : np.ndarray
+        Array of onset times
+
+    Returns
+    -------
+    tuple
+        (nearest_onset_time, distance)
+    """
+    if len(onsets) == 0:
+        return np.nan, np.inf
+
+    idx = np.argmin(np.abs(onsets - target_time))
+    nearest = onsets[idx]
+    distance = abs(nearest - target_time)
+
+    return nearest, distance
+
+
 # ============================================================================
-# REFERENCE OFFSET CALCULATION
+# METHOD 1: UNCORRECTED
 # ============================================================================
 
-def find_reference_offset_priority(
+def calculate_phases_uncorrected(
+    onsets: np.ndarray,
+    downbeats: List[float],
+    first_bar: int,
+    last_bar: int,
+    steps_per_bar: int,
+    max_match_frac: float = None  # Deprecated - uses asymmetric tolerances
+) -> pd.DataFrame:
+    """
+    Calculate uncorrected phases using raw downbeat-based grid.
+
+    The downbeat times define the grid. Between two downbeats, we create
+    an equidistant 16th-note grid. Each onset is assigned to the nearest
+    grid position.
+
+    Parameters
+    ----------
+    onsets : np.ndarray
+        Onset times in seconds
+    downbeats : List[float]
+        Downbeat times
+    first_bar : int
+        First bar index
+    last_bar : int
+        Last bar index (inclusive)
+    steps_per_bar : int
+        Number of ticks per bar (e.g., 16 for 16th notes)
+    max_match_frac : float
+        Maximum matching distance as fraction of step duration
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: bar_number, tick_16th, onset_time, phase_uncorrected
+    """
+    rows = []
+
+    for bar_idx in range(first_bar, last_bar + 1):
+        if bar_idx >= len(downbeats) - 1:
+            continue
+
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+        bar_duration = bar_end - bar_start
+
+        if bar_duration <= 0:
+            continue
+
+        step_duration = bar_duration / steps_per_bar
+
+        # Filter onsets in this bar
+        bar_onsets = onsets[(onsets >= bar_start) & (onsets < bar_end)]
+
+        for onset_time in bar_onsets:
+            # Calculate phase
+            phase = (onset_time - bar_start) / bar_duration
+
+            # Assign to nearest tick
+            nearest_tick = int(round(phase * steps_per_bar))
+            nearest_tick = max(0, min(steps_per_bar - 1, nearest_tick))
+
+            # Check if within tolerance (asymmetric boundaries)
+            grid_time = bar_start + (nearest_tick / steps_per_bar) * bar_duration
+            distance = abs(onset_time - grid_time)
+
+            # Use asymmetric tolerance to prevent duplicate assignments at boundaries
+            if onset_time < grid_time:
+                tolerance = MAX_MATCH_FRAC_BEFORE * step_duration
+            else:
+                tolerance = MAX_MATCH_FRAC_AFTER * step_duration
+
+            if distance <= tolerance:
+                rows.append({
+                    'bar_number': bar_idx - first_bar,  # Snippet-relative
+                    'tick_16th': nearest_tick,
+                    'onset_time': onset_time,
+                    'phase_uncorrected': phase
+                })
+
+    return pd.DataFrame(rows)
+
+
+# ============================================================================
+# METHOD 2: PER-SNIPPET CORRECTION
+# ============================================================================
+
+def find_per_snippet_reference(
     downbeats: List[float],
     onsets: np.ndarray,
     first_bar: int,
-    num_bars: int,
+    last_bar: int,
     steps_per_bar: int,
-    max_match_frac: float = MAX_MATCH_FRAC
-) -> Tuple[float, int, float, float]:
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE,
+    max_match_frac: float = None  # Deprecated - kept for compatibility
+) -> Tuple[float, int]:
     """
-    Find reference offset using priority tick positions.
+    Find reference offset for per-snippet correction.
 
-    Searches for reference onset at priority ticks: [0, 8, 4, 12]
-    (downbeat, half-note, quarter-notes).
+    Searches for the first onset at the 1/16th position (tick 1).
+    If not found in bar 0, checks bar 1, bar 2, etc.
 
     Parameters
     ----------
@@ -363,94 +361,202 @@ def find_reference_offset_priority(
         Onset times
     first_bar : int
         First bar index to search
-    num_bars : int
-        Number of bars to search (typically 1 for per-snippet)
+    last_bar : int
+        Last bar index
     steps_per_bar : int
-        Number of ticks per bar (e.g., 16)
+        Number of ticks per bar
+    search_window_start_phase : float
+        Search window before 1/16th (relative to step duration)
+    search_window_end_phase : float
+        Search window after 1/16th (relative to step duration)
     max_match_frac : float
         Maximum matching distance as fraction of step duration
 
     Returns
     -------
     tuple
-        (ref_ms, ref_bar, ref_phase, grid_phase)
-
-    Examples
-    --------
-    >>> ref_ms, bar, ref_phase, grid_phase = find_reference_offset_priority(
-    ...     downbeats, onsets, 0, 1, 16
-    ... )
-    >>> abs(ref_ms) < 100  # Reference offset within 100ms
-    True
+        (ref_offset_ms, ref_bar_idx)
     """
-    # Priority order: downbeat, half-note, quarter-notes
-    ticks_priority = [0, 8, 4, 12]
+    target_tick = 0  # 1/16th position (tick 0 = downbeat = 1/16th)
 
-    for tick in ticks_priority:
-        for bar_offset in range(num_bars):
-            bar_idx = first_bar + bar_offset
+    for bar_idx in range(first_bar, last_bar + 1):
+        if bar_idx >= len(downbeats) - 1:
+            continue
 
-            if bar_idx >= len(downbeats) - 1:
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+        bar_duration = bar_end - bar_start
+
+        if bar_duration <= 0:
+            continue
+
+        step_duration = bar_duration / steps_per_bar
+        grid_time = bar_start + (target_tick * step_duration)
+
+        # Calculate search window
+        if bar_idx == first_bar:
+            # For first bar in snippet, assume previous bar has same duration
+            assumed_prev_bar_duration = bar_duration
+            prev_bar_15_16th = bar_start - (1.0 / steps_per_bar) * assumed_prev_bar_duration
+            window_start = prev_bar_15_16th - search_window_start_phase * (assumed_prev_bar_duration / steps_per_bar)
+            window_end = grid_time + search_window_end_phase * step_duration
+        else:
+            # For bars > 0, use actual previous bar's 15/16th position
+            prev_bar_start = downbeats[bar_idx - 1]
+            prev_bar_duration = bar_start - prev_bar_start
+
+            if prev_bar_duration <= 0:
                 continue
 
-            bar_start = downbeats[bar_idx]
-            bar_end = downbeats[bar_idx + 1]
-            bar_duration = bar_end - bar_start
+            prev_bar_15_16th = prev_bar_start + (15.0 / steps_per_bar) * prev_bar_duration
+            window_start = prev_bar_15_16th - search_window_start_phase * (prev_bar_duration / steps_per_bar)
+            window_end = grid_time + search_window_end_phase * step_duration
 
-            if bar_duration <= 0:
-                continue
+        # Debug logging for first few bars
+        if bar_idx <= first_bar + 2:
+            print(f"\n[DEBUG] Bar {bar_idx}: bar_start={bar_start:.3f}, grid_time={grid_time:.3f}")
+            print(f"  window: [{window_start:.3f}, {window_end:.3f}]")
+            print(f"  step_duration={step_duration:.6f}")
 
-            # Calculate expected grid position
-            step_duration = bar_duration / steps_per_bar
-            grid_time = bar_start + (tick * step_duration)
+        # Find onsets within window
+        onsets_in_window = onsets[(onsets >= window_start) & (onsets <= window_end)]
 
-            # Find nearest onset
-            nearest_onset, distance = find_nearest_onset(grid_time, onsets)
+        if bar_idx <= first_bar + 2:
+            print(f"  onsets_in_window: {onsets_in_window[:5] if len(onsets_in_window) > 0 else 'none'}")
 
-            # Check if within tolerance
-            if distance <= (max_match_frac * step_duration):
-                # Found reference!
-                ref_ms = (nearest_onset - grid_time) * 1000.0
-                ref_phase = (nearest_onset - bar_start) / bar_duration
-                grid_phase = (grid_time - bar_start) / bar_duration
+        if len(onsets_in_window) == 0:
+            # No onset found, try next bar
+            continue
 
-                return ref_ms, bar_idx, ref_phase, grid_phase
+        # Find closest onset to grid_time within the search window
+        distances = np.abs(onsets_in_window - grid_time)
+        min_idx = np.argmin(distances)
+        nearest_onset = onsets_in_window[min_idx]
+        distance = distances[min_idx]
 
-    # No reference found, return zero offset
-    return 0.0, first_bar, 0.0, 0.0
+        if bar_idx <= first_bar + 2:
+            print(f"  nearest_onset={nearest_onset:.3f}, distance={distance:.6f}")
+
+        # For reference finding: the search window IS the tolerance criterion
+        # Accept the closest onset within the window (no additional max_match_frac check)
+        # The onset will still be checked against max_match_frac when assigning to grid
+        ref_offset_ms = (nearest_onset - grid_time) * 1000.0
+        print(f"\n[DEBUG] Reference found in bar {bar_idx}: offset={ref_offset_ms:.3f}ms\n")
+        return ref_offset_ms, bar_idx
+
+    # No reference found
+    return 0.0, first_bar
 
 
-def find_reference_offset_loopwise(
+def calculate_phases_per_snippet(
+    onsets: np.ndarray,
+    downbeats: List[float],
+    first_bar: int,
+    last_bar: int,
+    steps_per_bar: int,
+    ref_offset_ms: float,
+    max_match_frac: float = None  # Deprecated - uses asymmetric tolerances
+) -> pd.DataFrame:
+    """
+    Calculate per-snippet corrected phases.
+
+    Shifts the entire grid by the reference offset found at 1/16th position.
+
+    Parameters
+    ----------
+    onsets : np.ndarray
+        Onset times
+    downbeats : List[float]
+        Downbeat times
+    first_bar : int
+        First bar index
+    last_bar : int
+        Last bar index
+    steps_per_bar : int
+        Number of ticks per bar
+    ref_offset_ms : float
+        Reference offset in milliseconds
+    max_match_frac : float
+        Maximum matching distance as fraction of step duration
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: bar_number, tick_16th, onset_time, phase_per_snippet
+    """
+    ref_offset_s = ref_offset_ms / 1000.0
+    rows = []
+
+    for bar_idx in range(first_bar, last_bar + 1):
+        if bar_idx >= len(downbeats) - 1:
+            continue
+
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+        bar_duration = bar_end - bar_start
+
+        if bar_duration <= 0:
+            continue
+
+        # Apply correction to grid positions (not boundaries)
+        corrected_bar_start = bar_start + ref_offset_s
+        step_duration = bar_duration / steps_per_bar
+
+        # Filter onsets using UNCORRECTED boundaries (avoid gaps at boundaries)
+        bar_onsets = onsets[(onsets >= bar_start) & (onsets < bar_end)]
+
+        # Debug logging for bars 1-2
+        if bar_idx - first_bar <= 2:
+            print(f"\n[PER-SNIPPET DEBUG] Bar {bar_idx - first_bar}: corrected_bar_start={corrected_bar_start:.6f}")
+            print(f"  bar_onsets: {bar_onsets[:5] if len(bar_onsets) > 0 else 'none'}")
+
+        for onset_time in bar_onsets:
+            # Calculate corrected phase (relative to corrected grid)
+            phase = (onset_time - corrected_bar_start) / bar_duration
+
+            # Assign to nearest tick based on corrected phase
+            nearest_tick = int(round(phase * steps_per_bar))
+            nearest_tick = max(0, min(steps_per_bar - 1, nearest_tick))
+
+            # Check if within tolerance (asymmetric boundaries)
+            grid_time = corrected_bar_start + (nearest_tick / steps_per_bar) * bar_duration
+            distance = abs(onset_time - grid_time)
+
+            # Use asymmetric tolerance to prevent duplicate assignments at boundaries
+            if onset_time < grid_time:
+                tolerance = MAX_MATCH_FRAC_BEFORE * step_duration
+            else:
+                tolerance = MAX_MATCH_FRAC_AFTER * step_duration
+
+            if distance <= tolerance:
+                rows.append({
+                    'bar_number': bar_idx - first_bar,
+                    'tick_16th': nearest_tick,
+                    'onset_time': onset_time,
+                    'phase_per_snippet': phase
+                })
+
+    return pd.DataFrame(rows)
+
+
+# ============================================================================
+# METHOD 3: 4-BAR LOOP CORRECTION
+# ============================================================================
+
+def find_4bar_loop_reference(
     downbeats: List[float],
     onsets: np.ndarray,
     loop_start_bar: int,
-    pattern_len: int,
     steps_per_bar: int,
-    max_match_frac: float = MAX_MATCH_FRAC
-) -> Tuple[float, int, float, float]:
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE,
+    max_match_frac: float = None  # Deprecated - kept for compatibility
+) -> float:
     """
-    Find reference offset for a loop using equidistant grid.
+    Find reference offset for a 4-bar loop.
 
-    Search Strategy
-    ---------------
-    The algorithm searches for a reference onset using a priority-based approach:
-    1. Priority ticks: [0, 8, 4, 12] - checks downbeat first, then backbeat, then quarters
-    2. Search scope: ALL bars within the current loop (not just the first bar)
-    3. Search order: For each priority tick, check bar 0, bar 1, bar 2... until match found
-    4. Matching criterion: Onset must be within tolerance of equidistant grid position
-
-    Example for a 4-bar loop:
-    - First checks: tick 0 in bars 0, 1, 2, 3
-    - Then checks: tick 8 in bars 0, 1, 2, 3
-    - Then checks: tick 4 in bars 0, 1, 2, 3
-    - Then checks: tick 12 in bars 0, 1, 2, 3
-    - Returns first match found, or (0.0, loop_start_bar, 0.0, 0.0) if no match
-
-    Grid Correction
-    ---------------
-    Once a reference onset is found, its offset from the equidistant grid position
-    is used to correct ALL onsets in that loop. This ensures the entire loop is
-    aligned to the detected rhythmic pattern.
+    Uses equidistant grid across 4 bars and searches for onset at 1/16th position
+    of the loop start bar.
 
     Parameters
     ----------
@@ -460,28 +566,26 @@ def find_reference_offset_loopwise(
         Onset times
     loop_start_bar : int
         Starting bar index of loop
-    pattern_len : int
-        Pattern length in bars
     steps_per_bar : int
         Number of ticks per bar
+    search_window_start_phase : float
+        Search window before 1/16th
+    search_window_end_phase : float
+        Search window after 1/16th
     max_match_frac : float
         Maximum matching distance as fraction
 
     Returns
     -------
-    tuple
-        (ref_ms, ref_bar, ref_phase, grid_phase)
-
-    Examples
-    --------
-    >>> ref_ms, bar, ref_phase, grid_phase = find_reference_offset_loopwise(
-    ...     downbeats, onsets, 0, 4, 16
-    ... )
+    float
+        Reference offset in milliseconds
     """
-    if loop_start_bar + pattern_len >= len(downbeats):
-        return 0.0, loop_start_bar, 0.0, 0.0
+    pattern_len = 4
 
-    # Calculate equidistant grid for this loop
+    if loop_start_bar + pattern_len >= len(downbeats):
+        return 0.0
+
+    # Calculate equidistant grid for this 4-bar loop
     loop_start_time = downbeats[loop_start_bar]
     loop_end_time = downbeats[loop_start_bar + pattern_len]
     loop_duration = loop_end_time - loop_start_time
@@ -489,292 +593,56 @@ def find_reference_offset_loopwise(
     total_sixteenths = pattern_len * steps_per_bar
     sixteenth_duration = loop_duration / total_sixteenths
 
-    # Priority ticks to search
-    ticks_priority = [0, 8, 4, 12]
+    # Only check tick 0 (1/16th = downbeat) in the first bar of the loop
+    target_tick = 0
+    grid_time = loop_start_time + (target_tick * sixteenth_duration)
 
-    for tick in ticks_priority:
-        for bar_offset in range(pattern_len):  # Check ALL bars in the loop
-            bar_idx = loop_start_bar + bar_offset
+    if loop_start_bar == 0:
+        # Cannot look at previous bar
+        return 0.0
 
-            # Skip if bar is out of bounds
-            if bar_idx + 1 >= len(downbeats):
-                continue
+    # Get previous bar info (from actual downbeats, not equidistant)
+    prev_bar_start = downbeats[loop_start_bar - 1]
+    prev_bar_duration = downbeats[loop_start_bar] - prev_bar_start
 
-            # Calculate equidistant position
-            global_tick = (bar_offset * steps_per_bar) + tick
-            grid_time = loop_start_time + (global_tick * sixteenth_duration)
+    if prev_bar_duration <= 0:
+        return 0.0
 
-            # Find nearest onset
-            nearest_onset, distance = find_nearest_onset(grid_time, onsets)
+    # Calculate search window
+    prev_bar_15_16th = prev_bar_start + (15.0 / steps_per_bar) * prev_bar_duration
+    window_start = prev_bar_15_16th - search_window_start_phase * (prev_bar_duration / steps_per_bar)
+    window_end = grid_time + search_window_end_phase * sixteenth_duration
 
-            # Check tolerance
-            if distance <= (max_match_frac * sixteenth_duration):
-                ref_ms = (nearest_onset - grid_time) * 1000.0
+    # Find nearest onset within the search window
+    onsets_in_window = onsets[(onsets >= window_start) & (onsets <= window_end)]
 
-                # Calculate phases relative to equidistant bar
-                equi_bar_start = loop_start_time + (bar_offset * steps_per_bar * sixteenth_duration)
-                equi_bar_duration = steps_per_bar * sixteenth_duration
+    if len(onsets_in_window) == 0:
+        return 0.0
 
-                ref_phase = (nearest_onset - equi_bar_start) / equi_bar_duration
-                grid_phase = (grid_time - equi_bar_start) / equi_bar_duration
+    # Find onset closest to grid_time
+    distances = np.abs(onsets_in_window - grid_time)
+    min_idx = np.argmin(distances)
+    nearest_onset = onsets_in_window[min_idx]
+    distance = distances[min_idx]
 
-                return ref_ms, bar_idx, ref_phase, grid_phase
+    # For reference finding: the search window IS the tolerance criterion
+    # Accept the closest onset within the window
+    ref_offset_ms = (nearest_onset - grid_time) * 1000.0
+    return ref_offset_ms
 
-    return 0.0, loop_start_bar, 0.0, 0.0
 
-
-# ============================================================================
-# PHASE CALCULATION - UNCORRECTED
-# ============================================================================
-
-def assign_onsets_to_ticks_uncorrected(
+def calculate_phases_4bar_loop(
     onsets: np.ndarray,
     downbeats: List[float],
-    bar_start_idx: int,
-    bar_end_idx: int,
-    steps_per_bar: int
-) -> Dict[Tuple[int, int], float]:
-    """
-    Assign onsets to tick positions using uncorrected bar grid.
-
-    Parameters
-    ----------
-    onsets : np.ndarray
-        Onset times in seconds
-    downbeats : List[float]
-        Downbeat times
-    bar_start_idx : int
-        First bar index
-    bar_end_idx : int
-        Last bar index (inclusive)
-    steps_per_bar : int
-        Number of ticks per bar (e.g., 16)
-
-    Returns
-    -------
-    dict
-        Mapping (bar_idx, tick) -> onset_time
-
-    Examples
-    --------
-    >>> onsets = np.array([0.05, 1.0, 2.0])
-    >>> downbeats = [0.0, 2.0, 4.0]
-    >>> assignments = assign_onsets_to_ticks_uncorrected(onsets, downbeats, 0, 1, 16)
-    """
-    onset_map = {}
-
-    for bar_idx in range(bar_start_idx, bar_end_idx + 1):
-        if bar_idx >= len(downbeats) - 1:
-            continue
-
-        bar_start = downbeats[bar_idx]
-        bar_end = downbeats[bar_idx + 1]
-        bar_duration = bar_end - bar_start
-
-        if bar_duration <= 0:
-            continue
-
-        # Filter onsets in this bar
-        bar_onsets = onsets[(onsets >= bar_start) & (onsets < bar_end)]
-
-        for onset_time in bar_onsets:
-            # Calculate phase and assign to nearest tick
-            phase = (onset_time - bar_start) / bar_duration
-            nearest_tick = int(round(phase * steps_per_bar))
-            nearest_tick = max(0, min(steps_per_bar - 1, nearest_tick))
-
-            # Store onset (if multiple onsets per tick, keep first)
-            key = (bar_idx, nearest_tick)
-            if key not in onset_map:
-                onset_map[key] = onset_time
-
-    return onset_map
-
-
-def calculate_phases_uncorrected(
-    onset_map: Dict[Tuple[int, int], float],
-    downbeats: List[float],
-    steps_per_bar: int
-) -> pd.DataFrame:
-    """
-    Calculate uncorrected phases for assigned onsets.
-
-    Parameters
-    ----------
-    onset_map : dict
-        Mapping (bar_idx, tick) -> onset_time
-    downbeats : List[float]
-        Downbeat times
-    steps_per_bar : int
-        Number of ticks per bar
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns: bar_number, tick_16th, onset_time, phase_uncorrected
-
-    Examples
-    --------
-    >>> df = calculate_phases_uncorrected(onset_map, downbeats, 16)
-    """
-    rows = []
-
-    for (bar_idx, tick), onset_time in onset_map.items():
-        if bar_idx >= len(downbeats) - 1:
-            continue
-
-        bar_start = downbeats[bar_idx]
-        bar_end = downbeats[bar_idx + 1]
-        bar_duration = bar_end - bar_start
-
-        if bar_duration <= 0:
-            continue
-
-        # Calculate phase
-        phase = (onset_time - bar_start) / bar_duration
-
-        # Add display shift (1/16)
-        phase_shifted = phase + (1.0 / steps_per_bar)
-
-        rows.append({
-            'bar_number': bar_idx,
-            'tick_16th': tick,
-            'onset_time_uncorrected': onset_time,
-            'phase_uncorrected': phase_shifted
-        })
-
-    return pd.DataFrame(rows)
-
-
-# ============================================================================
-# PHASE CALCULATION - PER-SNIPPET CORRECTION
-# ============================================================================
-
-def calculate_phases_per_snippet(
-    onset_map: Dict[Tuple[int, int], float],
-    downbeats: List[float],
-    ref_ms: float,
+    first_bar: int,
+    last_bar: int,
     steps_per_bar: int,
-    remap_ticks: bool = True
+    max_match_frac: float = None,  # Deprecated - uses asymmetric tolerances
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
 ) -> pd.DataFrame:
     """
-    Calculate per-snippet corrected phases.
-
-    Uses grid-shift approach: shifts grid forward by ref_ms.
-
-    Parameters
-    ----------
-    onset_map : dict
-        Mapping (bar_idx, tick) -> onset_time (from uncorrected assignment)
-    downbeats : List[float]
-        Downbeat times
-    ref_ms : float
-        Reference offset in milliseconds
-    steps_per_bar : int
-        Number of ticks per bar
-    remap_ticks : bool
-        If True, reassign onsets to ticks based on corrected position (FIXED)
-        If False, use uncorrected tick assignments (has BUG)
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns: bar_number, tick_16th, phase_per_snippet
-        (or phase_per_snippet_remapped if remap_ticks=True)
-
-    Examples
-    --------
-    >>> df = calculate_phases_per_snippet(onset_map, downbeats, 50.0, 16)
-    """
-    ref_s = ref_ms / 1000.0
-    rows = []
-
-    if remap_ticks:
-        # FIXED version: reassign onsets to ticks based on corrected position
-        # Collect all onsets first
-        onset_times = {}
-        for (bar_idx, tick), onset_time in onset_map.items():
-            if bar_idx not in onset_times:
-                onset_times[bar_idx] = []
-            onset_times[bar_idx].append(onset_time)
-
-        # Reassign based on corrected grid
-        for bar_idx, onsets_in_bar in onset_times.items():
-            if bar_idx >= len(downbeats) - 1:
-                continue
-
-            bar_start = downbeats[bar_idx]
-            bar_end = downbeats[bar_idx + 1]
-            bar_duration = bar_end - bar_start
-
-            if bar_duration <= 0:
-                continue
-
-            # Corrected bar start
-            corrected_bar_start = bar_start + ref_s
-
-            for onset_time in onsets_in_bar:
-                # Calculate corrected phase
-                phase = (onset_time - corrected_bar_start) / bar_duration
-
-                # Assign to nearest tick based on corrected phase
-                nearest_tick = int(round(phase * steps_per_bar))
-                nearest_tick = max(0, min(steps_per_bar - 1, nearest_tick))
-
-                # Add display shift
-                phase_shifted = phase + (1.0 / steps_per_bar)
-
-                rows.append({
-                    'bar_number': bar_idx,
-                    'tick_16th': nearest_tick,
-                    'phase_per_snippet_remapped': phase_shifted
-                })
-    else:
-        # BUGGY version: use uncorrected tick assignments
-        for (bar_idx, tick), onset_time in onset_map.items():
-            if bar_idx >= len(downbeats) - 1:
-                continue
-
-            bar_start = downbeats[bar_idx]
-            bar_end = downbeats[bar_idx + 1]
-            bar_duration = bar_end - bar_start
-
-            if bar_duration <= 0:
-                continue
-
-            # Corrected bar start
-            corrected_bar_start = bar_start + ref_s
-
-            # Calculate phase with correction
-            phase = (onset_time - corrected_bar_start) / bar_duration
-
-            # Add display shift
-            phase_shifted = phase + (1.0 / steps_per_bar)
-
-            rows.append({
-                'bar_number': bar_idx,
-                'tick_16th': tick,
-                'phase_per_snippet': phase_shifted
-            })
-
-    return pd.DataFrame(rows)
-
-
-# ============================================================================
-# PHASE CALCULATION - LOOP-BASED (EQUIDISTANT GRID)
-# ============================================================================
-
-def calculate_phases_loop_based(
-    onsets: np.ndarray,
-    downbeats: List[float],
-    bar_start_idx: int,
-    bar_end_idx: int,
-    pattern_len: int,
-    steps_per_bar: int,
-    loop_ref_offsets: Dict[int, float]
-) -> pd.DataFrame:
-    """
-    Calculate loop-based phases using equidistant grid.
+    Calculate 4-bar loop corrected phases using equidistant grid.
 
     Parameters
     ----------
@@ -782,31 +650,30 @@ def calculate_phases_loop_based(
         Onset times
     downbeats : List[float]
         Downbeat times
-    bar_start_idx : int
+    first_bar : int
         First bar index
-    bar_end_idx : int
-        Last bar index (inclusive)
-    pattern_len : int
-        Pattern length in bars (e.g., 4 for 4-bar loops)
+    last_bar : int
+        Last bar index
     steps_per_bar : int
         Number of ticks per bar
-    loop_ref_offsets : dict
-        Mapping loop_start_bar -> ref_ms for each loop
+    max_match_frac : float
+        Maximum matching distance as fraction
+    search_window_start_phase : float
+        Search window before 1/16th
+    search_window_end_phase : float
+        Search window after 1/16th
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with columns: bar_number, tick_16th, phase_loop
-
-    Examples
-    --------
-    >>> df = calculate_phases_loop_based(onsets, downbeats, 0, 15, 4, 16, {0: 50.0, 4: 45.0})
+        DataFrame with columns: bar_number, tick_16th, onset_time, phase_4bar_loop
     """
     rows = []
+    pattern_len = 4
     total_sixteenths = pattern_len * steps_per_bar
 
-    # Process each loop
-    for loop_start_bar in range(bar_start_idx, bar_end_idx + 1, pattern_len):
+    # Process each 4-bar loop
+    for loop_start_bar in range(first_bar, last_bar + 1, pattern_len):
         if loop_start_bar + pattern_len > len(downbeats) - 1:
             break
 
@@ -816,16 +683,18 @@ def calculate_phases_loop_based(
         loop_duration = loop_end_time - loop_start_time
         sixteenth_duration = loop_duration / total_sixteenths
 
-        # Get reference offset for this loop
-        ref_tuple = loop_ref_offsets.get(loop_start_bar, (0.0, loop_start_bar, 0.0, 0.0))
-        ref_ms = ref_tuple[0]
-        ref_s = ref_ms / 1000.0
+        # Find reference offset for this loop
+        ref_offset_ms = find_4bar_loop_reference(
+            downbeats, onsets, loop_start_bar, steps_per_bar,
+            search_window_start_phase, search_window_end_phase, max_match_frac
+        )
+        ref_offset_s = ref_offset_ms / 1000.0
 
         # Process each bar in loop
         for bar_offset in range(pattern_len):
             bar_idx = loop_start_bar + bar_offset
 
-            if bar_idx > bar_end_idx or bar_idx >= len(downbeats) - 1:
+            if bar_idx > last_bar or bar_idx >= len(downbeats) - 1:
                 break
 
             # Calculate equidistant bar boundaries
@@ -834,280 +703,56 @@ def calculate_phases_loop_based(
             equi_bar_duration = steps_per_bar * sixteenth_duration
             equi_bar_end = equi_bar_start + equi_bar_duration
 
-            # Apply correction
-            corrected_equi_bar_start = equi_bar_start + ref_s
+            # Apply correction to grid positions (not boundaries)
+            corrected_equi_bar_start = equi_bar_start + ref_offset_s
 
-            # Filter onsets in this equidistant bar
+            # Filter onsets using UNCORRECTED equidistant boundaries (avoid gaps)
             bar_onsets = onsets[(onsets >= equi_bar_start) & (onsets < equi_bar_end)]
 
             for onset_time in bar_onsets:
-                # Calculate corrected phase
+                # Calculate corrected phase (relative to corrected grid)
                 phase = (onset_time - corrected_equi_bar_start) / equi_bar_duration
 
                 # Assign to nearest tick
                 nearest_tick = int(round(phase * steps_per_bar))
                 nearest_tick = max(0, min(steps_per_bar - 1, nearest_tick))
 
-                # Add display shift
-                phase_shifted = phase + (1.0 / steps_per_bar)
+                # Check if within tolerance (asymmetric boundaries)
+                grid_time = corrected_equi_bar_start + (nearest_tick / steps_per_bar) * equi_bar_duration
+                distance = abs(onset_time - grid_time)
 
-                rows.append({
-                    'bar_number': bar_idx,
-                    'tick_16th': nearest_tick,
-                    'phase_loop': phase_shifted
-                })
+                # Use asymmetric tolerance to prevent duplicate assignments at boundaries
+                if onset_time < grid_time:
+                    tolerance = MAX_MATCH_FRAC_BEFORE * sixteenth_duration
+                else:
+                    tolerance = MAX_MATCH_FRAC_AFTER * sixteenth_duration
 
-    return pd.DataFrame(rows)
-
-
-def calculate_loop_reference_offsets(
-    downbeats: List[float],
-    onsets: np.ndarray,
-    bar_start_idx: int,
-    bar_end_idx: int,
-    pattern_len: int,
-    steps_per_bar: int
-) -> Dict[int, Tuple[float, int, float, float]]:
-    """
-    Calculate reference offsets for each loop.
-
-    Parameters
-    ----------
-    downbeats : List[float]
-        Downbeat times
-    onsets : np.ndarray
-        Onset times
-    bar_start_idx : int
-        First bar index
-    bar_end_idx : int
-        Last bar index
-    pattern_len : int
-        Pattern length in bars
-    steps_per_bar : int
-        Number of ticks per bar
-
-    Returns
-    -------
-    dict
-        Mapping loop_start_bar -> (ref_ms, bar_idx, ref_phase, grid_phase)
-
-    Examples
-    --------
-    >>> offsets = calculate_loop_reference_offsets(downbeats, onsets, 0, 15, 4, 16)
-    >>> offsets
-    {0: (50.5, 0, 0.52, 0.0625), 4: (48.2, 4, 0.48, 0.0625), ...}
-    """
-    loop_offsets = {}
-
-    for loop_start_bar in range(bar_start_idx, bar_end_idx + 1, pattern_len):
-        if loop_start_bar + pattern_len > len(downbeats) - 1:
-            break
-
-        ref_ms, bar_idx, ref_phase, grid_phase = find_reference_offset_loopwise(
-            downbeats,
-            onsets,
-            loop_start_bar,
-            pattern_len,
-            steps_per_bar
-        )
-
-        # Store full tuple: (ref_ms, bar_idx, ref_phase, grid_phase)
-        loop_offsets[loop_start_bar] = (ref_ms, bar_idx, ref_phase, grid_phase)
-
-    return loop_offsets
-
-
-# ============================================================================
-# GRID TIME CALCULATION
-# ============================================================================
-
-def calculate_grid_times(
-    downbeats: List[float],
-    bar_start_idx: int,
-    bar_end_idx: int,
-    steps_per_bar: int,
-    ref_ms: float = 0.0
-) -> pd.DataFrame:
-    """
-    Calculate grid times for per-snippet method (actual bar interpolation).
-
-    Parameters
-    ----------
-    downbeats : List[float]
-        Downbeat times
-    bar_start_idx : int
-        First bar index
-    bar_end_idx : int
-        Last bar index
-    steps_per_bar : int
-        Number of ticks per bar
-    ref_ms : float
-        Reference offset in milliseconds
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns: bar_number, tick_16th, grid_time_per_snippet
-    """
-    ref_s = ref_ms / 1000.0
-    rows = []
-
-    for bar_idx in range(bar_start_idx, bar_end_idx + 1):
-        if bar_idx >= len(downbeats) - 1:
-            continue
-
-        bar_start = downbeats[bar_idx]
-        bar_end = downbeats[bar_idx + 1]
-        bar_duration = bar_end - bar_start
-
-        if bar_duration <= 0:
-            continue
-
-        corrected_bar_start = bar_start + ref_s
-
-        for tick in range(steps_per_bar):
-            grid_time = corrected_bar_start + (tick / steps_per_bar) * bar_duration
-
-            rows.append({
-                'bar_number': bar_idx,
-                'tick_16th': tick,
-                'grid_time_per_snippet': grid_time
-            })
-
-    return pd.DataFrame(rows)
-
-
-def calculate_grid_times_uncorrected(
-    downbeats: List[float],
-    bar_start_idx: int,
-    bar_end_idx: int,
-    steps_per_bar: int
-) -> pd.DataFrame:
-    """
-    Calculate uncorrected grid times (no ref_ms correction, just raw downbeats).
-
-    Parameters
-    ----------
-    downbeats : List[float]
-        Downbeat times
-    bar_start_idx : int
-        First bar index
-    bar_end_idx : int
-        Last bar index
-    steps_per_bar : int
-        Number of ticks per bar
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns: bar_number, tick_16th, grid_time_uncorrected
-    """
-    rows = []
-
-    for bar_idx in range(bar_start_idx, bar_end_idx + 1):
-        if bar_idx >= len(downbeats) - 1:
-            continue
-
-        bar_start = downbeats[bar_idx]
-        bar_end = downbeats[bar_idx + 1]
-        bar_duration = bar_end - bar_start
-
-        if bar_duration <= 0:
-            continue
-
-        for tick in range(steps_per_bar):
-            grid_time = bar_start + (tick / steps_per_bar) * bar_duration
-
-            rows.append({
-                'bar_number': bar_idx,
-                'tick_16th': tick,
-                'grid_time_uncorrected': grid_time
-            })
-
-    return pd.DataFrame(rows)
-
-
-def calculate_grid_times_loop(
-    downbeats: List[float],
-    bar_start_idx: int,
-    bar_end_idx: int,
-    pattern_len: int,
-    steps_per_bar: int,
-    loop_ref_offsets: Dict[int, float]
-) -> pd.DataFrame:
-    """
-    Calculate equidistant grid times for loop-based method.
-
-    Parameters
-    ----------
-    downbeats : List[float]
-        Downbeat times
-    bar_start_idx : int
-        First bar index
-    bar_end_idx : int
-        Last bar index
-    pattern_len : int
-        Pattern length in bars
-    steps_per_bar : int
-        Number of ticks per bar
-    loop_ref_offsets : dict
-        Mapping loop_start_bar -> ref_ms
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns: bar_number, tick_16th, grid_time_loop
-    """
-    rows = []
-    total_sixteenths = pattern_len * steps_per_bar
-
-    for loop_start_bar in range(bar_start_idx, bar_end_idx + 1, pattern_len):
-        if loop_start_bar + pattern_len > len(downbeats) - 1:
-            break
-
-        loop_start_time = downbeats[loop_start_bar]
-        loop_end_time = downbeats[loop_start_bar + pattern_len]
-        loop_duration = loop_end_time - loop_start_time
-        sixteenth_duration = loop_duration / total_sixteenths
-
-        ref_tuple = loop_ref_offsets.get(loop_start_bar, (0.0, loop_start_bar, 0.0, 0.0))
-        ref_ms = ref_tuple[0]
-        ref_s = ref_ms / 1000.0
-
-        for bar_offset in range(pattern_len):
-            bar_idx = loop_start_bar + bar_offset
-
-            if bar_idx > bar_end_idx or bar_idx >= len(downbeats) - 1:
-                break
-
-            for tick in range(steps_per_bar):
-                global_tick = (bar_offset * steps_per_bar) + tick
-                grid_time = loop_start_time + (global_tick * sixteenth_duration) + ref_s
-
-                rows.append({
-                    'bar_number': bar_idx,
-                    'tick_16th': tick,
-                    'grid_time_loop': grid_time
-                })
+                if distance <= tolerance:
+                    rows.append({
+                        'bar_number': bar_idx - first_bar,
+                        'tick_16th': nearest_tick,
+                        'onset_time': onset_time,
+                        'phase_4bar_loop': phase
+                    })
 
     return pd.DataFrame(rows)
 
 
 # ============================================================================
-# COMPREHENSIVE CSV EXPORT
+# MAIN CSV EXPORT
 # ============================================================================
 
-def create_comprehensive_csv(
+def create_raster_csv(
     corrected_downbeats_file: str,
     onset_file: str,
-    pattern_lengths: Dict[str, int],
     snippet_offset: float,
-    output_file: str
+    output_file: str,
+    max_match_frac: float = None,  # Deprecated - uses asymmetric tolerances
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
 ) -> pd.DataFrame:
     """
-    Create comprehensive phases CSV with all correction methods.
-
-    This is the main entry point for Step 4 of the AP2 pipeline.
+    Create raster CSV with 3 correction methods.
 
     Parameters
     ----------
@@ -1115,33 +760,27 @@ def create_comprehensive_csv(
         Path to corrected downbeats file
     onset_file : str
         Path to onsets CSV file
-    pattern_lengths : dict
-        Pattern lengths for drum, mel, pitch methods
     snippet_offset : float
         Snippet start offset in seconds
     output_file : str
         Output CSV path
+    max_match_frac : float
+        Maximum matching distance as fraction of step duration
+    search_window_start_phase : float
+        Search window before 1/16th for reference onset
+    search_window_end_phase : float
+        Search window after 1/16th for reference onset
 
     Returns
     -------
     pd.DataFrame
-        Comprehensive DataFrame with all phases and grid times
-
-    Examples
-    --------
-    >>> df = create_comprehensive_csv(
-    ...     'track_corrected.txt',
-    ...     'track_onsets.csv',
-    ...     {'drum': 4, 'mel': 2, 'pitch': 4},
-    ...     10.5,
-    ...     'track_comprehensive.csv'
-    ... )
+        Comprehensive DataFrame with all phases
     """
-    print(f"\nCreating comprehensive phases CSV...")
+    print(f"\nCreating raster CSV...")
 
     # Load inputs
     print("  Loading downbeats...")
-    downbeats, tsig, usable_mask = parse_corrected_downbeats(corrected_downbeats_file)
+    downbeats, tsig = parse_corrected_downbeats(corrected_downbeats_file)
     steps_per_bar = tsig * GRID_SUBDIV_PER_BEAT
 
     print("  Loading onsets...")
@@ -1151,53 +790,31 @@ def create_comprehensive_csv(
     first_bar, last_bar = calculate_snippet_bars(downbeats, snippet_offset, SNIPPET_DURATION_S)
     print(f"  Snippet covers bars {first_bar} to {last_bar}")
 
-    # Find reference offset for per-snippet method
-    print("  Finding per-snippet reference offset...")
-    ref_ms, ref_bar, ref_phase, grid_phase = find_reference_offset_priority(
-        downbeats, onsets, first_bar, 1, steps_per_bar
-    )
-    print(f"    Reference: {ref_ms:.2f}ms at bar {ref_bar}")
-
-    # Assign onsets to ticks (uncorrected)
-    print("  Assigning onsets to ticks...")
-    onset_map = assign_onsets_to_ticks_uncorrected(onsets, downbeats, first_bar, last_bar, steps_per_bar)
-
-    # Calculate uncorrected phases
+    # Method 1: Uncorrected
     print("  Calculating uncorrected phases...")
-    df_uncorr = calculate_phases_uncorrected(onset_map, downbeats, steps_per_bar)
+    df_uncorrected = calculate_phases_uncorrected(
+        onsets, downbeats, first_bar, last_bar, steps_per_bar, max_match_frac
+    )
 
-    # Calculate per-snippet phases (both versions)
+    # Method 2: Per-snippet correction
+    print("  Finding per-snippet reference offset...")
+    ref_offset_ms, ref_bar = find_per_snippet_reference(
+        downbeats, onsets, first_bar, last_bar, steps_per_bar,
+        search_window_start_phase, search_window_end_phase, max_match_frac
+    )
+    print(f"    Reference: {ref_offset_ms:.2f}ms at bar {ref_bar}")
+
     print("  Calculating per-snippet phases...")
-    df_snippet_remap = calculate_phases_per_snippet(onset_map, downbeats, ref_ms, steps_per_bar, remap_ticks=True)
-    df_snippet_orig = calculate_phases_per_snippet(onset_map, downbeats, ref_ms, steps_per_bar, remap_ticks=False)
+    df_per_snippet = calculate_phases_per_snippet(
+        onsets, downbeats, first_bar, last_bar, steps_per_bar, ref_offset_ms, max_match_frac
+    )
 
-    # Calculate loop-based phases
-    print("  Calculating loop-based phases...")
-    loop_phases = {}
-    for method, pattern_len in pattern_lengths.items():
-        print(f"    {method} method (L={pattern_len})...")
-        loop_offsets = calculate_loop_reference_offsets(downbeats, onsets, first_bar, last_bar, pattern_len, steps_per_bar)
-        df_loop = calculate_phases_loop_based(onsets, downbeats, first_bar, last_bar, pattern_len, steps_per_bar, loop_offsets)
-        loop_phases[method] = (df_loop, loop_offsets, pattern_len)
-
-    # Calculate standard loop-based phases (fixed L=1, L=2, L=4)
-    print("  Calculating standard loop-based phases...")
-    for standard_len in [1, 2, 4]:
-        method = f'standard_L{standard_len}'
-        print(f"    {method} (L={standard_len})...")
-        loop_offsets = calculate_loop_reference_offsets(downbeats, onsets, first_bar, last_bar, standard_len, steps_per_bar)
-        df_loop = calculate_phases_loop_based(onsets, downbeats, first_bar, last_bar, standard_len, steps_per_bar, loop_offsets)
-        loop_phases[method] = (df_loop, loop_offsets, standard_len)
-
-    # Calculate grid times
-    print("  Calculating grid times...")
-    df_grid_uncorrected = calculate_grid_times_uncorrected(downbeats, first_bar, last_bar, steps_per_bar)
-    df_grid_snippet = calculate_grid_times(downbeats, first_bar, last_bar, steps_per_bar, ref_ms)
-
-    grid_times_loop = {}
-    for method, (df_loop, loop_offsets, pattern_len) in loop_phases.items():
-        df_grid_loop = calculate_grid_times_loop(downbeats, first_bar, last_bar, pattern_len, steps_per_bar, loop_offsets)
-        grid_times_loop[method] = (df_grid_loop, pattern_len)
+    # Method 3: 4-bar loop correction
+    print("  Calculating 4-bar loop phases...")
+    df_4bar_loop = calculate_phases_4bar_loop(
+        onsets, downbeats, first_bar, last_bar, steps_per_bar,
+        max_match_frac, search_window_start_phase, search_window_end_phase
+    )
 
     # Create comprehensive grid (all bar/tick combinations)
     print("  Building comprehensive grid...")
@@ -1206,7 +823,6 @@ def create_comprehensive_csv(
         for tick in range(steps_per_bar):
             grid_rows.append({
                 'bar_number': bar_idx - first_bar,  # Snippet-relative
-                'bar_number_global': bar_idx,       # Song-absolute
                 'tick_16th': tick
             })
 
@@ -1215,211 +831,143 @@ def create_comprehensive_csv(
     # Merge all phase data
     print("  Merging phase data...")
 
-    # Merge uncorrected
-    df_uncorr_merge = df_uncorr[['bar_number', 'tick_16th', 'onset_time_uncorrected', 'phase_uncorrected']].copy()
-    df_uncorr_merge['bar_number'] = df_uncorr_merge['bar_number'] - first_bar
-    df_comprehensive = df_comprehensive.merge(df_uncorr_merge, on=['bar_number', 'tick_16th'], how='left')
+    # Merge uncorrected (with its onset_time)
+    df_comprehensive = df_comprehensive.merge(
+        df_uncorrected[['bar_number', 'tick_16th', 'onset_time', 'phase_uncorrected']].rename(
+            columns={'onset_time': 'onset_time_uncorrected'}
+        ),
+        on=['bar_number', 'tick_16th'],
+        how='left'
+    )
 
-    # Merge per-snippet (remapped)
-    df_snippet_remap_merge = df_snippet_remap[['bar_number', 'tick_16th', 'phase_per_snippet_remapped']].copy()
-    df_snippet_remap_merge['bar_number'] = df_snippet_remap_merge['bar_number'] - first_bar
-    df_comprehensive = df_comprehensive.merge(df_snippet_remap_merge, on=['bar_number', 'tick_16th'], how='left')
+    # Merge per-snippet (with its own onset_time - may be different!)
+    df_comprehensive = df_comprehensive.merge(
+        df_per_snippet[['bar_number', 'tick_16th', 'onset_time', 'phase_per_snippet']].rename(
+            columns={'onset_time': 'onset_time_per_snippet'}
+        ),
+        on=['bar_number', 'tick_16th'],
+        how='left'
+    )
 
-    # Merge per-snippet (original/buggy)
-    df_snippet_orig_merge = df_snippet_orig[['bar_number', 'tick_16th', 'phase_per_snippet']].copy()
-    df_snippet_orig_merge['bar_number'] = df_snippet_orig_merge['bar_number'] - first_bar
-    df_comprehensive = df_comprehensive.merge(df_snippet_orig_merge, on=['bar_number', 'tick_16th'], how='left')
+    # Merge 4-bar loop (with its own onset_time - may be different!)
+    df_comprehensive = df_comprehensive.merge(
+        df_4bar_loop[['bar_number', 'tick_16th', 'onset_time', 'phase_4bar_loop']].rename(
+            columns={'onset_time': 'onset_time_4bar_loop'}
+        ),
+        on=['bar_number', 'tick_16th'],
+        how='left'
+    )
 
-    # Merge loop-based phases
-    for method, (df_loop, loop_offsets, pattern_len) in loop_phases.items():
-        col_name = f'phase_{method}(L={pattern_len})'
-        df_loop_merge = df_loop[['bar_number', 'tick_16th', 'phase_loop']].copy()
-        df_loop_merge['bar_number'] = df_loop_merge['bar_number'] - first_bar
-        df_loop_merge = df_loop_merge.rename(columns={'phase_loop': col_name})
-        df_comprehensive = df_comprehensive.merge(df_loop_merge, on=['bar_number', 'tick_16th'], how='left')
+    # Add grid time and grid phase columns
+    print("  Adding grid time and phase columns...")
 
-    # Merge grid times
-    print("  Merging grid times...")
+    grid_times_uncorrected = []
+    grid_times_per_snippet = []
+    grid_times_4bar_loop = []
+    grid_phases = []
 
-    # Uncorrected grid
-    df_grid_uncorrected_merge = df_grid_uncorrected[['bar_number', 'tick_16th', 'grid_time_uncorrected']].copy()
-    df_grid_uncorrected_merge['bar_number'] = df_grid_uncorrected_merge['bar_number'] - first_bar
-    df_comprehensive = df_comprehensive.merge(df_grid_uncorrected_merge, on=['bar_number', 'tick_16th'], how='left')
+    ref_offset_s = ref_offset_ms / 1000.0
 
-    # Per-snippet grid
-    df_grid_snippet_merge = df_grid_snippet[['bar_number', 'tick_16th', 'grid_time_per_snippet']].copy()
-    df_grid_snippet_merge['bar_number'] = df_grid_snippet_merge['bar_number'] - first_bar
-    df_comprehensive = df_comprehensive.merge(df_grid_snippet_merge, on=['bar_number', 'tick_16th'], how='left')
+    for _, row in df_comprehensive.iterrows():
+        bar_num_abs = int(row['bar_number']) + first_bar  # Convert to absolute bar index
+        tick = int(row['tick_16th'])
 
-    # Loop-based grids
-    for method, (df_grid_loop, pattern_len) in grid_times_loop.items():
-        col_name = f'grid_time_{method}(L={pattern_len})'
-        df_grid_loop_merge = df_grid_loop[['bar_number', 'tick_16th', 'grid_time_loop']].copy()
-        df_grid_loop_merge['bar_number'] = df_grid_loop_merge['bar_number'] - first_bar
-        df_grid_loop_merge = df_grid_loop_merge.rename(columns={'grid_time_loop': col_name})
-        df_comprehensive = df_comprehensive.merge(df_grid_loop_merge, on=['bar_number', 'tick_16th'], how='left')
+        # Grid phase (same for all methods)
+        grid_phase = tick / steps_per_bar
+        grid_phases.append(grid_phase)
 
-    # Prepare output path
+        # Uncorrected grid time
+        if bar_num_abs < len(downbeats) - 1:
+            bar_start = downbeats[bar_num_abs]
+            bar_end = downbeats[bar_num_abs + 1]
+            bar_duration = bar_end - bar_start
+            grid_time_uncorrected = bar_start + (tick / steps_per_bar) * bar_duration
+            grid_times_uncorrected.append(grid_time_uncorrected)
+
+            # Per-snippet corrected grid time
+            grid_time_per_snippet = (bar_start + ref_offset_s) + (tick / steps_per_bar) * bar_duration
+            grid_times_per_snippet.append(grid_time_per_snippet)
+        else:
+            grid_times_uncorrected.append(None)
+            grid_times_per_snippet.append(None)
+
+        # 4-bar loop grid time (equidistant)
+        # Find which 4-bar loop this bar belongs to
+        pattern_len = 4
+        loop_start_bar = (bar_num_abs // pattern_len) * pattern_len
+
+        if loop_start_bar + pattern_len <= len(downbeats) - 1:
+            loop_start_time = downbeats[loop_start_bar]
+            loop_end_time = downbeats[loop_start_bar + pattern_len]
+            loop_duration = loop_end_time - loop_start_time
+            total_sixteenths = pattern_len * steps_per_bar
+            sixteenth_duration = loop_duration / total_sixteenths
+
+            # Find loop reference offset
+            loop_ref_offset_ms = find_4bar_loop_reference(
+                downbeats, onsets, loop_start_bar, steps_per_bar,
+                search_window_start_phase, search_window_end_phase, None
+            )
+            loop_ref_offset_s = loop_ref_offset_ms / 1000.0
+
+            # Calculate equidistant grid time for this bar
+            bar_offset_in_loop = bar_num_abs - loop_start_bar
+            bar_sixteenth_pos = bar_offset_in_loop * steps_per_bar
+            equi_bar_start = loop_start_time + (bar_sixteenth_pos * sixteenth_duration)
+
+            grid_time_4bar = (equi_bar_start + loop_ref_offset_s) + (tick / steps_per_bar) * (steps_per_bar * sixteenth_duration)
+            grid_times_4bar_loop.append(grid_time_4bar)
+        else:
+            grid_times_4bar_loop.append(None)
+
+    df_comprehensive['grid_time_uncorrected'] = grid_times_uncorrected
+    df_comprehensive['grid_time_per_snippet'] = grid_times_per_snippet
+    df_comprehensive['grid_time_4bar_loop'] = grid_times_4bar_loop
+    df_comprehensive['grid_phase'] = grid_phases
+
+    # Save CSV
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save reference onsets to separate CSV
-    print("  Saving reference onsets...")
-    ref_rows = []
-
-    # Per-snippet reference
-    if ref_bar is not None and ref_bar >= first_bar:
-        ref_rows.append({
-            'method': 'per_snippet',
-            'bar_number': ref_bar - first_bar,
-            'bar_number_global': ref_bar,
-            'ref_ms': ref_ms,
-            'ref_phase': ref_phase,
-            'grid_phase': grid_phase
-        })
-
-    # Loop-based references
-    for method, (df_loop, loop_offsets, pattern_len) in loop_phases.items():
-        for loop_start_bar, ref_tuple in loop_offsets.items():
-            # Unpack the reference tuple: (ref_ms, bar_idx, ref_phase, grid_phase)
-            loop_ref_ms, ref_bar_idx, ref_phase, grid_phase = ref_tuple
-
-            # ref_bar_idx is in global coordinates, convert to snippet-relative
-            if ref_bar_idx >= first_bar and ref_bar_idx <= last_bar:
-                ref_rows.append({
-                    'method': f'{method}(L={pattern_len})',
-                    'bar_number': ref_bar_idx - first_bar,
-                    'bar_number_global': ref_bar_idx,
-                    'ref_ms': loop_ref_ms,
-                    'ref_phase': ref_phase,
-                    'grid_phase': grid_phase
-                })
-
-    if ref_rows:
-        df_refs = pd.DataFrame(ref_rows)
-        ref_file = output_path.parent / f"{output_path.stem}_reference_onsets.csv"
-        df_refs.to_csv(ref_file, index=False)
-        print(f"  ✓ Reference onsets saved: {len(df_refs)} references")
-
-    # Save comprehensive CSV
     print(f"  Saving to {output_file}...")
     df_comprehensive.to_csv(output_file, index=False)
 
-    print(f"  ✓ Comprehensive CSV created: {len(df_comprehensive)} rows")
+    print(f"  ✓ Raster CSV created: {len(df_comprehensive)} rows")
 
     return df_comprehensive
 
 
-# ============================================================================
-# TEST FUNCTION
-# ============================================================================
+# Backward compatibility alias
+def create_comprehensive_csv(
+    corrected_downbeats_file: str,
+    onset_file: str,
+    pattern_lengths: Dict[str, int],  # Ignored in new version
+    snippet_offset: float,
+    output_file: str
+) -> pd.DataFrame:
+    """
+    Backward compatibility wrapper for create_raster_csv.
 
-def test_basic_functions():
-    """Test basic parsing and helper functions."""
-    print("=" * 80)
-    print("Testing Raster Module - Basic Functions")
-    print("=" * 80)
-
-    # Test find_nearest_onset
-    print("\n[1] Testing find_nearest_onset...")
-    onsets = np.array([1.0, 2.0, 3.5, 5.0])
-    nearest, dist = find_nearest_onset(3.4, onsets)
-    assert abs(nearest - 3.5) < 0.01, "Should find 3.5"
-    assert abs(dist - 0.1) < 0.01, "Distance should be 0.1"
-    print("  ✓ find_nearest_onset works correctly")
-
-    # Test calculate_snippet_bars
-    print("\n[2] Testing calculate_snippet_bars...")
-    downbeats = [0, 2, 4, 6, 8, 10, 12]
-    first, last = calculate_snippet_bars(downbeats, 3.0, 6.0)
-    print(f"  Snippet 3.0-9.0s covers bars {first} to {last}")
-    assert first >= 0 and last < len(downbeats), "Indices should be valid"
-    print("  ✓ calculate_snippet_bars works correctly")
-
-    # Test find_reference_offset_priority
-    print("\n[3] Testing find_reference_offset_priority...")
-    downbeats = [0.0, 2.0, 4.0, 6.0]
-    onsets = np.array([0.05, 0.5, 1.0, 1.5, 2.05, 2.5, 3.0, 3.5])
-    ref_ms, bar, ref_phase, grid_phase = find_reference_offset_priority(
-        downbeats, onsets, 0, 1, 16
+    The pattern_lengths parameter is ignored as we now use fixed 4-bar loops.
+    """
+    return create_raster_csv(
+        corrected_downbeats_file,
+        onset_file,
+        snippet_offset,
+        output_file
     )
-    print(f"  Reference: {ref_ms:.2f}ms at bar {bar}")
-    print(f"  Phases: ref={ref_phase:.4f}, grid={grid_phase:.4f}")
-    assert abs(ref_ms - 50.0) < 10.0, "Should find ~50ms offset at downbeat"
-    print("  ✓ find_reference_offset_priority works correctly")
-
-    print("\n" + "=" * 80)
-    print("All basic tests passed!")
-    print("=" * 80)
-
-
-def test_phase_calculations():
-    """Test phase calculation functions."""
-    print("=" * 80)
-    print("Testing Raster Module - Phase Calculations")
-    print("=" * 80)
-
-    # Setup test data
-    downbeats = [0.0, 2.0, 4.0, 6.0, 8.0]
-    onsets = np.array([0.05, 0.5, 1.0, 1.5, 2.05, 2.5, 3.0, 3.5, 4.05])
-    steps_per_bar = 16
-
-    # Test 1: Assign onsets to ticks (uncorrected)
-    print("\n[1] Testing assign_onsets_to_ticks_uncorrected...")
-    onset_map = assign_onsets_to_ticks_uncorrected(onsets, downbeats, 0, 2, steps_per_bar)
-    print(f"  Assigned {len(onset_map)} onsets to ticks")
-    assert len(onset_map) > 0, "Should assign some onsets"
-    print("  ✓ Onset assignment works")
-
-    # Test 2: Calculate uncorrected phases
-    print("\n[2] Testing calculate_phases_uncorrected...")
-    df_uncorr = calculate_phases_uncorrected(onset_map, downbeats, steps_per_bar)
-    print(f"  Calculated phases for {len(df_uncorr)} onsets")
-    print(f"  Sample phases: {df_uncorr['phase_uncorrected'].head(3).tolist()}")
-    assert len(df_uncorr) > 0, "Should have phases"
-    assert 'phase_uncorrected' in df_uncorr.columns, "Should have phase column"
-    print("  ✓ Uncorrected phase calculation works")
-
-    # Test 3: Calculate per-snippet phases (remapped)
-    print("\n[3] Testing calculate_phases_per_snippet (remapped)...")
-    df_snippet = calculate_phases_per_snippet(onset_map, downbeats, 50.0, steps_per_bar, remap_ticks=True)
-    print(f"  Calculated {len(df_snippet)} phases with 50ms offset")
-    if len(df_snippet) > 0:
-        print(f"  Sample phases: {df_snippet['phase_per_snippet_remapped'].head(3).tolist()}")
-    assert 'phase_per_snippet_remapped' in df_snippet.columns, "Should have remapped phase column"
-    print("  ✓ Per-snippet phase calculation (remapped) works")
-
-    # Test 4: Calculate per-snippet phases (unmapped - buggy)
-    print("\n[4] Testing calculate_phases_per_snippet (unmapped/buggy)...")
-    df_snippet_bug = calculate_phases_per_snippet(onset_map, downbeats, 50.0, steps_per_bar, remap_ticks=False)
-    print(f"  Calculated {len(df_snippet_bug)} phases (buggy version)")
-    assert 'phase_per_snippet' in df_snippet_bug.columns, "Should have unmapped phase column"
-    print("  ✓ Per-snippet phase calculation (unmapped) works")
-
-    # Test 5: Calculate loop reference offsets
-    print("\n[5] Testing calculate_loop_reference_offsets...")
-    loop_offsets = calculate_loop_reference_offsets(downbeats, onsets, 0, 3, 2, steps_per_bar)
-    print(f"  Found {len(loop_offsets)} loop offsets")
-    for loop_start, ref_ms in loop_offsets.items():
-        print(f"    Loop starting at bar {loop_start}: {ref_ms:.2f}ms")
-    assert len(loop_offsets) > 0, "Should find some loop offsets"
-    print("  ✓ Loop reference offset calculation works")
-
-    # Test 6: Calculate loop-based phases
-    print("\n[6] Testing calculate_phases_loop_based...")
-    df_loop = calculate_phases_loop_based(onsets, downbeats, 0, 3, 2, steps_per_bar, loop_offsets)
-    print(f"  Calculated {len(df_loop)} loop-based phases")
-    if len(df_loop) > 0:
-        print(f"  Sample phases: {df_loop['phase_loop'].head(3).tolist()}")
-    assert 'phase_loop' in df_loop.columns, "Should have loop phase column"
-    print("  ✓ Loop-based phase calculation works")
-
-    print("\n" + "=" * 80)
-    print("All phase calculation tests passed!")
-    print("=" * 80)
 
 
 if __name__ == "__main__":
-    test_basic_functions()
-    print("\n")
-    test_phase_calculations()
+    import sys
+
+    if len(sys.argv) < 5:
+        print("Usage: python raster.py <corrected_downbeats_file> <onset_file> <snippet_offset> <output_file>")
+        sys.exit(1)
+
+    corrected_downbeats_file = sys.argv[1]
+    onset_file = sys.argv[2]
+    snippet_offset = float(sys.argv[3])
+    output_file = sys.argv[4]
+
+    create_raster_csv(corrected_downbeats_file, onset_file, snippet_offset, output_file)

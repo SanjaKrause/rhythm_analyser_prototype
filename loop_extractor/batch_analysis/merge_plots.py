@@ -6,6 +6,7 @@ Merges:
 - All tempo plots into all_tempo_plots.pdf
 - All raster comparison plots into all_raster_comparison.pdf
 - All raster standard plots into all_raster_standard.pdf
+- All new grid corrections plots into all_new_grid_corrections.pdf
 - All microtiming plots into all_microtiming_plots.pdf
 - All rhythm histograms into all_rhythm_histograms.pdf
 
@@ -134,7 +135,31 @@ def merge_plots(output_dir: Path):
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 4. Merge microtiming plots (PDF files in 5_grid folder)
+    # 4. Merge new grid corrections plots (PNG files in 5_grid folder)
+    print('\nLooking for new grid corrections plots...')
+    new_grid_corrections_pngs = []
+    for track_dir in track_dirs:
+        new_grid_png = track_dir / '5_grid' / f'{track_dir.name}_new_grid_corrections.png'
+        if new_grid_png.exists():
+            new_grid_corrections_pngs.append(new_grid_png)
+            print(f'  Found new grid corrections: {track_dir.name}')
+
+    if new_grid_corrections_pngs:
+        print(f'\nConverting and merging {len(new_grid_corrections_pngs)} new grid corrections PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(new_grid_corrections_pngs):
+            temp_pdf = temp_dir / f'new_grid_corr_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_new_grid_corrections.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 5. Merge microtiming plots (PDF files in 5_grid folder)
     print('\nLooking for microtiming plots...')
     microtiming_pdfs = []
     for track_dir in track_dirs:
@@ -153,7 +178,7 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 5. Merge rhythm histograms (PDF files in 5.5_rhythm folder)
+    # 6. Merge rhythm histograms (PDF files in 5.5_rhythm folder)
     print('\nLooking for rhythm histograms...')
     rhythm_pdfs = []
     for track_dir in track_dirs:
