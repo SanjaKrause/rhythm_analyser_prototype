@@ -9,6 +9,7 @@ Merges:
 - All new grid corrections plots into all_new_grid_corrections.pdf
 - All microtiming plots into all_microtiming_plots.pdf
 - All rhythm histograms into all_rhythm_histograms.pdf
+- All new 4-method raster plots into all_raster_4method.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -195,6 +196,30 @@ def merge_plots(output_dir: Path):
             merger.append(str(pdf))
         merger.write(str(output_pdf))
         merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 7. Merge new 4-method raster plots (PNG files in 5_grid folder)
+    print('\nLooking for new 4-method raster plots...')
+    raster_4method_pngs = []
+    for track_dir in track_dirs:
+        raster_png = track_dir / '5_grid' / f'{track_dir.name}_raster.png'
+        if raster_png.exists():
+            raster_4method_pngs.append(raster_png)
+            print(f'  Found 4-method raster: {track_dir.name}')
+
+    if raster_4method_pngs:
+        print(f'\nConverting and merging {len(raster_4method_pngs)} 4-method raster PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(raster_4method_pngs):
+            temp_pdf = temp_dir / f'raster_4method_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_raster_4method.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # Clean up temporary files at the end

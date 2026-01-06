@@ -2,10 +2,11 @@
 Simplified raster plot generation for visualizing microtiming phases.
 
 This module creates scatter plots showing onset phases across bars,
-comparing 3 correction methods:
+comparing 4 correction methods:
 1. Uncorrected
 2. Per-snippet correction
 3. 4-bar loop correction
+4. 4-bar pattern flexStart correction
 
 Environment: AEinBOX_13_3 (matplotlib, numpy, pandas)
 """
@@ -243,12 +244,13 @@ def create_raster_plot(
     track_id: str
 ):
     """
-    Create 3-panel raster plot comparing all correction methods.
+    Create 4-panel raster plot comparing all correction methods.
 
     Panels:
     1. Uncorrected
     2. Per-snippet correction
     3. 4-bar loop correction
+    4. 4-bar pattern flexStart correction
 
     Parameters
     ----------
@@ -282,10 +284,10 @@ def create_raster_plot(
     n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 10
     fig_height = max(8, min(20, 0.15 * n_bars))
 
-    # Create figure with 3 subplots
-    fig = plt.figure(figsize=(12, fig_height * 1.5))
-    gs = fig.add_gridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.3)
-    axes = [fig.add_subplot(gs[i]) for i in range(3)]
+    # Create figure with 4 subplots
+    fig = plt.figure(figsize=(12, fig_height * 2))
+    gs = fig.add_gridspec(4, 1, height_ratios=[1, 1, 1, 1], hspace=0.3)
+    axes = [fig.add_subplot(gs[i]) for i in range(4)]
 
     # Plot 1: Uncorrected (no reference circles)
     plot_raster_single(
@@ -307,10 +309,17 @@ def create_raster_plot(
         ref_onsets=ref_onsets, method_name='4bar_loop'
     )
 
+    # Plot 4: 4-bar pattern flexStart correction
+    plot_raster_single(
+        axes[3], df, 'phase_4bar_pattern_flexStart',
+        '4-bar pattern flexStart correction', track_id,
+        ref_onsets=ref_onsets, method_name='4bar_pattern_flexStart'
+    )
+
     # Overall title
     fig.suptitle(f"Track {track_id} — Raster Plots — All Correction Methods",
                 fontsize=13, fontweight="bold")
-    plt.subplots_adjust(top=0.96, bottom=0.05, hspace=0.3)
+    plt.subplots_adjust(top=0.97, bottom=0.05, hspace=0.3)
 
     # Save
     output_path = Path(output_file)
@@ -330,7 +339,7 @@ def create_all_plots(
     """
     Create all raster plots for a track (backward compatibility wrapper).
 
-    This function creates a single simplified raster plot with 3 methods.
+    This function creates a single simplified raster plot with 4 methods.
     The rms_summary_file parameter is ignored in the new simplified version.
 
     Parameters
