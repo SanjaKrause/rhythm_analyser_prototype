@@ -393,24 +393,9 @@ def find_per_snippet_reference(
         step_duration = bar_duration / steps_per_bar
         grid_time = bar_start + (target_tick * step_duration)
 
-        # Calculate search window
-        if bar_idx == first_bar:
-            # For first bar in snippet, assume previous bar has same duration
-            assumed_prev_bar_duration = bar_duration
-            prev_bar_15_16th = bar_start - (1.0 / steps_per_bar) * assumed_prev_bar_duration
-            window_start = prev_bar_15_16th - search_window_start_phase * (assumed_prev_bar_duration / steps_per_bar)
-            window_end = grid_time + search_window_end_phase * step_duration
-        else:
-            # For bars > 0, use actual previous bar's 15/16th position
-            prev_bar_start = downbeats[bar_idx - 1]
-            prev_bar_duration = bar_start - prev_bar_start
-
-            if prev_bar_duration <= 0:
-                continue
-
-            prev_bar_15_16th = prev_bar_start + (15.0 / steps_per_bar) * prev_bar_duration
-            window_start = prev_bar_15_16th - search_window_start_phase * (prev_bar_duration / steps_per_bar)
-            window_end = grid_time + search_window_end_phase * step_duration
+        # Calculate search window (symmetric around target, using current bar's step duration)
+        window_start = grid_time - search_window_start_phase * step_duration
+        window_end = grid_time + search_window_end_phase * step_duration
 
         # Debug logging for first few bars
         if bar_idx <= first_bar + 2:
@@ -608,9 +593,8 @@ def find_4bar_loop_reference(
     if prev_bar_duration <= 0:
         return 0.0
 
-    # Calculate search window
-    prev_bar_15_16th = prev_bar_start + (15.0 / steps_per_bar) * prev_bar_duration
-    window_start = prev_bar_15_16th - search_window_start_phase * (prev_bar_duration / steps_per_bar)
+    # Calculate search window (symmetric around target, using current bar's step duration)
+    window_start = grid_time - search_window_start_phase * sixteenth_duration
     window_end = grid_time + search_window_end_phase * sixteenth_duration
 
     # Find nearest onset within the search window
@@ -925,10 +909,93 @@ def create_raster_csv(
     df_comprehensive['grid_time_4bar_loop'] = grid_times_4bar_loop
     df_comprehensive['grid_phase'] = grid_phases
 
-    # Save CSV
+    # Prepare output path
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Save reference onsets to separate CSV
+    print("  Saving reference onsets...")
+    ref_rows = []
+
+    # Per-snippet reference
+    if ref_bar is not None and ref_bar >= first_bar:
+        # Calculate phases for reference
+        if ref_bar < len(downbeats) - 1:
+            bar_start = downbeats[ref_bar]
+            bar_end = downbeats[ref_bar + 1]
+            bar_duration = bar_end - bar_start
+
+            # Find the actual onset at tick 0 (1/16th position)
+            ref_offset_s = ref_offset_ms / 1000.0
+            grid_time = bar_start  # Uncorrected 1/16th position (tick 0 = downbeat)
+
+            # Reference onset is offset from grid
+            ref_onset_time = grid_time + ref_offset_s
+
+            # Calculate phases
+            ref_phase = (ref_onset_time - bar_start) / bar_duration if bar_duration > 0 else 0.0
+            grid_phase = (grid_time - bar_start) / bar_duration if bar_duration > 0 else 0.0
+
+            ref_rows.append({
+                'method': 'per_snippet',
+                'bar_number': ref_bar - first_bar,
+                'bar_number_global': ref_bar,
+                'ref_ms': ref_offset_ms,
+                'ref_phase': ref_phase,
+                'grid_phase': grid_phase,
+                'bar_duration': bar_duration
+            })
+
+    # 4-bar loop references (one for each 4-bar loop - each loop has its own offset)
+    pattern_len = 4
+    for loop_start_bar in range(first_bar, last_bar + 1, pattern_len):
+        if loop_start_bar + pattern_len > len(downbeats) - 1:
+            break
+
+        # Find reference offset for THIS specific loop
+        loop_ref_offset_ms = find_4bar_loop_reference(
+            downbeats, onsets, loop_start_bar, steps_per_bar,
+            search_window_start_phase, search_window_end_phase, None
+        )
+
+        # Calculate phases for 4-bar loop reference
+        loop_start_time = downbeats[loop_start_bar]
+        loop_end_time = downbeats[loop_start_bar + pattern_len]
+        loop_duration = loop_end_time - loop_start_time
+        total_sixteenths = pattern_len * steps_per_bar
+        sixteenth_duration = loop_duration / total_sixteenths
+
+        # Grid time at tick 0 (1/16th position) of first bar in loop
+        grid_time = loop_start_time
+
+        # Reference onset is offset from grid
+        loop_ref_offset_s = loop_ref_offset_ms / 1000.0
+        ref_onset_time = grid_time + loop_ref_offset_s
+
+        # Calculate phases relative to equidistant bar
+        equi_bar_start = loop_start_time
+        equi_bar_duration = steps_per_bar * sixteenth_duration
+
+        ref_phase = (ref_onset_time - equi_bar_start) / equi_bar_duration if equi_bar_duration > 0 else 0.0
+        grid_phase = (grid_time - equi_bar_start) / equi_bar_duration if equi_bar_duration > 0 else 0.0
+
+        ref_rows.append({
+            'method': '4bar_loop',
+            'bar_number': loop_start_bar - first_bar,
+            'bar_number_global': loop_start_bar,
+            'ref_ms': loop_ref_offset_ms,
+            'ref_phase': ref_phase,
+            'grid_phase': grid_phase,
+            'bar_duration': equi_bar_duration
+        })
+
+    if ref_rows:
+        df_refs = pd.DataFrame(ref_rows)
+        ref_file = output_path.parent / f"{output_path.stem}_reference_onsets.csv"
+        df_refs.to_csv(ref_file, index=False)
+        print(f"  ✓ Reference onsets saved: {len(df_refs)} references to {ref_file.name}")
+
+    # Save comprehensive CSV
     print(f"  Saving to {output_file}...")
     df_comprehensive.to_csv(output_file, index=False)
 

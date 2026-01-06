@@ -54,7 +54,10 @@ def plot_raster_single(
     phase_column: str,
     title: str,
     track_id: str,
-    show_grid_at_32nds: bool = True
+    rms_ms: Optional[float] = None,
+    show_grid_at_32nds: bool = True,
+    ref_onsets: Optional[pd.DataFrame] = None,
+    method_name: Optional[str] = None
 ) -> plt.Axes:
     """
     Plot a single raster subplot showing onset phases across bars.
@@ -75,8 +78,14 @@ def plot_raster_single(
         Plot title
     track_id : str
         Track identifier
+    rms_ms : float, optional
+        RMS deviation in milliseconds (shown in title)
     show_grid_at_32nds : bool
         Show vertical grid lines at 32nd notes
+    ref_onsets : pd.DataFrame, optional
+        Reference onsets DataFrame for drawing red/pink circles
+    method_name : str, optional
+        Method name to filter reference onsets
 
     Returns
     -------
@@ -115,20 +124,95 @@ def plot_raster_single(
             ax.scatter(phases, np.full(len(phases), bar_idx),
                        marker="x", s=18, linewidths=1, color=color)
 
-    # Set axis limits - extend beyond 1.0 to show offsets beyond bar end
-    ax.set_xlim(-0.0625, 1.0625)
+    # Draw reference onset circles if provided
+    if ref_onsets is not None and method_name is not None:
+        # Filter references for this method
+        method_refs = ref_onsets[ref_onsets['method'] == method_name]
+
+        # Debug output
+        print(f"    Method '{method_name}': found {len(method_refs)} references")
+
+        steps_per_bar = 16  # TODO: make configurable
+
+        for _, ref in method_refs.iterrows():
+            bar_idx = int(ref['bar_number'])
+            ref_ms = ref['ref_ms']
+            ref_phase = ref['ref_phase']
+            grid_phase = ref['grid_phase']
+            bar_duration = ref.get('bar_duration', None)
+
+            if 0 <= bar_idx < n_bars:
+                # Determine if this is a "new" method (different coordinate system)
+                is_new_method = 'new_per_snippet' in method_name or 'new_4bar' in method_name
+
+                if is_new_method and bar_duration is not None and bar_duration > 0:
+                    # NEW METHOD PARADIGM:
+                    # ref_phase = where onset actually is (in uncorrected grid)
+                    # grid_phase = where 1/16 position is in uncorrected grid (should be 0.0 for tick 0)
+                    # After correction: grid shifts by ref_ms so that grid_phase aligns with onset
+
+                    ref_s = ref_ms / 1000.0
+
+                    # Red circle: Where the onset IS after correction (should be at 0ms = at tick 0)
+                    # The target tick is 0, which in display coordinates is 0.0
+                    red_phase_corrected = 0.0
+
+                    # Pink circle: Where tick 0 WAS before correction (in corrected coordinates)
+                    pink_phase_corrected = grid_phase - (ref_s / bar_duration)
+
+                    ax.scatter([red_phase_corrected], [bar_idx],
+                               s=90, facecolors='none', edgecolors='red',
+                               linewidths=1.5, marker='o', zorder=10)
+
+                    ax.scatter([pink_phase_corrected], [bar_idx],
+                               s=60, facecolors='none', edgecolors='pink',
+                               linewidths=1.2, marker='o', zorder=9, alpha=0.7)
+
+                    # Add text label with offset time
+                    if ref_ms is not None and np.isfinite(ref_ms):
+                        label_x = max(red_phase_corrected, pink_phase_corrected) + 0.02
+                        ax.text(label_x, bar_idx, f'{ref_ms:.1f}ms',
+                                fontsize=6, va='center', ha='left', color='red',
+                                bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                          edgecolor='red', alpha=0.8, linewidth=0.5))
+                else:
+                    # OLD METHOD PARADIGM (per_snippet and 4bar_loop):
+                    # ref_phase = where onset actually is
+                    # grid_phase = where grid position should be (should be 0.0 for tick 0)
+                    # After correction: grid moves to meet onset, so they align
+
+                    # Red circle at grid position (where reference IS after correction at tick 0)
+                    ax.scatter([grid_phase], [bar_idx],
+                               s=90, facecolors='none', edgecolors='red',
+                               linewidths=1.5, marker='o', zorder=10)
+
+                    # Pink circle at uncorrected position (where reference WAS before correction)
+                    if ref_phase is not None and np.isfinite(ref_phase):
+                        ax.scatter([ref_phase], [bar_idx],
+                                   s=60, facecolors='none', edgecolors='pink',
+                                   linewidths=1.2, marker='o', zorder=9, alpha=0.7)
+
+                        # Add text label with offset time
+                        if ref_ms is not None and np.isfinite(ref_ms):
+                            label_x = max(ref_phase, grid_phase) + 0.02
+                            ax.text(label_x, bar_idx, f'{ref_ms:.1f}ms',
+                                    fontsize=6, va='center', ha='left', color='red',
+                                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                              edgecolor='red', alpha=0.8, linewidth=0.5))
+
+    # Set axis limits - start at -1/32 (half tick before first tick), extend to 17/16 to show offsets beyond bar end
+    ax.set_xlim(-1.0/32.0, 17.0/16.0)
     ax.set_ylim(-0.5, n_bars - 0.5)
 
-    # X-axis: tick 0 = 1/16, tick 1 = 2/16, ..., tick 15 = 16/16
-    # Phase values: 0, 1/16, 2/16, ..., 15/16
-    ticks_positions = np.linspace(0, 15.0/16.0, 16)  # 0, 1/16, ..., 15/16
+    # X-axis: tick positions 0, 1/16, 2/16, ..., 15/16 labeled as 1/16, 2/16, ..., 16/16
+    ticks_positions = np.linspace(0, 15.0/16.0, 16)  # 0 to 15/16
     ax.set_xticks(ticks_positions)
-    ax.set_xticklabels([f"{i+1}/16" for i in range(16)])
+    ax.set_xticklabels([f"{i}/16" for i in range(1, 17)])
 
-    # Vertical grid lines at 32nd note positions
+    # Vertical grid lines
     if show_grid_at_32nds:
-        # 32nd note grid: positions 0, 1/32, 2/32, ..., 30/32 (matching our 0 to 15/16 range)
-        ticks_grid = np.linspace(0, 15.0/16.0, 31)  # 0 to 30/32 (= 15/16)
+        # 32 background gridlines at 32nd note positions (0, 1/32, 2/32, ..., 31/32)
+        ticks_grid = np.linspace(0, 31.0/32.0, 32)  # 0 to 31/32
         for xg in ticks_grid:
             ax.axvline(xg, color="0.9", linewidth=0.6, zorder=0)
 
@@ -141,8 +225,13 @@ def plot_raster_single(
     ax.set_xlabel("bar phase", fontsize=10)
     ax.set_ylabel("bar index (snippet)", fontsize=10)
 
-    # Title
-    ax.set_title(f"Onset raster — Track {track_id} — {title}", fontsize=10, fontweight='bold')
+    # Title with RMS if provided
+    if rms_ms is not None:
+        full_title = f"{title} | RMS: {rms_ms:.2f} ms"
+    else:
+        full_title = title
+
+    ax.set_title(f"Onset raster — Track {track_id} — {full_title}", fontsize=10, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
 
     return ax
@@ -181,6 +270,14 @@ def create_raster_plot(
     # Load data
     df = pd.read_csv(csv_file)
 
+    # Load reference onsets if available
+    ref_onsets = None
+    csv_path = Path(csv_file)
+    ref_file = csv_path.parent / f"{csv_path.stem}_reference_onsets.csv"
+    if ref_file.exists():
+        ref_onsets = pd.read_csv(ref_file)
+        print(f"  Loaded {len(ref_onsets)} reference onsets")
+
     # Determine number of bars for figure height
     n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 10
     fig_height = max(8, min(20, 0.15 * n_bars))
@@ -190,7 +287,7 @@ def create_raster_plot(
     gs = fig.add_gridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.3)
     axes = [fig.add_subplot(gs[i]) for i in range(3)]
 
-    # Plot 1: Uncorrected
+    # Plot 1: Uncorrected (no reference circles)
     plot_raster_single(
         axes[0], df, 'phase_uncorrected',
         'Uncorrected', track_id
@@ -199,13 +296,15 @@ def create_raster_plot(
     # Plot 2: Per-snippet correction
     plot_raster_single(
         axes[1], df, 'phase_per_snippet',
-        'Per-snippet correction', track_id
+        'Per-snippet correction', track_id,
+        ref_onsets=ref_onsets, method_name='per_snippet'
     )
 
     # Plot 3: 4-bar loop correction
     plot_raster_single(
         axes[2], df, 'phase_4bar_loop',
-        '4-bar loop correction', track_id
+        '4-bar loop correction', track_id,
+        ref_onsets=ref_onsets, method_name='4bar_loop'
     )
 
     # Overall title
