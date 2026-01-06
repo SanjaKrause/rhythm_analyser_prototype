@@ -587,6 +587,164 @@ flowchart TD
 
 ---
 
+## Detailed Step 6: Grid Correction - Data Preparation & Method Details
+
+### Overview: Four Correction Methods
+
+The grid correction system now implements **4 distinct methods** to align the 16th-note grid with actual drum onsets:
+
+1. **Uncorrected**: Raw downbeat grid (baseline)
+2. **Per-Snippet**: Single global offset for entire snippet
+3. **4-bar Loop**: Equidistant grid with offset per loop
+4. **4-bar Pattern FlexStart**: Flexible start, finds independent reference every 4 bars
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start[Input Data] --> PrepData
+
+    subgraph PrepData["<b>Data Preparation</b>"]
+        D1[Load Corrected Downbeats<br/>+ time signature] --> D2[Load Drum Onset Times<br/>from CSV]
+        D2 --> D3[Calculate Snippet Range<br/>first_bar, last_bar]
+        D3 --> D4[Filter Onsets<br/>to snippet region]
+        D4 --> D5[Set Grid Parameters<br/>steps_per_bar = 16<br/>tolerance = ±0.49/0.51]
+    end
+
+    PrepData --> Method1
+    PrepData --> Method2
+    PrepData --> Method3
+    PrepData --> Method4
+
+    subgraph Method1["<b>Method 1: Uncorrected</b>"]
+        M1A[Use raw downbeats] --> M1B[For each bar:<br/>grid_time = bar_start + tick/16 × bar_duration]
+        M1B --> M1C[Match onsets to<br/>nearest tick within tolerance]
+        M1C --> M1D[phase = onset - grid / bar_duration]
+        M1D --> M1E[Output: df_uncorrected<br/>bar_number, tick_16th,<br/>onset_time, phase_uncorrected]
+    end
+
+    subgraph Method2["<b>Method 2: Per-Snippet</b>"]
+        M2A[Find reference offset<br/>Search bar 0,1,2... at tick 0] --> M2B{Found onset within<br/>search window?}
+        M2B -->|Yes| M2C[ref_offset = onset - grid_time<br/>Store ref_bar]
+        M2B -->|No| M2D[ref_offset = 0]
+        M2C --> M2E[Apply to ALL bars:<br/>corrected_grid = bar_start + ref_offset]
+        M2D --> M2E
+        M2E --> M2F[Match onsets to corrected grid]
+        M2F --> M2G[Output: df_per_snippet<br/>bar_number, tick_16th,<br/>onset_time, phase_per_snippet]
+    end
+
+    subgraph Method3["<b>Method 3: 4-bar Loop</b>"]
+        M3A[Divide snippet into<br/>4-bar loops] --> M3B[For each loop:<br/>Create equidistant grid<br/>duration / 64 steps]
+        M3B --> M3C[Find loop reference offset<br/>at tick 0 of loop start]
+        M3C --> M3D{Found?}
+        M3D -->|Yes| M3E[loop_ref_offset = onset - grid]
+        M3D -->|No| M3F[loop_ref_offset = 0]
+        M3E --> M3G[Shift equidistant grid<br/>by loop_ref_offset]
+        M3F --> M3G
+        M3G --> M3H[Match onsets to corrected<br/>equidistant grid]
+        M3H --> M3I{More loops?}
+        M3I -->|Yes| M3B
+        M3I -->|No| M3J[Output: df_4bar_loop<br/>bar_number, tick_16th,<br/>onset_time, phase_4bar_loop]
+    end
+
+    subgraph Method4["<b>Method 4: 4-bar Pattern FlexStart</b>"]
+        M4A[Find FIRST feasible reference<br/>Search bars 0,1,2... until found] --> M4B{Found reference?}
+        M4B -->|Yes| M4C[flexStart_ref_bar = found bar<br/>flexStart_ref_offset = onset - grid]
+        M4B -->|No| M4D[flexStart_ref_offset = 0]
+        M4C --> M4E[Process 4-bar segments:<br/>Start from flexStart_ref_bar<br/>Step by 4 bars]
+        M4D --> M4E
+        M4E --> M4F[For EACH segment:<br/>Find NEW reference at segment start]
+        M4F --> M4G{Found segment ref?}
+        M4G -->|Yes| M4H[segment_ref_offset = onset - grid<br/>Use for this segment only]
+        M4G -->|No| M4I[segment_ref_offset = 0]
+        M4H --> M4J[Apply to all 4 bars<br/>in this segment]
+        M4I --> M4J
+        M4J --> M4K{More segments?}
+        M4K -->|Yes| M4F
+        M4K -->|No| M4L[Output: df_4bar_pattern_flexStart<br/>bar_number, tick_16th,<br/>onset_time, phase_4bar_pattern_flexStart]
+    end
+
+    M1E --> Dedupe
+    M2G --> Dedupe
+    M3J --> Dedupe
+    M4L --> Dedupe
+
+    subgraph Dedupe["<b>Deduplication</b>"]
+        DD1[For each method dataframe] --> DD2{Multiple onsets<br/>assigned to<br/>same bar, tick?}
+        DD2 -->|Yes| DD3[Keep onset with<br/>smallest abs phase<br/>closest to grid]
+        DD2 -->|No| DD4[Keep as is]
+        DD3 --> DD5[Unique bar, tick keys]
+        DD4 --> DD5
+    end
+
+    Dedupe --> Merge
+
+    subgraph Merge["<b>Merge into Comprehensive CSV</b>"]
+        MG1[Create full grid<br/>all bar, tick combinations] --> MG2[Left merge df_uncorrected<br/>on bar_number, tick_16th]
+        MG2 --> MG3[Left merge df_per_snippet<br/>on bar_number, tick_16th]
+        MG3 --> MG4[Left merge df_4bar_loop<br/>on bar_number, tick_16th]
+        MG4 --> MG5[Left merge df_4bar_pattern_flexStart<br/>on bar_number, tick_16th]
+        MG5 --> MG6[Add grid_time columns<br/>for each method]
+        MG6 --> MG7[Add grid_phase column<br/>tick / 16]
+    end
+
+    Merge --> RefOnsets
+
+    subgraph RefOnsets["<b>Save Reference Onsets</b>"]
+        RO1[Per-Snippet:<br/>1 reference at ref_bar] --> RO4[reference_onsets.csv]
+        RO2[4-bar Loop:<br/>1 reference per loop<br/>bars 0,4,8,12...] --> RO4
+        RO3[4-bar Pattern FlexStart:<br/>1 reference per segment<br/>from flexStart_ref_bar<br/>every 4 bars, independent refs] --> RO4
+        RO4 --> RO5[Columns: method, bar_number,<br/>bar_number_global, ref_ms,<br/>ref_phase, grid_phase, bar_duration]
+    end
+
+    RO5 --> Output[comprehensive_phases.csv<br/>+ reference_onsets.csv]
+
+    style PrepData fill:#e1f5ff,stroke:#000,color:#000
+    style Method1 fill:#fff4e1,stroke:#000,color:#000
+    style Method2 fill:#ffe1f5,stroke:#000,color:#000
+    style Method3 fill:#e1ffe1,stroke:#000,color:#000
+    style Method4 fill:#f5e1ff,stroke:#000,color:#000
+    style Dedupe fill:#ffcccc,stroke:#000,color:#000
+    style Merge fill:#ffffcc,stroke:#000,color:#000
+    style RefOnsets fill:#e1f5ff,stroke:#000,color:#000
+    style Output fill:#ccffcc,stroke:#000,color:#000
+```
+
+### Key Concepts
+
+**Reference Onset Finding:**
+- Search window: `[grid_time - 0.5×step, grid_time + 0.75×step]`
+- Finds closest onset to tick 0 (downbeat = 1/16th position)
+- Returns offset in milliseconds: `ref_offset_ms = (onset_time - grid_time) × 1000`
+
+**Asymmetric Tolerance Boundaries:**
+- Before grid: `±0.49 × step_duration`
+- After grid: `±0.51 × step_duration`
+- Prevents overlaps at boundaries between ticks
+- Multiple onsets can still match same tick (resolved by deduplication)
+
+**Deduplication Logic:**
+- **Why necessary**: With slower tempos (larger step durations), multiple onsets can fall within tolerance of the same tick
+- **Example at 70 BPM (4/4)**:
+  - Bar duration: ~3.43 seconds
+  - Step duration: 3430ms / 16 = 214ms per 16th note
+  - Tolerance window: 0.49 + 0.51 = 1.0 step = 214ms total
+  - Grid position for tick 3: 85.420 seconds
+  - Onset A at 85.403s (-17ms): rounds to tick 3, within tolerance ✓
+  - Onset B at 85.449s (+29ms): rounds to tick 3, within tolerance ✓
+  - **Result**: Both onsets match tick 3! Without deduplication, merge creates cartesian product
+- **Solution**: Keep onset with smallest `abs(phase)` (closest to grid position)
+- Ensures unique `(bar_number, tick_16th)` keys for merge
+- Prevents cartesian product (duplicate rows) in comprehensive dataframe
+- With faster tempos (120+ BPM), step duration < 125ms, so duplicate assignments are rare
+
+**Grid Correction Strategies:**
+1. **Uncorrected**: No shift, baseline for comparison
+2. **Per-Snippet**: One global correction for entire snippet
+3. **4-bar Loop**: Each loop has own equidistant grid + independent offset
+4. **4-bar Pattern FlexStart**: Flexible starting point + independent offset per segment
+
+---
+
 ## Output Generation Flow
 
 ```mermaid

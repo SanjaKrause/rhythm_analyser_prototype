@@ -302,10 +302,10 @@ def create_raster_plot(
         ref_onsets=ref_onsets, method_name='per_snippet'
     )
 
-    # Plot 3: 4-bar loop correction
+    # Plot 3: 4-bar pattern correction
     plot_raster_single(
         axes[2], df, 'phase_4bar_loop',
-        '4-bar loop correction', track_id,
+        '4-Bar Pattern correction', track_id,
         ref_onsets=ref_onsets, method_name='4bar_loop'
     )
 

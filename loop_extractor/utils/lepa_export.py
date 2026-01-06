@@ -67,9 +67,13 @@ def export_bar_durations(comprehensive_csv: str, track_id: str, output_dir: str)
                         snippet_start_ms = float(matching_row.iloc[0]['corrected offset (ms)'])
 
                         # Get first bar start time from comprehensive CSV
-                        # This is the first onset time (uncorrected)
-                        first_onset_time = df['onset_time'].min()
-                        first_bar_start_ms = float(first_onset_time * 1000.0)
+                        # Use the uncorrected grid time for bar 0, tick 0 (the downbeat)
+                        first_bar_row = df[(df['bar_number'] == 0) & (df['tick_16th'] == 0)]
+                        if not first_bar_row.empty:
+                            first_bar_start_ms = float(first_bar_row.iloc[0]['grid_time_uncorrected'] * 1000.0)
+                        else:
+                            # Fallback: use minimum grid time
+                            first_bar_start_ms = float(df['grid_time_uncorrected'].min() * 1000.0)
 
                 except (ValueError, KeyError):
                     pass

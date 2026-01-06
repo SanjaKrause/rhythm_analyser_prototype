@@ -811,13 +811,15 @@ def calculate_phases_4bar_pattern_flexStart(
     steps_per_bar: int,
     ref_offset_ms: float,
     ref_bar: int,
-    max_match_frac: float = None  # Deprecated - uses asymmetric tolerances
+    max_match_frac: float = None,  # Deprecated - uses asymmetric tolerances
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
 ) -> pd.DataFrame:
     """
     Calculate phases with 4-bar pattern flexible start correction.
 
-    Finds first reference onset in snippet, then applies same offset
-    to every 4-bar segment starting from that bar.
+    Finds first reference onset in snippet, then finds INDEPENDENT reference
+    for each 4-bar segment starting from that bar.
 
     Parameters
     ----------
@@ -832,11 +834,15 @@ def calculate_phases_4bar_pattern_flexStart(
     steps_per_bar : int
         Number of ticks per bar
     ref_offset_ms : float
-        Reference offset in milliseconds
+        Reference offset in milliseconds (not used - kept for compatibility)
     ref_bar : int
-        Bar index where reference was found
+        Bar index where first reference was found
     max_match_frac : float
         Deprecated parameter
+    search_window_start_phase : float
+        Search window before 1/16th
+    search_window_end_phase : float
+        Search window after 1/16th
 
     Returns
     -------
@@ -847,13 +853,39 @@ def calculate_phases_4bar_pattern_flexStart(
         return pd.DataFrame()
 
     rows = []
-    ref_offset_s = ref_offset_ms / 1000.0
     pattern_len = 4
 
     # Process every 4-bar segment starting from ref_bar
     for segment_start in range(ref_bar, last_bar + 1, pattern_len):
         if segment_start + 1 > len(downbeats) - 1:
             break
+
+        # Find reference offset for THIS segment
+        if segment_start < len(downbeats) - 1:
+            segment_bar_start = downbeats[segment_start]
+            segment_bar_end = downbeats[segment_start + 1]
+            segment_bar_duration = segment_bar_end - segment_bar_start
+            segment_step_duration = segment_bar_duration / steps_per_bar
+
+            # Grid time at tick 0 (1/16th position) of this segment
+            segment_grid_time = segment_bar_start
+
+            # Find reference onset for THIS segment
+            window_start = segment_grid_time - search_window_start_phase * segment_step_duration
+            window_end = segment_grid_time + search_window_end_phase * segment_step_duration
+            onsets_in_window = onsets[(onsets >= window_start) & (onsets <= window_end)]
+
+            if len(onsets_in_window) > 0:
+                # Find closest onset to grid_time
+                distances = np.abs(onsets_in_window - segment_grid_time)
+                min_idx = np.argmin(distances)
+                nearest_onset = onsets_in_window[min_idx]
+                segment_ref_offset_s = (nearest_onset - segment_grid_time)
+            else:
+                # No reference found for this segment, use 0
+                segment_ref_offset_s = 0.0
+        else:
+            segment_ref_offset_s = 0.0
 
         # Process all bars in this 4-bar segment (or remaining bars)
         segment_end = min(segment_start + pattern_len, last_bar + 1)
@@ -869,15 +901,15 @@ def calculate_phases_4bar_pattern_flexStart(
             if bar_duration <= 0:
                 continue
 
-            # Apply correction to grid positions (not boundaries)
-            corrected_bar_start = bar_start + ref_offset_s
+            # Apply segment-specific correction to grid positions (not boundaries)
+            corrected_bar_start = bar_start + segment_ref_offset_s
             step_duration = bar_duration / steps_per_bar
 
             # Filter onsets using UNCORRECTED boundaries (avoid gaps)
             bar_onsets = onsets[(onsets >= bar_start) & (onsets < bar_end)]
 
             for onset_time in bar_onsets:
-                # Calculate corrected phase
+                # Calculate corrected phase (relative to segment-corrected grid)
                 phase = (onset_time - corrected_bar_start) / bar_duration
 
                 # Assign to nearest tick
@@ -993,7 +1025,8 @@ def create_raster_csv(
     print("  Calculating 4-bar pattern flexStart phases...")
     df_4bar_pattern_flexStart = calculate_phases_4bar_pattern_flexStart(
         onsets, downbeats, first_bar, last_bar, steps_per_bar,
-        flexStart_ref_offset_ms, flexStart_ref_bar, max_match_frac
+        flexStart_ref_offset_ms, flexStart_ref_bar, max_match_frac,
+        search_window_start_phase, search_window_end_phase
     )
 
     # Create comprehensive grid (all bar/tick combinations)
@@ -1007,6 +1040,39 @@ def create_raster_csv(
             })
 
     df_comprehensive = pd.DataFrame(grid_rows)
+
+    # Deduplicate method dataframes to prevent cartesian product in merge
+    # When multiple onsets are assigned to the same (bar_number, tick_16th),
+    # keep only the one with the smallest absolute phase (closest to grid position)
+    print("  Deduplicating method dataframes...")
+
+    def deduplicate_by_closest_to_grid(df, phase_col):
+        """
+        Keep only the onset closest to grid for each (bar_number, tick_16th).
+
+        When multiple onsets fall within tolerance of the same tick (which can
+        happen with slower tempos where step duration is large), we keep the
+        onset that is closest to the grid position (smallest absolute phase).
+        """
+        if df.empty:
+            return df
+
+        # Calculate absolute phase (distance from grid position = 0)
+        df = df.copy()
+        df['abs_phase'] = df[phase_col].abs()
+
+        # Sort by absolute phase and keep only the first (closest) for each (bar, tick)
+        df = df.sort_values('abs_phase').groupby(['bar_number', 'tick_16th'], as_index=False).first()
+
+        # Remove temporary column
+        df = df.drop(columns=['abs_phase'])
+
+        return df
+
+    df_uncorrected = deduplicate_by_closest_to_grid(df_uncorrected, 'phase_uncorrected')
+    df_per_snippet = deduplicate_by_closest_to_grid(df_per_snippet, 'phase_per_snippet')
+    df_4bar_loop = deduplicate_by_closest_to_grid(df_4bar_loop, 'phase_4bar_loop')
+    df_4bar_pattern_flexStart = deduplicate_by_closest_to_grid(df_4bar_pattern_flexStart, 'phase_4bar_pattern_flexStart')
 
     # Merge all phase data
     print("  Merging phase data...")
@@ -1122,7 +1188,37 @@ def create_raster_csv(
                     bar_start = downbeats[bar_num_abs]
                     bar_end = downbeats[bar_num_abs + 1]
                     bar_duration = bar_end - bar_start
-                    grid_time_flexStart = (bar_start + flexStart_ref_offset_s) + (tick / steps_per_bar) * bar_duration
+
+                    # Find which segment this bar belongs to
+                    segment_start_bar = flexStart_ref_bar + ((bar_num_abs - flexStart_ref_bar) // pattern_len) * pattern_len
+
+                    # Find segment-specific reference offset
+                    if segment_start_bar < len(downbeats) - 1:
+                        segment_bar_start = downbeats[segment_start_bar]
+                        segment_bar_end = downbeats[segment_start_bar + 1]
+                        segment_bar_duration = segment_bar_end - segment_bar_start
+                        segment_step_duration = segment_bar_duration / steps_per_bar
+
+                        # Grid time at tick 0 of segment start
+                        segment_grid_time = segment_bar_start
+
+                        # Find reference onset for THIS segment
+                        segment_window_start = segment_grid_time - search_window_start_phase * segment_step_duration
+                        segment_window_end = segment_grid_time + search_window_end_phase * segment_step_duration
+                        segment_onsets_in_window = onsets[(onsets >= segment_window_start) & (onsets <= segment_window_end)]
+
+                        if len(segment_onsets_in_window) > 0:
+                            # Find closest onset to segment grid_time
+                            segment_distances = np.abs(segment_onsets_in_window - segment_grid_time)
+                            segment_min_idx = np.argmin(segment_distances)
+                            segment_nearest_onset = segment_onsets_in_window[segment_min_idx]
+                            segment_ref_offset_s = (segment_nearest_onset - segment_grid_time)
+                        else:
+                            segment_ref_offset_s = 0.0
+                    else:
+                        segment_ref_offset_s = 0.0
+
+                    grid_time_flexStart = (bar_start + segment_ref_offset_s) + (tick / steps_per_bar) * bar_duration
                     grid_times_4bar_pattern_flexStart.append(grid_time_flexStart)
                 else:
                     grid_times_4bar_pattern_flexStart.append(None)
