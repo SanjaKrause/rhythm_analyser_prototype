@@ -213,9 +213,9 @@ def create_microtiming_plots(
     Creates 5 pattern-folded plots showing onset deviations:
     1. Uncorrected - raw onset deviations
     2. Per-snippet - snippet-average correction
-    3. Standard L=1 - 1-bar loop correction
-    4. Standard L=2 - 2-bar loop correction
-    5. Standard L=4 - 4-bar loop correction
+    3. FlexStart Pattern Length 4 - 4-bar pattern flexStart correction
+    4. FlexStart Pattern Length 2 - 2-bar pattern flexStart correction
+    5. FlexStart Pattern Length 1 - 1-bar pattern flexStart correction
 
     Each plot shows multiple loops as colored lines, folded into the pattern length.
 
@@ -244,9 +244,9 @@ def create_microtiming_plots(
     methods = [
         ('Uncorrected', 'phase_uncorrected', 'grid_time_uncorrected', 4),
         ('Per-Snippet', 'phase_per_snippet', 'grid_time_per_snippet', 4),
-        ('Standard L=1', 'phase_standard_L1(L=1)', 'grid_time_standard_L1(L=1)', 1),
-        ('Standard L=2', 'phase_standard_L2(L=2)', 'grid_time_standard_L2(L=2)', 2),
-        ('Standard L=4', 'phase_standard_L4(L=4)', 'grid_time_standard_L4(L=4)', 4),
+        ('FlexStart Pattern Length 4', 'phase_4bar_pattern_flexStart', 'grid_time_4bar_pattern_flexStart', 4),
+        ('FlexStart Pattern Length 2', 'phase_2bar_pattern_flexStart', 'grid_time_2bar_pattern_flexStart', 2),
+        ('FlexStart Pattern Length 1', 'phase_1bar_pattern_flexStart', 'grid_time_1bar_pattern_flexStart', 1),
     ]
 
     # Create figure with 5 subplots

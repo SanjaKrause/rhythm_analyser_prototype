@@ -73,9 +73,9 @@ def create_rhythm_histograms(
     Creates 5 rhythm histograms showing onset distributions:
     1. Uncorrected
     2. Per-snippet
-    3. Standard L=1 (1-16 positions)
-    4. Standard L=2 (1-32 positions)
-    5. Standard L=4 (1-64 positions)
+    3. FlexStart Pattern Length 4 (1-64 positions)
+    4. FlexStart Pattern Length 2 (1-32 positions)
+    5. FlexStart Pattern Length 1 (1-16 positions)
 
     Parameters
     ----------
@@ -117,9 +117,9 @@ def create_rhythm_histograms(
     methods = [
         ('Uncorrected', 'phase_uncorrected', 4, None),
         ('Per-Snippet', 'phase_per_snippet', 4, None),
-        ('Standard L=1', 'phase_standard_L1(L=1)', 1, 'aicc'),
-        ('Standard L=2', 'phase_standard_L2(L=2)', 2, 'lepa'),
-        ('Standard L=4', 'phase_standard_L4(L=4)', 4, 'mel'),
+        ('FlexStart Pattern Length 4', 'phase_4bar_pattern_flexStart', 4, 'mel'),
+        ('FlexStart Pattern Length 2', 'phase_2bar_pattern_flexStart', 2, 'lepa'),
+        ('FlexStart Pattern Length 1', 'phase_1bar_pattern_flexStart', 1, 'aicc'),
     ]
 
     # Create figure with 5 subplots

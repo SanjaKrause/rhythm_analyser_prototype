@@ -244,13 +244,15 @@ def create_raster_plot(
     track_id: str
 ):
     """
-    Create 4-panel raster plot comparing all correction methods.
+    Create 6-panel raster plot comparing all correction methods.
 
     Panels:
     1. Uncorrected
     2. Per-snippet correction
     3. 4-bar loop correction
     4. 4-bar pattern flexStart correction
+    5. 2-bar pattern flexStart correction
+    6. 1-bar pattern flexStart correction
 
     Parameters
     ----------
@@ -284,10 +286,10 @@ def create_raster_plot(
     n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 10
     fig_height = max(8, min(20, 0.15 * n_bars))
 
-    # Create figure with 4 subplots
-    fig = plt.figure(figsize=(12, fig_height * 2))
-    gs = fig.add_gridspec(4, 1, height_ratios=[1, 1, 1, 1], hspace=0.3)
-    axes = [fig.add_subplot(gs[i]) for i in range(4)]
+    # Create figure with 6 subplots
+    fig = plt.figure(figsize=(12, fig_height * 3))
+    gs = fig.add_gridspec(6, 1, height_ratios=[1, 1, 1, 1, 1, 1], hspace=0.3)
+    axes = [fig.add_subplot(gs[i]) for i in range(6)]
 
     # Plot 1: Uncorrected (no reference circles)
     plot_raster_single(
@@ -316,6 +318,20 @@ def create_raster_plot(
         ref_onsets=ref_onsets, method_name='4bar_pattern_flexStart'
     )
 
+    # Plot 5: 2-bar pattern flexStart correction
+    plot_raster_single(
+        axes[4], df, 'phase_2bar_pattern_flexStart',
+        '2-bar pattern flexStart correction', track_id,
+        ref_onsets=ref_onsets, method_name='2bar_pattern_flexStart'
+    )
+
+    # Plot 6: 1-bar pattern flexStart correction
+    plot_raster_single(
+        axes[5], df, 'phase_1bar_pattern_flexStart',
+        '1-bar pattern flexStart correction', track_id,
+        ref_onsets=ref_onsets, method_name='1bar_pattern_flexStart'
+    )
+
     # Overall title
     fig.suptitle(f"Track {track_id} — Raster Plots — All Correction Methods",
                 fontsize=13, fontweight="bold")
@@ -339,7 +355,7 @@ def create_all_plots(
     """
     Create all raster plots for a track (backward compatibility wrapper).
 
-    This function creates a single simplified raster plot with 4 methods.
+    This function creates a single simplified raster plot with 6 methods.
     The rms_summary_file parameter is ignored in the new simplified version.
 
     Parameters

@@ -351,7 +351,8 @@ def create_audio_examples(
     snippet_duration : float
         Snippet duration in seconds
     methods : List[str], optional
-        Methods to create examples for (default: ['per_snippet', 'drum', 'mel', 'pitch'])
+        Methods to create examples for (default: ['uncorrected', 'per_snippet',
+        '4bar_pattern_flexStart', '2bar_pattern_flexStart', '1bar_pattern_flexStart'])
 
     Examples
     --------
@@ -365,7 +366,7 @@ def create_audio_examples(
     import pandas as pd
 
     if methods is None:
-        methods = ['uncorrected', 'per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
+        methods = ['uncorrected', 'per_snippet', '4bar_pattern_flexStart', '2bar_pattern_flexStart', '1bar_pattern_flexStart']
 
     print(f"\nCreating audio examples...")
 
@@ -398,7 +399,7 @@ def create_audio_examples(
         elif method == 'per_snippet':
             col_name = 'grid_time_per_snippet'
         else:
-            # Loop-based methods (drum, mel, pitch, standard_L1, standard_L2, standard_L4)
+            # FlexStart pattern methods (4bar_pattern_flexStart, 2bar_pattern_flexStart, 1bar_pattern_flexStart)
             # Find column matching method
             matching_cols = [c for c in df.columns if f'grid_time_{method}' in c]
             if not matching_cols:
@@ -421,8 +422,8 @@ def create_audio_examples(
         mixed = mix_audio_with_clicks(audio_snippet, click_track, click_volume_db=0.0)
 
         # Export
-        # Use simple naming: uncorrected.mp3, per_snippet.mp3, drum.mp3, standard_L1.mp3, etc.
-        method_name = method if method in ['uncorrected', 'per_snippet'] else method
+        # Use simple naming: uncorrected.mp3, per_snippet.mp3, 4bar_pattern_flexStart.mp3, etc.
+        method_name = method
         output_file = output_dir / f"{method_name}.mp3"
         export_audio_to_mp3(mixed, str(output_file), sr)
 
@@ -496,9 +497,9 @@ def export_stem_loops(
     """
     Export stem loops for each correction method.
 
-    For each method (drum, mel, pitch), exports one loop containing L bars
-    from each stem (vocals, drums, bass, piano, other). Adds short fade in/out
-    to prevent clicks at loop boundaries.
+    For each method, exports one loop containing L bars from each stem
+    (vocals, drums, bass, piano, other). Adds short fade in/out to prevent
+    clicks at loop boundaries.
 
     Parameters
     ----------
@@ -513,11 +514,14 @@ def export_stem_loops(
     snippet_start : float
         Snippet start time in seconds
     pattern_lengths : dict
-        Pattern lengths for each method in BARS (e.g., {'drum': 4, 'mel': 4, 'pitch': 8})
+        Pattern lengths for each method in BARS (not used with FlexStart methods)
     fade_duration_ms : float
         Fade in/out duration in milliseconds (default: 5ms)
     export_format : str
         Export format: 'wav' or 'mp3' (default: 'wav')
+    methods : list, optional
+        Methods to export (default: ['per_snippet', '4bar_pattern_flexStart',
+        '2bar_pattern_flexStart', '1bar_pattern_flexStart'])
 
     Returns
     -------
@@ -526,14 +530,13 @@ def export_stem_loops(
 
     Examples
     --------
-    >>> pattern_lengths = {'drum': 4, 'mel': 4, 'pitch': 8}
     >>> loops = export_stem_loops(
     ...     'output/track_id/1_stems',
     ...     'output/track_id/5_grid/track_id_comprehensive.csv',
     ...     'output/track_id/3_beats/track_id_bar_tempos.csv',
     ...     'output/track_id/9_loops',
     ...     snippet_start=132.0,
-    ...     pattern_lengths=pattern_lengths
+    ...     pattern_lengths={}
     ... )
     """
     import pandas as pd
@@ -549,9 +552,9 @@ def export_stem_loops(
     # Stem names (matching Spleeter 5-stem output)
     stem_names = ['vocals', 'drums', 'bass', 'piano', 'other']
 
-    # Methods to process (including per_snippet with fixed 4-bar loop and standard L=1, L=2, L=4)
+    # Methods to process (including per_snippet with fixed 4-bar loop and FlexStart pattern methods)
     if methods is None:
-        methods = ['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
+        methods = ['per_snippet', '4bar_pattern_flexStart', '2bar_pattern_flexStart', '1bar_pattern_flexStart']
 
     exported_files = {}
 
@@ -565,8 +568,17 @@ def export_stem_loops(
             # per_snippet always uses 4 bars (no pattern length calculated for this correction)
             pattern_length_bars = 4
             print(f"    Pattern length: {pattern_length_bars} bars (fixed for per_snippet)")
+        elif method == '4bar_pattern_flexStart':
+            pattern_length_bars = 4
+            print(f"    Pattern length: {pattern_length_bars} bars")
+        elif method == '2bar_pattern_flexStart':
+            pattern_length_bars = 2
+            print(f"    Pattern length: {pattern_length_bars} bars")
+        elif method == '1bar_pattern_flexStart':
+            pattern_length_bars = 1
+            print(f"    Pattern length: {pattern_length_bars} bars")
         else:
-            # Find phase column with L value for loop-based methods
+            # Legacy: Find phase column with L value for old loop-based methods
             matching_cols = [c for c in df.columns if f'phase_{method}(L=' in c]
             if not matching_cols:
                 print(f"    ⚠️  No phase column found for {method}, skipping")

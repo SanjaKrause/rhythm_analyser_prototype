@@ -808,10 +808,15 @@ def run_complete_pipeline(
 
                 from utils import lepa_export
 
+                # Get audio file paths
+                drum_stem_path = paths['stems_dir'] / 'drums.wav'
+
                 lepa_csv = lepa_export.export_bar_durations(
                     str(paths['comprehensive_csv']),
                     track_id,
-                    str(lepa_output_dir)
+                    str(lepa_output_dir),
+                    audio_file=str(audio_file) if audio_file else None,
+                    drum_stem_file=str(drum_stem_path) if drum_stem_path.exists() else None
                 )
 
                 if lepa_csv:

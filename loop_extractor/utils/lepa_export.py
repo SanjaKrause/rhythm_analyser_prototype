@@ -2,19 +2,35 @@
 """
 LEPA Export - Per-track bar duration export for LEPA analysis.
 
-This module exports bar duration data for a single track.
+This module exports bar duration data and audio clips for a single track.
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import librosa
+import soundfile as sf
 
 
-def export_bar_durations(comprehensive_csv: str, track_id: str, output_dir: str):
+def export_bar_durations(
+    comprehensive_csv: str,
+    track_id: str,
+    output_dir: str,
+    audio_file: str = None,
+    drum_stem_file: str = None
+):
     """
-    Export bar duration table for LEPA analysis from a single track.
+    Export bar duration table and full audio for LEPA analysis from a single track.
 
-    Creates a CSV file with:
+    Creates:
+    - CSV file with bar timing data
+    - Full audio WAV containing all complete bars (if audio_file provided)
+    - Drum stem WAV containing all complete bars (if drum_stem_file provided)
+
+    Audio files are trimmed to start at the first bar and end at the last complete bar,
+    with 0.05s fade in/out applied.
+
+    CSV columns:
     - Taktnummer: Bar number (0-based)
     - Song_ID: Numeric song identifier
     - Song_Info: Song name and artist
@@ -31,6 +47,10 @@ def export_bar_durations(comprehensive_csv: str, track_id: str, output_dir: str)
         Track identifier
     output_dir : str
         Output directory for the LEPA export
+    audio_file : str, optional
+        Path to original audio file (for exporting full audio)
+    drum_stem_file : str, optional
+        Path to drum stem file (for exporting drum stem)
 
     Returns
     -------
@@ -137,8 +157,74 @@ def export_bar_durations(comprehensive_csv: str, track_id: str, output_dir: str)
         output_csv = output_path / f'{track_id}_bar_durations.csv'
         result_df.to_csv(output_csv, index=False)
 
+        # Export full audio containing only complete bars if audio files provided
+        if audio_file is not None or drum_stem_file is not None:
+            print(f"  Exporting full audio (complete bars only)...")
+
+            # Calculate time range for all complete bars
+            first_bar_start_s = bars['grid_time_per_snippet'].iloc[0]
+            last_bar_start_s = bars['grid_time_per_snippet'].iloc[-1]
+            # End of last bar = start + median bar duration
+            last_bar_end_s = last_bar_start_s + np.median(np.diff(bars['grid_time_per_snippet'].values))
+
+            # Fade duration in samples (0.05 seconds)
+            sr = 44100
+            fade_samples = int(0.05 * sr)
+
+            # Export original audio
+            if audio_file is not None and Path(audio_file).exists():
+                print(f"    Loading original audio from {audio_file}...")
+                audio_data, sr = librosa.load(audio_file, sr=sr, mono=True)
+
+                # Extract region containing all complete bars
+                start_sample = int(first_bar_start_s * sr)
+                end_sample = int(last_bar_end_s * sr)
+                audio_full_bars = audio_data[start_sample:end_sample]
+
+                # Apply fade in/out
+                if len(audio_full_bars) > 2 * fade_samples:
+                    # Fade in (cosine curve: 0 -> 1)
+                    fade_in = 0.5 * (1 - np.cos(np.linspace(0, np.pi, fade_samples)))
+                    audio_full_bars[:fade_samples] *= fade_in
+
+                    # Fade out (cosine curve: 1 -> 0)
+                    fade_out = 0.5 * (1 + np.cos(np.linspace(0, np.pi, fade_samples)))
+                    audio_full_bars[-fade_samples:] *= fade_out
+
+                # Export in same folder as CSV
+                output_file = output_path / f'{song_id}_audio.wav'
+                sf.write(str(output_file), audio_full_bars, sr)
+                print(f"    ✓ Exported full audio: {output_file.name}")
+
+            # Export drum stem
+            if drum_stem_file is not None and Path(drum_stem_file).exists():
+                print(f"    Loading drum stem from {drum_stem_file}...")
+                drum_data, sr = librosa.load(drum_stem_file, sr=sr, mono=True)
+
+                # Extract region containing all complete bars
+                start_sample = int(first_bar_start_s * sr)
+                end_sample = int(last_bar_end_s * sr)
+                drum_full_bars = drum_data[start_sample:end_sample]
+
+                # Apply fade in/out
+                if len(drum_full_bars) > 2 * fade_samples:
+                    # Fade in (cosine curve: 0 -> 1)
+                    fade_in = 0.5 * (1 - np.cos(np.linspace(0, np.pi, fade_samples)))
+                    drum_full_bars[:fade_samples] *= fade_in
+
+                    # Fade out (cosine curve: 1 -> 0)
+                    fade_out = 0.5 * (1 + np.cos(np.linspace(0, np.pi, fade_samples)))
+                    drum_full_bars[-fade_samples:] *= fade_out
+
+                # Export in same folder as CSV
+                output_file = output_path / f'{song_id}_drums.wav'
+                sf.write(str(output_file), drum_full_bars, sr)
+                print(f"    ✓ Exported drum stem: {output_file.name}")
+
         return str(output_csv)
 
     except Exception as e:
         print(f"  Warning: Could not export LEPA data: {e}")
+        import traceback
+        traceback.print_exc()
         return None
