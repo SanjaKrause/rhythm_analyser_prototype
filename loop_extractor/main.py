@@ -668,6 +668,29 @@ def run_complete_pipeline(
                 if verbose:
                     print(f"  ✓ Rhythm histograms created")
 
+                # Also create rhythm histograms with style (using filtered flexStart CSVs)
+                try:
+                    grid_output_dir = paths['comprehensive_csv'].parent
+                    base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
+
+                    rhythm_files_style = rhythm_histograms.create_rhythm_histograms_with_style(
+                        str(grid_output_dir),
+                        base_name,
+                        track_id,
+                        str(rhythm_output_dir)
+                    )
+
+                    if rhythm_files_style:
+                        results['rhythm_histograms_with_style_pdf'] = rhythm_files_style.get('pdf')
+                        results['rhythm_histograms_with_style_csv'] = rhythm_files_style.get('csv')
+
+                    if verbose:
+                        print(f"  ✓ Rhythm histograms with style created")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not create rhythm histograms with style: {e}")
+
     except Exception as e:
         error_msg = f"Step 5.7 failed: {e}"
         results['errors'].append(error_msg)
