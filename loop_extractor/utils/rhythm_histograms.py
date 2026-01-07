@@ -349,20 +349,22 @@ def create_rhythm_histograms_with_style(
 
     # Define methods with their pattern lengths and corresponding loop count keys
     methods = [
-        ('FlexStart Pattern Length 4', f'{full_base_name}_4bar_flexStart_filtered.csv', 4, 'mel'),
-        ('FlexStart Pattern Length 2', f'{full_base_name}_2bar_flexStart_filtered.csv', 2, 'lepa'),
-        ('FlexStart Pattern Length 1', f'{full_base_name}_1bar_flexStart_filtered.csv', 1, 'aicc'),
+        ('Per-Snippet L=4', f'{full_base_name}_4bar_flexStart_filtered.csv', 4, None, True),
+        ('Per-Snippet L=2', f'{full_base_name}_2bar_flexStart_filtered.csv', 2, None, True),
+        ('FlexStart Pattern Length 4', f'{full_base_name}_4bar_flexStart_filtered.csv', 4, 'mel', False),
+        ('FlexStart Pattern Length 2', f'{full_base_name}_2bar_flexStart_filtered.csv', 2, 'lepa', False),
+        ('FlexStart Pattern Length 1', f'{full_base_name}_1bar_flexStart_filtered.csv', 1, 'aicc', False),
     ]
 
-    # Create figure with 3 subplots
-    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
+    # Create figure with 5 subplots
+    fig, axes = plt.subplots(5, 1, figsize=(16, 20))
     fig.suptitle(f'Rhythm Histograms (Filtered FlexStart) — {track_id}', fontsize=14, fontweight='bold')
 
     # Define colors
-    colors = ['#2ECC71', '#F39C12', '#9B59B6']
+    colors = ['#3498DB', '#E67E22', '#2ECC71', '#F39C12', '#9B59B6']
 
     # Create histograms for each method
-    for idx, ((method_title, csv_filename, pattern_length, loop_key), color) in enumerate(zip(methods, colors)):
+    for idx, ((method_title, csv_filename, pattern_length, loop_key, is_per_snippet), color) in enumerate(zip(methods, colors)):
         ax = axes[idx]
 
         # Check if CSV file exists
@@ -378,19 +380,49 @@ def create_rhythm_histograms_with_style(
         hist = extract_rhythm_histogram_from_flexstart_csv(str(csv_path), pattern_length)
         num_positions = pattern_length * 16
 
+        # Calculate onset strength (relative counts)
+        total_counts = np.sum(hist)
+        onset_strength = hist / total_counts if total_counts > 0 else hist
+
+        # Calculate number of patterns used
+        # For both Per-Snippet and FlexStart: read CSV and count unique patterns based on bar_number modulo pattern_length
+        # This is more reliable than relying on loop_counts which may not always be available
+        num_patterns = None
+        try:
+            df_csv = pd.read_csv(csv_path)
+            min_bar = df_csv['bar_number'].min()
+            pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+            num_patterns = len(pattern_indices.unique())
+        except Exception as e:
+            print(f"    Warning: Could not count patterns for {method_title}: {e}")
+            # Fallback to loop_counts for FlexStart methods if CSV reading fails
+            if not is_per_snippet and loop_key and loop_key in loop_counts:
+                num_patterns = loop_counts[loop_key]
+
         # X-axis: 16th-note positions (1-based for display)
         positions = np.arange(1, num_positions + 1)
 
-        # Create bar plot
-        ax.bar(positions, hist, color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
+        # Create bar plot with onset strength (left y-axis)
+        ax.bar(positions, onset_strength, color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
 
-        ax.set_ylabel('Onset Count', fontsize=10, fontweight='bold')
+        ax.set_ylabel('Onset Strength', fontsize=10, fontweight='bold')
 
-        # Build title with loop count if available
+        # Adjust left y-axis scale based on data
+        max_strength = np.max(onset_strength) if total_counts > 0 else 1.0
+        ax.set_ylim(0, max_strength * 1.1)  # Add 10% padding
+
+        # Create second y-axis for counts (right side)
+        ax2 = ax.twinx()
+        ax2.set_ylabel('Onset Count', fontsize=10, fontweight='bold', rotation=270, labelpad=15)
+
+        # Adjust right y-axis scale based on data
+        max_count = np.max(hist) if total_counts > 0 else 1.0
+        ax2.set_ylim(0, max_count * 1.1)  # Add 10% padding
+
+        # Build title with pattern count
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
-        if loop_key and loop_key in loop_counts:
-            num_loops = loop_counts[loop_key]
-            title += f' — {num_loops} loops (filtered)'
+        if num_patterns is not None:
+            title += f' — {num_patterns} patterns'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -410,13 +442,13 @@ def create_rhythm_histograms_with_style(
         occupied_positions = int(np.sum(hist > 0))
         max_count = int(np.max(hist)) if total_onsets > 0 else 0
 
-        # Add statistics text box with loop count
+        # Add statistics text box with pattern count
         stats_text = f'Total: {total_onsets}\n'
         stats_text += f'Occupied: {occupied_positions}/{num_positions}\n'
         stats_text += f'Max: {max_count}'
 
-        if loop_key and loop_key in loop_counts:
-            stats_text += f'\nLoops: {loop_counts[loop_key]} (filtered)'
+        if num_patterns is not None:
+            stats_text += f'\nPatterns: {num_patterns}'
 
         ax.text(0.98, 0.97, stats_text,
                 transform=ax.transAxes, fontsize=9,
@@ -427,8 +459,8 @@ def create_rhythm_histograms_with_style(
         if idx == len(methods) - 1:
             ax.set_xlabel('16th-note position within pattern', fontsize=10, fontweight='bold')
 
-        loop_info = f", {loop_counts[loop_key]} loops (filtered)" if loop_key and loop_key in loop_counts else ""
-        print(f"    {method_title}: {total_onsets} onsets, {occupied_positions}/{num_positions} positions{loop_info}")
+        pattern_info = f", {num_patterns} patterns" if num_patterns is not None else ""
+        print(f"    {method_title}: {total_onsets} onsets, {occupied_positions}/{num_positions} positions{pattern_info}")
 
     plt.tight_layout()
 
@@ -446,20 +478,37 @@ def create_rhythm_histograms_with_style(
 
     # Also save histogram data as CSV
     csv_data = []
-    for method_title, csv_filename, pattern_length, loop_key in methods:
+    for method_title, csv_filename, pattern_length, loop_key, is_per_snippet in methods:
         csv_path = grid_dir / csv_filename
         if csv_path.exists():
             hist = extract_rhythm_histogram_from_flexstart_csv(str(csv_path), pattern_length)
             num_positions = pattern_length * 16
-            num_loops = loop_counts.get(loop_key, None) if loop_key else None
+
+            # Calculate number of patterns
+            num_patterns = None
+            if is_per_snippet:
+                try:
+                    df_csv = pd.read_csv(csv_path)
+                    min_bar = df_csv['bar_number'].min()
+                    pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                    num_patterns = len(pattern_indices.unique())
+                except Exception:
+                    pass
+            else:
+                num_patterns = loop_counts.get(loop_key, None) if loop_key else None
+
+            # Calculate onset strength
+            total_counts = np.sum(hist)
+            onset_strength = hist / total_counts if total_counts > 0 else hist
 
             for pos_idx in range(num_positions):
                 csv_data.append({
                     'method': method_title,
                     'pattern_length': pattern_length,
-                    'num_loops': num_loops,
+                    'num_patterns': num_patterns,
                     'position': pos_idx + 1,  # 1-based
-                    'count': int(hist[pos_idx])
+                    'count': int(hist[pos_idx]),
+                    'onset_strength': float(onset_strength[pos_idx])
                 })
 
     if csv_data:
