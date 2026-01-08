@@ -840,13 +840,15 @@ flowchart TD
     end
 
     subgraph FlexStart["<b>2b. FLEXSTART METHODS</b>"]
-        FS1[Use filtered CSVs<br/>4bar/2bar/1bar_flexStart_filtered] --> FS2[Filter patterns by onset density<br/>Default: 50% threshold]
-        FS2 --> FS2A[For each pattern:<br/>occupied = count positions with onsets<br/>total = pattern_length × 16]
-        FS2A --> FS2B{occupied / total<br/>>= 0.5?}
-        FS2B -->|Yes| FS2C[Keep pattern<br/>Dense enough]
-        FS2B -->|No| FS2D[Remove pattern<br/>Too sparse]
+        FS1[Pattern Length: L=4, L=2, or L=1 bars] --> FS1A[Use pattern-specific CSVs<br/>4bar/2bar/1bar_flexStart.csv]
+        FS1A --> FS2[Filter patterns by onset count<br/>Default: 50% threshold]
+        FS2 --> FS2A[For each pattern:<br/>onset_count = count onsets with non-null onset_time<br/>mean_count = mean of previous patterns]
+        FS2A --> FS2B{onset_count /<br/>mean_count<br/>>= 0.5?}
+        FS2B -->|Yes| FS2C[Keep pattern<br/>Enough onsets]
+        FS2B -->|No| FS2D[Remove pattern<br/>Too few onsets]
         FS2C --> FS3[Extract phase column<br/>from filtered CSV]
-        FS3 --> FS4[Pattern Length: L=4, L=2, or L=1 bars]
+        FS2D --> FS4[Output: filtered CSV<br/>4bar/2bar/1bar_flexStart_filtered.csv]
+        FS3 --> FS4
     end
 
     PS4 --> Extract
@@ -914,20 +916,27 @@ For position i in pattern (0-based):
 - Larger bars = more timing variation
 
 **FlexStart Pattern Filtering:**
-- **Threshold**: Default 50% (configurable via `onset_threshold` parameter)
+- **Order of Operations**:
+  1. Pattern length is determined first (creates separate 4bar, 2bar, 1bar CSVs)
+  2. Each pattern-specific CSV is filtered independently
+  3. Filtered CSVs are used for visualization
+- **Method**: Onset count ratio (compares to running mean)
+- **Threshold**: Default 50% (configurable via `onset_threshold` parameter in `filter_bars_and_onsets.py`)
 - **Calculation**: For each pattern repetition:
-  - Count positions with at least one onset (occupied positions)
-  - Total positions = pattern_length × 16
-  - Keep pattern if: (occupied / total) ≥ 0.5
-- **Example (4-bar pattern = 64 positions)**:
-  - Pattern with 35 occupied positions: 35/64 = 0.547 → **KEPT** ✓
-  - Pattern with 28 occupied positions: 28/64 = 0.438 → **REMOVED** ✗
-- **Purpose**: Remove sparse patterns (noise, breakdown sections, fills)
+  - Count total onsets (rows with non-null onset_time)
+  - Calculate mean onset count of all previous patterns
+  - Keep pattern if: `onset_count >= 0.5 × mean_onset_count`
+- **Example**:
+  - Previous patterns: 100, 95, 98 onsets → mean = 97.7
+  - Current pattern: 52 onsets → 52 / 97.7 = 0.532 → **KEPT** ✓
+  - Current pattern: 40 onsets → 40 / 97.7 = 0.409 → **REMOVED** ✗
+- **Purpose**: Remove patterns with significantly fewer onsets (breakdowns, fills, sparse sections)
 - **Effect**: FlexStart methods may have FEWER patterns than Per-Snippet
+- **Note**: First pattern (reference) is always kept
 
 **Per-Snippet vs FlexStart:**
 - **Per-Snippet**: Single global reference, NO filtering, ALL patterns included
-- **FlexStart**: Independent references per pattern, FILTERED by 50% density threshold
+- **FlexStart**: Independent references per pattern, FILTERED by 50% onset count threshold
 - Different methods → different pattern counts → different median/IQR values → different visualizations
 
 ---
