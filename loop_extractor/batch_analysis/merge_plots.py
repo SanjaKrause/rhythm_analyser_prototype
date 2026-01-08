@@ -9,6 +9,8 @@ Merges:
 - All new grid corrections plots into all_new_grid_corrections.pdf
 - All microtiming plots into all_microtiming_plots.pdf
 - All rhythm histograms into all_rhythm_histograms.pdf
+- All rhythm histograms with style into all_rhythm_histograms_with_style.pdf
+- All rhythm histograms with medians and IQR into all_rhythm_histograms_with_medians_and_iqr.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
 
 Usage:
@@ -198,7 +200,45 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 7. Merge new 4-method raster plots (PNG files in 5_grid folder)
+    # 7. Merge rhythm histograms with style (PDF files in 5.5_rhythm folder)
+    print('\nLooking for rhythm histograms with style...')
+    rhythm_style_pdfs = []
+    for track_dir in track_dirs:
+        rhythm_style_pdf = track_dir / '5.5_rhythm' / f'{track_dir.name}_rhythm_histograms_with_style.pdf'
+        if rhythm_style_pdf.exists():
+            rhythm_style_pdfs.append(rhythm_style_pdf)
+            print(f'  Found rhythm histogram with style: {track_dir.name}')
+
+    if rhythm_style_pdfs:
+        print(f'\nMerging {len(rhythm_style_pdfs)} rhythm histogram with style PDFs...')
+        output_pdf = batch_dir / 'all_rhythm_histograms_with_style.pdf'
+        merger = PdfMerger()
+        for pdf in rhythm_style_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 8. Merge rhythm histograms with medians and IQR (PDF files in 5.5_rhythm folder)
+    print('\nLooking for rhythm histograms with medians and IQR...')
+    rhythm_medians_iqr_pdfs = []
+    for track_dir in track_dirs:
+        rhythm_medians_iqr_pdf = track_dir / '5.5_rhythm' / f'{track_dir.name}_rhythm_histograms_with_medians_and_iqr.pdf'
+        if rhythm_medians_iqr_pdf.exists():
+            rhythm_medians_iqr_pdfs.append(rhythm_medians_iqr_pdf)
+            print(f'  Found rhythm histogram with medians and IQR: {track_dir.name}')
+
+    if rhythm_medians_iqr_pdfs:
+        print(f'\nMerging {len(rhythm_medians_iqr_pdfs)} rhythm histogram with medians and IQR PDFs...')
+        output_pdf = batch_dir / 'all_rhythm_histograms_with_medians_and_iqr.pdf'
+        merger = PdfMerger()
+        for pdf in rhythm_medians_iqr_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 9. Merge new 4-method raster plots (PNG files in 5_grid folder)
     print('\nLooking for new 4-method raster plots...')
     raster_4method_pngs = []
     for track_dir in track_dirs:
