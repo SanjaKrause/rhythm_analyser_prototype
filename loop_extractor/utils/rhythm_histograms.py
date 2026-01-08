@@ -526,17 +526,20 @@ def create_rhythm_histograms_with_style(
     }
 
 
-def extract_phase_statistics_from_flexstart_csv(
-    flexstart_csv: str,
+def extract_phase_statistics_from_csv(
+    csv_path: str,
+    phase_column: str,
     pattern_length: int
 ) -> tuple:
     """
-    Extract phase statistics (median, sqrt(IQR)/1.5) from flexStart filtered CSV.
+    Extract phase statistics (median, sqrt(IQR)/1.5) from CSV with specified phase column.
 
     Parameters
     ----------
-    flexstart_csv : str
-        Path to flexStart filtered CSV file
+    csv_path : str
+        Path to CSV file
+    phase_column : str
+        Name of the phase column to use (e.g., 'phase', 'phase_per_snippet')
     pattern_length : int
         Pattern length in bars (1, 2, or 4)
 
@@ -549,10 +552,10 @@ def extract_phase_statistics_from_flexstart_csv(
         - iqr_phases: sqrt(IQR)/1.5 per position (for error bars)
     """
     try:
-        df = pd.read_csv(flexstart_csv)
+        df = pd.read_csv(csv_path)
 
-        # Filter to rows with actual onsets (non-null onset_time and phase)
-        df_onsets = df[(df['onset_time'].notna()) & (df['phase'].notna())].copy()
+        # Filter to rows with actual onsets (non-null phase in the specified column)
+        df_onsets = df[df[phase_column].notna()].copy()
 
         num_positions = pattern_length * 16
         histogram = np.zeros(num_positions)
@@ -565,7 +568,7 @@ def extract_phase_statistics_from_flexstart_csv(
         # Calculate 16th-note position within pattern for each onset
         ticks = df_onsets['tick_16th'].values
         bars = df_onsets['bar_number'].values
-        phases = df_onsets['phase'].values
+        phases = df_onsets[phase_column].values
 
         # Position within pattern (0-based for indexing)
         bar_in_pattern = bars % pattern_length
@@ -592,7 +595,7 @@ def extract_phase_statistics_from_flexstart_csv(
         return histogram, median_phases, iqr_phases
 
     except Exception as e:
-        print(f"    Warning: Could not process {flexstart_csv}: {e}")
+        print(f"    Warning: Could not process {csv_path}: {e}")
         return np.zeros(num_positions), np.full(num_positions, np.nan), np.full(num_positions, np.nan)
 
 
@@ -650,13 +653,15 @@ def create_rhythm_histograms_with_medians_and_iqr(
     # Add _comprehensive_phases prefix
     full_base_name = f'{base_name}_comprehensive_phases'
 
-    # Define methods
+    # Define methods: (title, csv_filename, pattern_length, phase_column, loop_key, is_per_snippet)
+    # Per-Snippet methods use comprehensive CSV with phase_per_snippet column
+    # FlexStart methods use filtered CSVs with phase column
     methods = [
-        ('Per-Snippet L=4', f'{full_base_name}_4bar_flexStart_filtered.csv', 4, None, True),
-        ('Per-Snippet L=2', f'{full_base_name}_2bar_flexStart_filtered.csv', 2, None, True),
-        ('FlexStart Pattern Length 4', f'{full_base_name}_4bar_flexStart_filtered.csv', 4, 'mel', False),
-        ('FlexStart Pattern Length 2', f'{full_base_name}_2bar_flexStart_filtered.csv', 2, 'lepa', False),
-        ('FlexStart Pattern Length 1', f'{full_base_name}_1bar_flexStart_filtered.csv', 1, 'aicc', False),
+        ('Per-Snippet L=4', f'{full_base_name}.csv', 4, 'phase_per_snippet', None, True),
+        ('Per-Snippet L=2', f'{full_base_name}.csv', 2, 'phase_per_snippet', None, True),
+        ('FlexStart Pattern Length 4', f'{full_base_name}_4bar_flexStart_filtered.csv', 4, 'phase', 'mel', False),
+        ('FlexStart Pattern Length 2', f'{full_base_name}_2bar_flexStart_filtered.csv', 2, 'phase', 'lepa', False),
+        ('FlexStart Pattern Length 1', f'{full_base_name}_1bar_flexStart_filtered.csv', 1, 'phase', 'aicc', False),
     ]
 
     # Create figure with 5 subplots
@@ -670,7 +675,7 @@ def create_rhythm_histograms_with_medians_and_iqr(
     csv_data = []
 
     # Create histograms for each method
-    for idx, ((method_title, csv_filename, pattern_length, loop_key, is_per_snippet), color) in enumerate(zip(methods, colors)):
+    for idx, ((method_title, csv_filename, pattern_length, phase_column, loop_key, is_per_snippet), color) in enumerate(zip(methods, colors)):
         ax = axes[idx]
 
         # Check if CSV file exists
@@ -682,8 +687,8 @@ def create_rhythm_histograms_with_medians_and_iqr(
             print(f"    {method_title}: No data (missing file: {csv_filename})")
             continue
 
-        # Extract statistics
-        hist, median_phases, iqr_phases = extract_phase_statistics_from_flexstart_csv(str(csv_path), pattern_length)
+        # Extract statistics using specified phase column
+        hist, median_phases, iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
         num_positions = pattern_length * 16
 
         # Calculate onset strength

@@ -817,6 +817,121 @@ flowchart LR
 
 ---
 
+## Rhythm Histograms with Median Phase & IQR
+
+This visualization shows the distribution of onsets across 16th-note positions within a pattern, with bars shifted by median phase and error bars showing timing variability.
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart TD
+    Start[comprehensive_phases.csv] --> Split{Method Type}
+
+    subgraph SourceData["<b>1. SOURCE DATA</b>"]
+        SD1[comprehensive_phases.csv<br/>Contains ALL phase columns:<br/>- phase_per_snippet<br/>- phase_4bar_pattern_flexStart<br/>- phase_2bar_pattern_flexStart<br/>- phase_1bar_pattern_flexStart]
+    end
+
+    Split --> PerSnippet
+    Split --> FlexStart
+
+    subgraph PerSnippet["<b>2a. PER-SNIPPET METHODS</b>"]
+        PS1[Use comprehensive CSV directly] --> PS2[Extract phase_per_snippet column]
+        PS2 --> PS3[NO filtering applied<br/>Use ALL onsets in snippet]
+        PS3 --> PS4[Pattern Length: L=4 or L=2 bars]
+    end
+
+    subgraph FlexStart["<b>2b. FLEXSTART METHODS</b>"]
+        FS1[Use filtered CSVs<br/>4bar/2bar/1bar_flexStart_filtered] --> FS2[Filter patterns by onset density<br/>Default: 50% threshold]
+        FS2 --> FS2A[For each pattern:<br/>occupied = count positions with onsets<br/>total = pattern_length × 16]
+        FS2A --> FS2B{occupied / total<br/>>= 0.5?}
+        FS2B -->|Yes| FS2C[Keep pattern<br/>Dense enough]
+        FS2B -->|No| FS2D[Remove pattern<br/>Too sparse]
+        FS2C --> FS3[Extract phase column<br/>from filtered CSV]
+        FS3 --> FS4[Pattern Length: L=4, L=2, or L=1 bars]
+    end
+
+    PS4 --> Extract
+    FS4 --> Extract
+
+    subgraph Extract["<b>3. EXTRACTION & STATISTICS</b>"]
+        E1[Group by position within pattern<br/>position = bar % L × 16 + tick] --> E2[For each position 0-15 or 0-31 or 0-63]
+        E2 --> E3[Histogram: count onsets at position]
+        E2 --> E4[Median Phase: median of all phase values]
+        E2 --> E5[IQR: sqrt IQR / 1.5 for error bars]
+    end
+
+    Extract --> Vis
+
+    subgraph Vis["<b>4. VISUALIZATION</b>"]
+        V1[Onset Strength: normalized counts<br/>hist / sum hist] --> V2[X-Position Shift:<br/>bar_number × 16 + phase × 16 + 1]
+        V2 --> V3[Plot bars at shifted positions<br/>width = 0.8]
+        V3 --> V4[Error bars: horizontal<br/>at 90% bar height<br/>xerr = sqrt IQR / 1.5]
+        V4 --> V5[Labels: median phase<br/>horizontal text on top of bar]
+        V5 --> V6[Right y-axis: onset counts<br/>absolute values]
+        V6 --> V7[Threshold line: groove pulse<br/>default 20% of max strength]
+    end
+
+    Vis --> Output
+
+    subgraph Output["<b>5. OUTPUTS</b>"]
+        O1[5 Subplots:<br/>1. Per-Snippet L=4<br/>2. Per-Snippet L=2<br/>3. FlexStart L=4<br/>4. FlexStart L=2<br/>5. FlexStart L=1] --> O2[rhythm_histograms_with_medians_and_iqr.pdf]
+        O1 --> O3[rhythm_histograms_with_medians_and_iqr.png]
+        O1 --> O4[rhythm_histograms_with_medians_and_iqr.csv<br/>Columns: method, pattern_length,<br/>num_patterns, position, count,<br/>onset_strength, median_phase,<br/>sqrt_iqr_over_1.5]
+    end
+
+    style SourceData fill:#e1f5ff,stroke:#000,color:#000
+    style PerSnippet fill:#ffe1f5,stroke:#000,color:#000
+    style FlexStart fill:#e1ffe1,stroke:#000,color:#000
+    style Extract fill:#fff4e1,stroke:#000,color:#000
+    style Vis fill:#f5e1ff,stroke:#000,color:#000
+    style Output fill:#ffffcc,stroke:#000,color:#000
+```
+
+### Key Concepts
+
+**Phase Interpretation:**
+- Phase values are **per-bar** (0.0 to 1.0 range)
+- Phase resets at each bar boundary
+- Example: phase = 0.125 means 12.5% through the current bar (2nd 16th note)
+
+**X-Position Calculation:**
+```
+For position i in pattern (0-based):
+  bar_number = i // 16           # which bar (0, 1, 2, 3...)
+  phase_within_bar = median_phase # 0.0-1.0 within that bar
+  x_position = bar_number × 16 + (phase_within_bar × 16) + 1  # 1-based
+```
+
+**Example (4-bar pattern, position 3):**
+- Grid position: bar 0, tick 2 → expected phase = 2/16 = 0.125
+- Median phase: 0.134 (onsets are slightly late)
+- X-position: 0 × 16 + (0.134 × 16) + 1 = 3.144
+- Bar appears shifted right by 0.144 positions
+
+**Error Bars (sqrt(IQR)/1.5):**
+- Represents timing variability at each position
+- sqrt(IQR) scales the spread for better visibility
+- Divided by 1.5 for reasonable bar length
+- Larger bars = more timing variation
+
+**FlexStart Pattern Filtering:**
+- **Threshold**: Default 50% (configurable via `onset_threshold` parameter)
+- **Calculation**: For each pattern repetition:
+  - Count positions with at least one onset (occupied positions)
+  - Total positions = pattern_length × 16
+  - Keep pattern if: (occupied / total) ≥ 0.5
+- **Example (4-bar pattern = 64 positions)**:
+  - Pattern with 35 occupied positions: 35/64 = 0.547 → **KEPT** ✓
+  - Pattern with 28 occupied positions: 28/64 = 0.438 → **REMOVED** ✗
+- **Purpose**: Remove sparse patterns (noise, breakdown sections, fills)
+- **Effect**: FlexStart methods may have FEWER patterns than Per-Snippet
+
+**Per-Snippet vs FlexStart:**
+- **Per-Snippet**: Single global reference, NO filtering, ALL patterns included
+- **FlexStart**: Independent references per pattern, FILTERED by 50% density threshold
+- Different methods → different pattern counts → different median/IQR values → different visualizations
+
+---
+
 ## Complete Pipeline Architecture
 
 ```mermaid
