@@ -485,8 +485,8 @@ def apply_fade(
 
 def export_stem_loops(
     stems_dir: str,
-    comprehensive_csv_path: str,
-    bar_tempos_csv_path: str,
+    grid_output_dir: str,
+    base_name: str,
     output_dir: str,
     snippet_start: float,
     pattern_lengths: dict,
@@ -495,24 +495,27 @@ def export_stem_loops(
     methods: list = None
 ) -> Dict[str, List[Path]]:
     """
-    Export stem loops for each correction method.
+    Export stem loops for each correction method using filtered FlexStart CSVs.
 
     For each method, exports one loop containing L bars from each stem
     (vocals, drums, bass, piano, other). Adds short fade in/out to prevent
     clicks at loop boundaries.
 
+    Uses the filtered FlexStart CSV files (*_4bar_flexStart_filtered.csv, etc.)
+    which contain only the patterns that passed the onset count threshold.
+
     Parameters
     ----------
     stems_dir : str
         Directory containing stem WAV files
-    comprehensive_csv_path : str
-        Path to comprehensive phases CSV
-    bar_tempos_csv_path : str
-        Path to bar tempos CSV
+    grid_output_dir : str
+        Directory containing the filtered flexStart CSV files
+    base_name : str
+        Base filename (e.g., 'track_id_comprehensive_phases')
     output_dir : str
         Output directory for loop files
     snippet_start : float
-        Snippet start time in seconds
+        Snippet start time in seconds (not used, kept for compatibility)
     pattern_lengths : dict
         Pattern lengths for each method in BARS (not used with FlexStart methods)
     fade_duration_ms : float
@@ -520,8 +523,7 @@ def export_stem_loops(
     export_format : str
         Export format: 'wav' or 'mp3' (default: 'wav')
     methods : list, optional
-        Methods to export (default: ['per_snippet', '4bar_pattern_flexStart',
-        '2bar_pattern_flexStart', '1bar_pattern_flexStart'])
+        Methods to export (default: ['4bar_flexStart', '2bar_flexStart', '1bar_flexStart'])
 
     Returns
     -------
@@ -532,96 +534,71 @@ def export_stem_loops(
     --------
     >>> loops = export_stem_loops(
     ...     'output/track_id/1_stems',
-    ...     'output/track_id/5_grid/track_id_comprehensive.csv',
-    ...     'output/track_id/3_beats/track_id_bar_tempos.csv',
+    ...     'output/track_id/5_grid',
+    ...     'track_id_comprehensive_phases',
     ...     'output/track_id/9_loops',
     ...     snippet_start=132.0,
     ...     pattern_lengths={}
     ... )
     """
     import pandas as pd
-    import re
 
     stems_dir = Path(stems_dir)
+    grid_output_dir = Path(grid_output_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Load comprehensive CSV
-    df = pd.read_csv(comprehensive_csv_path)
 
     # Stem names (matching Spleeter 5-stem output)
     stem_names = ['vocals', 'drums', 'bass', 'piano', 'other']
 
-    # Methods to process (including per_snippet with fixed 4-bar loop and FlexStart pattern methods)
+    # Methods to process: FlexStart pattern methods using filtered CSVs
     if methods is None:
-        methods = ['per_snippet', '4bar_pattern_flexStart', '2bar_pattern_flexStart', '1bar_pattern_flexStart']
+        methods = ['4bar_flexStart', '2bar_flexStart', '1bar_flexStart']
 
     exported_files = {}
 
-    print(f"\nExporting stem loops...")
+    print(f"\nExporting stem loops from filtered FlexStart CSVs...")
 
     for method in methods:
         print(f"\n  Method: {method}")
 
-        # Determine pattern length
-        if method == 'per_snippet':
-            # per_snippet always uses 4 bars (no pattern length calculated for this correction)
+        # Determine pattern length and CSV filename
+        if method == '4bar_flexStart':
             pattern_length_bars = 4
-            print(f"    Pattern length: {pattern_length_bars} bars (fixed for per_snippet)")
-        elif method == '4bar_pattern_flexStart':
-            pattern_length_bars = 4
-            print(f"    Pattern length: {pattern_length_bars} bars")
-        elif method == '2bar_pattern_flexStart':
+            csv_filename = f'{base_name}_4bar_flexStart_filtered.csv'
+        elif method == '2bar_flexStart':
             pattern_length_bars = 2
-            print(f"    Pattern length: {pattern_length_bars} bars")
-        elif method == '1bar_pattern_flexStart':
+            csv_filename = f'{base_name}_2bar_flexStart_filtered.csv'
+        elif method == '1bar_flexStart':
             pattern_length_bars = 1
-            print(f"    Pattern length: {pattern_length_bars} bars")
+            csv_filename = f'{base_name}_1bar_flexStart_filtered.csv'
         else:
-            # Legacy: Find phase column with L value for old loop-based methods
-            matching_cols = [c for c in df.columns if f'phase_{method}(L=' in c]
-            if not matching_cols:
-                print(f"    ⚠️  No phase column found for {method}, skipping")
-                continue
+            print(f"    ⚠️  Unknown method: {method}, skipping")
+            continue
 
-            col_name = matching_cols[0]
+        print(f"    Pattern length: {pattern_length_bars} bars")
 
-            # Extract L from column name like "phase_drum(L=4)"
-            match = re.search(r'L=(\d+)', col_name)
-            if not match:
-                print(f"    ⚠️  Could not extract L value from {col_name}, skipping")
-                continue
+        # Load filtered FlexStart CSV
+        csv_path = grid_output_dir / csv_filename
+        if not csv_path.exists():
+            print(f"    ⚠️  Filtered CSV not found: {csv_filename}, skipping")
+            continue
 
-            pattern_length_bars = int(match.group(1))
-            print(f"    Pattern length: {pattern_length_bars} bars")
+        df = pd.read_csv(csv_path)
 
         # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
         num_16th_notes = pattern_length_bars * 16
-
-        # Get the time range for the first loop based on grid times
-        # Use the corrected grid times from the comprehensive CSV
-        # Loop: from first 16th note (index 0) to first 16th of next loop (index L*16)
-
-        # Find grid time column for this method
-        grid_col_pattern = f'grid_time_{method}'
-        grid_cols = [c for c in df.columns if grid_col_pattern in c]
-
-        if not grid_cols:
-            print(f"    ⚠️  No grid_time column found for {method}")
-            continue
-
-        grid_col = grid_cols[0]
 
         # Check if we have enough grid times
         if len(df) < num_16th_notes + 1:
             print(f"    ⚠️  Not enough data (need {num_16th_notes + 1} rows, have {len(df)})")
             continue
 
-        # Get loop boundaries from grid times
+        # Get loop boundaries from grid_time column
         # Start: first 16th note (index 0)
         # End: first 16th note of the NEXT loop (index num_16th_notes)
-        loop_start_time = pd.to_numeric(df[grid_col].iloc[0], errors='coerce')
-        loop_end_time = pd.to_numeric(df[grid_col].iloc[num_16th_notes], errors='coerce')
+        loop_start_time = pd.to_numeric(df['grid_time'].iloc[0], errors='coerce')
+        loop_end_time = pd.to_numeric(df['grid_time'].iloc[num_16th_notes], errors='coerce')
 
         if pd.isna(loop_start_time) or pd.isna(loop_end_time):
             print(f"    ⚠️  Invalid grid times")

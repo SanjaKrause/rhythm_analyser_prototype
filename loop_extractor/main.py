@@ -1046,26 +1046,43 @@ def run_complete_pipeline(
                 else:
                     snippet_offset = 0.0
 
-                # Export stem loops
-                # In DAW mode: only drum method, directly in loops_dir
-                # In detailed mode: all methods (per_snippet, drum, mel, pitch) with subfolders
+                # Export stem loops using filtered FlexStart CSVs
+                # Extract base_name from comprehensive CSV path
+                base_name = Path(paths['comprehensive_csv']).stem  # e.g., 'track_id_comprehensive_phases'
+                grid_output_dir = Path(paths['comprehensive_csv']).parent
+
+                # In DAW mode: only export one FlexStart method based on detected pattern length
+                # In detailed mode: export all FlexStart methods (L=4, L=2, L=1)
                 if daw_ready:
+                    # Determine which method to use based on pattern_lengths
+                    # Priority: mel (4-bar) > lepa (2-bar) > aicc (1-bar)
+                    if 'mel' in pattern_lengths and pattern_lengths['mel'] == 4:
+                        methods = ['4bar_flexStart']
+                    elif 'lepa' in pattern_lengths and pattern_lengths['lepa'] == 2:
+                        methods = ['2bar_flexStart']
+                    elif 'aicc' in pattern_lengths and pattern_lengths['aicc'] == 1:
+                        methods = ['1bar_flexStart']
+                    else:
+                        # Fallback: try 4-bar first
+                        methods = ['4bar_flexStart']
+
                     loop_files = audio_export.export_stem_loops(
                         str(paths['stems_dir']),
-                        str(paths['comprehensive_csv']),
-                        str(paths['tempo_csv']),
+                        str(grid_output_dir),
+                        base_name,
                         str(paths['loops_dir']),
                         snippet_start=snippet_offset,
                         pattern_lengths=pattern_lengths,
                         fade_duration_ms=5.0,
                         export_format=export_format,
-                        methods=['drum']  # Only drum method
+                        methods=methods
                     )
                 else:
+                    # Detailed mode: export all three FlexStart methods
                     loop_files = audio_export.export_stem_loops(
                         str(paths['stems_dir']),
-                        str(paths['comprehensive_csv']),
-                        str(paths['tempo_csv']),
+                        str(grid_output_dir),
+                        base_name,
                         str(paths['loops_dir']),
                         snippet_start=snippet_offset,
                         pattern_lengths=pattern_lengths,
