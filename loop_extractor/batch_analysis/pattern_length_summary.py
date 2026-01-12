@@ -34,7 +34,7 @@ def create_pattern_length_summary(output_dir: Path):
     print("PATTERN LENGTH SUMMARY")
     print("=" * 80)
 
-    # Collect pattern lengths from all tracks
+    # Collect pattern lengths and time signatures from all tracks
     pattern_lengths_data = {
         'drum': [],
         'mel': [],
@@ -42,6 +42,7 @@ def create_pattern_length_summary(output_dir: Path):
         'lepa': [],
         'aicc': []
     }
+    time_signatures = []
 
     # Find all pipeline_results.json files
     track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']])
@@ -67,7 +68,12 @@ def create_pattern_length_summary(output_dir: Path):
                         if method in pl:
                             pattern_lengths_data[method].append(pl[method])
 
-                    tracks_processed += 1
+                # Read time signature from correction_stats
+                if 'correction_stats' in results and 'time_signature' in results['correction_stats']:
+                    tsig = results['correction_stats']['time_signature']
+                    time_signatures.append(tsig)
+
+                tracks_processed += 1
             except Exception as e:
                 print(f"  Warning: Could not read {results_file}: {e}")
 
@@ -140,8 +146,44 @@ def create_pattern_length_summary(output_dir: Path):
                    fontsize=12)
             ax.set_title(title, fontsize=12, fontweight='bold')
 
-    # Hide the last subplot (bottom right) since we only have 5 methods
-    axes[1, 2].axis('off')
+    # Add time signature pie chart in the last subplot
+    ax = axes[1, 2]
+    if time_signatures:
+        counter = Counter(time_signatures)
+        sorted_data = sorted(counter.items())
+        labels = [f'{tsig}/4' for tsig, _ in sorted_data]
+        sizes = [count for _, count in sorted_data]
+
+        # Create pie chart
+        wedges, texts, autotexts = ax.pie(
+            sizes,
+            labels=labels,
+            autopct='%1.1f%%',
+            startangle=90,
+            colors=['#C7CEEA', '#FF9AA2', '#FFB7B2', '#FFDAC1'],
+            textprops={'fontsize': 11}
+        )
+
+        # Make percentage text bold
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+            autotext.set_fontsize(10)
+
+        # Add title with total count
+        ax.set_title(f'Time Signature Distribution\n(n={len(time_signatures)} tracks)',
+                    fontsize=12, fontweight='bold', pad=10)
+
+        # Print summary to console
+        print(f"\nTime Signature Distribution:")
+        for tsig, count in sorted_data:
+            percentage = (count / len(time_signatures)) * 100
+            print(f"  {tsig}/4: {count} tracks ({percentage:.1f}%)")
+    else:
+        ax.text(0.5, 0.5, 'No data available',
+               ha='center', va='center', transform=ax.transAxes,
+               fontsize=12)
+        ax.set_title('Time Signature Distribution', fontsize=12, fontweight='bold')
 
     plt.tight_layout()
 

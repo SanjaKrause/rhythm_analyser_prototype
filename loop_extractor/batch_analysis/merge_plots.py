@@ -11,6 +11,7 @@ Merges:
 - All rhythm histograms into all_rhythm_histograms.pdf
 - All rhythm histograms with style into all_rhythm_histograms_with_style.pdf
 - All rhythm histograms with medians and IQR into all_rhythm_histograms_with_medians_and_iqr.pdf
+- All groove pulse histograms into all_groove_pulse_histograms.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
 
 Usage:
@@ -238,7 +239,26 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 9. Merge new 4-method raster plots (PNG files in 5_grid folder)
+    # 9. Merge groove pulse histograms (PDF files in 5.5_rhythm folder)
+    print('\nLooking for groove pulse histograms...')
+    groove_pulse_pdfs = []
+    for track_dir in track_dirs:
+        groove_pulse_pdf = track_dir / '5.5_rhythm' / f'{track_dir.name}_groove_pulse_histograms.pdf'
+        if groove_pulse_pdf.exists():
+            groove_pulse_pdfs.append(groove_pulse_pdf)
+            print(f'  Found groove pulse histogram: {track_dir.name}')
+
+    if groove_pulse_pdfs:
+        print(f'\nMerging {len(groove_pulse_pdfs)} groove pulse histogram PDFs...')
+        output_pdf = batch_dir / 'all_groove_pulse_histograms.pdf'
+        merger = PdfMerger()
+        for pdf in groove_pulse_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 10. Merge new 4-method raster plots (PNG files in 5_grid folder)
     print('\nLooking for new 4-method raster plots...')
     raster_4method_pngs = []
     for track_dir in track_dirs:

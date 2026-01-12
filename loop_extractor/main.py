@@ -714,6 +714,31 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not create rhythm histograms with medians and IQR: {e}")
 
+                # Also create groove pulse histograms (filtered onsets)
+                try:
+                    from batch_analysis import groove_pulse_and_statistics
+
+                    grid_output_dir = paths['comprehensive_csv'].parent
+                    base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
+
+                    groove_files = groove_pulse_and_statistics.create_groove_pulse_histograms(
+                        str(grid_output_dir),
+                        base_name,
+                        track_id,
+                        str(rhythm_output_dir)
+                    )
+
+                    if groove_files:
+                        results['groove_pulse_histograms_pdf'] = groove_files.get('pdf')
+                        results['groove_pulse_histograms_csv'] = groove_files.get('csv')
+
+                    if verbose:
+                        print(f"  ✓ Groove pulse histograms created")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not create groove pulse histograms: {e}")
+
     except Exception as e:
         error_msg = f"Step 5.7 failed: {e}"
         results['errors'].append(error_msg)

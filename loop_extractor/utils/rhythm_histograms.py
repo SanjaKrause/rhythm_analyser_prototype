@@ -546,10 +546,11 @@ def extract_phase_statistics_from_csv(
     Returns
     -------
     tuple
-        (histogram, median_phases, iqr_phases) where:
+        (histogram, median_phases, iqr_phases, raw_iqr_phases) where:
         - histogram: onset counts per position
         - median_phases: median phase value per position
         - iqr_phases: sqrt(IQR)/1.5 per position (for error bars)
+        - raw_iqr_phases: raw IQR per position (no transformations)
     """
     try:
         df = pd.read_csv(csv_path)
@@ -561,9 +562,10 @@ def extract_phase_statistics_from_csv(
         histogram = np.zeros(num_positions)
         median_phases = np.full(num_positions, np.nan)
         iqr_phases = np.full(num_positions, np.nan)
+        raw_iqr_phases = np.full(num_positions, np.nan)
 
         if len(df_onsets) == 0:
-            return histogram, median_phases, iqr_phases
+            return histogram, median_phases, iqr_phases, raw_iqr_phases
 
         # Calculate 16th-note position within pattern for each onset
         ticks = df_onsets['tick_16th'].values
@@ -584,19 +586,22 @@ def extract_phase_statistics_from_csv(
                 histogram[pos] = len(phases_at_pos)
                 median_phases[pos] = np.median(phases_at_pos)
 
-                # Calculate sqrt(IQR) / 1.5
+                # Calculate IQR and sqrt(IQR) / 1.5
                 if len(phases_at_pos) > 1:
                     q75, q25 = np.percentile(phases_at_pos, [75, 25])
                     iqr = q75 - q25
+                    raw_iqr_phases[pos] = iqr
                     iqr_phases[pos] = np.sqrt(iqr) / 1.5
                 else:
+                    raw_iqr_phases[pos] = 0.0
                     iqr_phases[pos] = 0.0
 
-        return histogram, median_phases, iqr_phases
+        return histogram, median_phases, iqr_phases, raw_iqr_phases
 
     except Exception as e:
         print(f"    Warning: Could not process {csv_path}: {e}")
-        return np.zeros(num_positions), np.full(num_positions, np.nan), np.full(num_positions, np.nan)
+        num_positions = pattern_length * 16
+        return np.zeros(num_positions), np.full(num_positions, np.nan), np.full(num_positions, np.nan), np.full(num_positions, np.nan)
 
 
 def create_rhythm_histograms_with_medians_and_iqr(
@@ -650,6 +655,24 @@ def create_rhythm_histograms_with_medians_and_iqr(
     except Exception as e:
         print(f"    Warning: Could not load loop counts from JSON: {e}")
 
+    # Read time signature from corrected downbeats file
+    time_signature = None
+    try:
+        track_dir = Path(grid_output_dir).parent
+        # Look for corrected downbeats file in 3_corrected directory
+        corrected_dir = track_dir / '3_corrected'
+        if corrected_dir.exists():
+            corrected_files = list(corrected_dir.glob('*_downbeats_corrected.txt'))
+            if corrected_files:
+                corrected_file = corrected_files[0]
+                with open(corrected_file, 'r') as f:
+                    for line in f:
+                        if line.startswith('# time_signature='):
+                            time_signature = int(line.split('=')[1].strip())
+                            break
+    except Exception as e:
+        print(f"    Warning: Could not load time signature: {e}")
+
     # Add _comprehensive_phases prefix
     full_base_name = f'{base_name}_comprehensive_phases'
 
@@ -688,12 +711,12 @@ def create_rhythm_histograms_with_medians_and_iqr(
             continue
 
         # Extract statistics using specified phase column
-        hist, median_phases, iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
+        hist, median_phases, iqr_phases, raw_iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
         num_positions = pattern_length * 16
 
-        # Calculate onset strength
-        total_counts = np.sum(hist)
-        onset_strength = hist / total_counts if total_counts > 0 else hist
+        # Calculate onset strength (normalize to max)
+        max_count = np.max(hist)
+        onset_strength = hist / max_count if max_count > 0 else hist
 
         # Calculate number of patterns
         num_patterns = None
@@ -746,17 +769,26 @@ def create_rhythm_histograms_with_medians_and_iqr(
                            xerr=iqr_phases[i], fmt='none',
                            ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
 
-        # Add median phase value labels on top of bars (horizontal)
+        # Add relative median phase value labels on top of bars (horizontal)
         for i in range(num_positions):
             if onset_strength[i] > 0 and not np.isnan(median_phases[i]):
-                label_text = f'{median_phases[i]:.3f}'
+                # Calculate grid_phase for this position
+                tick_within_bar = i % 16  # 0-15
+                grid_phase = tick_within_bar / 16.0  # Expected phase (0.0-1.0)
+
+                # Calculate relative phase: -1.0 to +1.0
+                # -1.0 = halfway to previous tick, 0.0 = on grid, +1.0 = halfway to next tick
+                phase_diff = median_phases[i] - grid_phase
+                relative_phase = phase_diff / (1.0 / 16.0)  # Normalize by step size
+
+                label_text = f'{relative_phase:.2f}'
                 ax.text(shifted_positions[i], onset_strength[i], label_text,
                        ha='center', va='bottom', fontsize=6, rotation=0)
 
         ax.set_ylabel('Onset Strength', fontsize=10, fontweight='bold')
 
         # Adjust left y-axis scale based on data
-        max_strength = np.max(onset_strength) if total_counts > 0 else 1.0
+        max_strength = np.max(onset_strength) if max_count > 0 else 1.0
         ax.set_ylim(0, max_strength * 1.2)  # Extra padding for labels
 
         # Create second y-axis for counts (right side)
@@ -764,7 +796,6 @@ def create_rhythm_histograms_with_medians_and_iqr(
         ax2.set_ylabel('Onset Count', fontsize=10, fontweight='bold', rotation=270, labelpad=15)
 
         # Adjust right y-axis scale to match left axis
-        max_count = np.max(hist) if total_counts > 0 else 1.0
         ax2.set_ylim(0, max_count * 1.2)  # Match padding
 
         # Add horizontal threshold line at groove_pulse_threshold * max_onset_strength
@@ -806,6 +837,9 @@ def create_rhythm_histograms_with_medians_and_iqr(
         if num_patterns is not None:
             stats_text += f'\nPatterns: {num_patterns}'
 
+        if time_signature is not None:
+            stats_text += f'\nTime Sig: {time_signature}/4'
+
         ax.text(0.02, 0.97, stats_text,
                 transform=ax.transAxes, fontsize=9,
                 verticalalignment='top', horizontalalignment='left',
@@ -820,6 +854,14 @@ def create_rhythm_histograms_with_medians_and_iqr(
 
         # Store CSV data
         for pos_idx in range(num_positions):
+            # Calculate relative_median_phase
+            relative_median_phase = None
+            if not np.isnan(median_phases[pos_idx]):
+                tick_within_bar = pos_idx % 16  # 0-15
+                grid_phase = tick_within_bar / 16.0  # Expected phase (0.0-1.0)
+                phase_diff = median_phases[pos_idx] - grid_phase
+                relative_median_phase = phase_diff / (1.0 / 16.0)  # Normalize by step size
+
             csv_data.append({
                 'method': method_title,
                 'pattern_length': pattern_length,
@@ -828,6 +870,8 @@ def create_rhythm_histograms_with_medians_and_iqr(
                 'count': int(hist[pos_idx]),
                 'onset_strength': float(onset_strength[pos_idx]),
                 'median_phase': float(median_phases[pos_idx]) if not np.isnan(median_phases[pos_idx]) else None,
+                'relative_median_phase': float(relative_median_phase) if relative_median_phase is not None else None,
+                'iqr': float(raw_iqr_phases[pos_idx]) if not np.isnan(raw_iqr_phases[pos_idx]) else None,
                 'sqrt_iqr_over_1.5': float(iqr_phases[pos_idx]) if not np.isnan(iqr_phases[pos_idx]) else None
             })
 
