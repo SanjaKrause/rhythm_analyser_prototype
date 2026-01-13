@@ -618,8 +618,8 @@ class LoopExtractorGUI:
             # Add onset threshold for drumtranscriber (default 0.5)
             cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])
 
-            # Add loop start offset (default -15.0ms)
-            cmd.extend(["--loop-start-offset-ms", "-15.0"])
+            # Add loop start offset (default 0.0ms - use grid time exactly)
+            cmd.extend(["--loop-start-offset-ms", "0.0"])
 
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
             self.log_status(f"Mode: {self.output_mode.get()}")

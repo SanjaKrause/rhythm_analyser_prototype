@@ -493,7 +493,7 @@ def export_stem_loops(
     fade_duration_ms: float = 5.0,
     export_format: str = 'wav',
     methods: list = None,
-    loop_start_offset_ms: float = -15.0
+    loop_start_offset_ms: float = 0.0  # Set to 0.0 - negative offset was adding silence at loop start
 ) -> Dict[str, List[Path]]:
     """
     Export stem loops for each correction method using filtered FlexStart CSVs.
