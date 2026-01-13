@@ -16,7 +16,7 @@ __version__ = "0.1.0"
 __author__ = "Alexander Krause, TU Berlin"
 
 # Core analysis imports (base environment)
-from .analysis import tempo, microtiming, raster, histograms
+from .analysis import tempo, microtiming, raster
 
 # Utility imports
 from .utils import file_io, data_processing
@@ -25,7 +25,6 @@ __all__ = [
     "tempo",
     "microtiming",
     "raster",
-    "histograms",
     "file_io",
     "data_processing",
 ]

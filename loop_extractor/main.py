@@ -75,6 +75,7 @@ def run_complete_pipeline(
     onset_file: Optional[str] = None,
     onset_mode: str = 'librosa',
     onset_threshold_drumtranscriber: float = 0.5,  # Filter onsets closer than this fraction of 1/16th note (0.5 = 1/32nd)
+    loop_start_offset_ms: float = -15.0,  # Offset in ms to capture drum attack transients (negative = start earlier)
     skip_existing: bool = False,
     create_audio_examples: bool = True,
     daw_ready: bool = False,
@@ -1205,7 +1206,8 @@ def run_complete_pipeline(
                         pattern_lengths=pattern_lengths,
                         fade_duration_ms=5.0,
                         export_format=export_format,
-                        methods=methods
+                        methods=methods,
+                        loop_start_offset_ms=loop_start_offset_ms
                     )
                 else:
                     # Detailed mode: export all three FlexStart methods
@@ -1217,7 +1219,8 @@ def run_complete_pipeline(
                         snippet_start=snippet_offset,
                         pattern_lengths=pattern_lengths,
                         fade_duration_ms=5.0,
-                        export_format=export_format
+                        export_format=export_format,
+                        loop_start_offset_ms=loop_start_offset_ms
                     )
 
                 if loop_files:
@@ -1304,6 +1307,8 @@ Environment:
                        help='Onset detection method: librosa (Step 4) or drumtranscriber (Step 11, requires DrumTranscriber)')
     parser.add_argument('--onset-threshold-drumtranscriber', type=float, default=0.5,
                        help='Minimum onset interval as fraction of 1/16th note (default: 0.5 = 1/32nd note). Only used with --onset-mode drumtranscriber')
+    parser.add_argument('--loop-start-offset-ms', type=float, default=-15.0,
+                       help='Loop start offset in milliseconds to capture attack transients (default: -15.0ms, negative = start earlier)')
     parser.add_argument('--pattern-file', help='Path to pattern lengths CSV')
     parser.add_argument('--snippet-file', help='Path to snippet offsets CSV')
 
@@ -1396,6 +1401,7 @@ Environment:
                     onset_file=args.onset_file,
                     onset_mode=args.onset_mode,
                     onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
+                    loop_start_offset_ms=args.loop_start_offset_ms,
                     skip_existing=False,
                     create_audio_examples=not args.no_audio_examples,
                     daw_ready=args.daw_ready,
@@ -1555,6 +1561,7 @@ Environment:
             onset_file=args.onset_file,
             onset_mode=args.onset_mode,
             onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
+            loop_start_offset_ms=args.loop_start_offset_ms,
             skip_existing=False,
             create_audio_examples=not args.no_audio_examples,
             daw_ready=args.daw_ready,

@@ -212,6 +212,9 @@ class Config:
 
             # Step 9: Stem loops
             'loops_dir': track_dir / loops_folder,
+
+            # Step 11: Drum transcription
+            'drumtranscriber_dir': track_dir / '11_drumtranscriber',
         }
 
     @classmethod

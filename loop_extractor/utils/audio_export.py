@@ -492,7 +492,8 @@ def export_stem_loops(
     pattern_lengths: dict,
     fade_duration_ms: float = 5.0,
     export_format: str = 'wav',
-    methods: list = None
+    methods: list = None,
+    loop_start_offset_ms: float = -15.0
 ) -> Dict[str, List[Path]]:
     """
     Export stem loops for each correction method using filtered FlexStart CSVs.
@@ -524,6 +525,10 @@ def export_stem_loops(
         Export format: 'wav' or 'mp3' (default: 'wav')
     methods : list, optional
         Methods to export (default: ['4bar_flexStart', '2bar_flexStart', '1bar_flexStart'])
+    loop_start_offset_ms : float
+        Offset in milliseconds to apply to loop start time (default: -15.0)
+        Negative values start earlier to capture drum attack transients.
+        Onset detectors detect peak (~14ms late), so -15ms captures the attack start.
 
     Returns
     -------
@@ -557,7 +562,11 @@ def export_stem_loops(
 
     exported_files = {}
 
+    # Dictionary to store loop timing info for CSV export
+    loop_timings = {}
+
     print(f"\nExporting stem loops from filtered FlexStart CSVs...")
+    print(f"  Loop start offset: {loop_start_offset_ms:.1f} ms")
 
     for method in methods:
         print(f"\n  Method: {method}")
@@ -597,16 +606,28 @@ def export_stem_loops(
         # Get loop boundaries from grid_time column
         # Start: first 16th note (index 0)
         # End: first 16th note of the NEXT loop (index num_16th_notes)
-        loop_start_time = pd.to_numeric(df['grid_time'].iloc[0], errors='coerce')
-        loop_end_time = pd.to_numeric(df['grid_time'].iloc[num_16th_notes], errors='coerce')
+        loop_start_time_grid = pd.to_numeric(df['grid_time'].iloc[0], errors='coerce')
+        loop_end_time_grid = pd.to_numeric(df['grid_time'].iloc[num_16th_notes], errors='coerce')
 
-        if pd.isna(loop_start_time) or pd.isna(loop_end_time):
+        if pd.isna(loop_start_time_grid) or pd.isna(loop_end_time_grid):
             print(f"    ⚠️  Invalid grid times")
             continue
 
+        # Apply offset to capture attack transient (negative offset = start earlier)
+        loop_start_offset_seconds = loop_start_offset_ms / 1000.0
+        loop_start_time = loop_start_time_grid + loop_start_offset_seconds
+        loop_end_time = loop_end_time_grid  # End time stays the same
+
         loop_duration = loop_end_time - loop_start_time
 
-        print(f"    Loop: {loop_start_time:.3f}s - {loop_end_time:.3f}s ({loop_duration:.3f}s)")
+        print(f"    Grid times: {loop_start_time_grid:.3f}s - {loop_end_time_grid:.3f}s")
+        print(f"    Actual loop (with {loop_start_offset_ms:.1f}ms offset): {loop_start_time:.3f}s - {loop_end_time:.3f}s ({loop_duration:.3f}s)")
+
+        # Store timing info for CSV export
+        loop_timings[method] = {
+            'start_time': loop_start_time,
+            'end_time': loop_end_time
+        }
 
         # Create method subdirectory (or use output_dir directly if only one method)
         if len(methods) == 1:
@@ -660,6 +681,13 @@ def export_stem_loops(
 
             # Clear audio from memory after each stem
             del audio, loop_audio
+
+    # Export loop timings CSV
+    if loop_timings:
+        timing_csv_path = output_dir / f"{base_name}_loop_timings.csv"
+        timing_df = pd.DataFrame(loop_timings)  # Methods as columns, start/end as rows
+        timing_df.to_csv(timing_csv_path)
+        print(f"\n  ✓ Loop timings saved to: {timing_csv_path.name}")
 
     print(f"\n  ✓ Stem loops exported to {output_dir}")
 
