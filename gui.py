@@ -44,6 +44,9 @@ class LoopExtractorGUI:
         self.manual_start_time = tk.DoubleVar(value=50.0)
         self.manual_end_time = tk.DoubleVar(value=80.0)
 
+        # Onset calculation mode
+        self.onset_mode = tk.StringVar(value="drumtranscriber")  # Default: drumtranscriber
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -167,9 +170,13 @@ class LoopExtractorGUI:
         # Debug: bind additional click event
         self.run_button.bind('<Button-1>', lambda e: print("DEBUG: Button clicked!"))
 
-        # Time selection section
-        time_frame = tk.Frame(left_frame, bg='#000080')
-        time_frame.pack(fill=tk.X, pady=(10, 10))
+        # Horizontal container for TIME RANGE and ONSET CALCULATION
+        time_onset_container = tk.Frame(left_frame, bg='#000080')
+        time_onset_container.pack(fill=tk.X, pady=(10, 10))
+
+        # Time selection section (left side)
+        time_frame = tk.Frame(time_onset_container, bg='#000080')
+        time_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
 
         time_label = tk.Label(
             time_frame,
@@ -301,6 +308,49 @@ class LoopExtractorGUI:
         # Update labels when sliders move
         self.manual_start_time.trace_add('write', lambda *args: self.start_value_label.config(text=f"{int(self.manual_start_time.get())}s"))
         self.manual_end_time.trace_add('write', lambda *args: self.end_value_label.config(text=f"{int(self.manual_end_time.get())}s"))
+
+        # Onset calculation section (right side, next to TIME RANGE)
+        onset_frame = tk.Frame(time_onset_container, bg='#000080')
+        onset_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False)
+
+        onset_label = tk.Label(
+            onset_frame,
+            text="ONSET CALCULATION:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        onset_label.pack(anchor='w', pady=(0, 10))
+
+        # Radio button: Librosa (default)
+        librosa_radio = tk.Radiobutton(
+            onset_frame,
+            text="Librosa onset detection",
+            variable=self.onset_mode,
+            value="librosa",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        librosa_radio.pack(anchor='w', pady=(0, 8))
+
+        # Radio button: DrumTranscriber
+        drumtranscriber_radio = tk.Radiobutton(
+            onset_frame,
+            text="DrumTranscriber CNN",
+            variable=self.onset_mode,
+            value="drumtranscriber",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        drumtranscriber_radio.pack(anchor='w', pady=(0, 8))
 
         # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
@@ -562,6 +612,12 @@ class LoopExtractorGUI:
                 cmd.extend(["--manual-start", str(start_time)])
                 cmd.extend(["--manual-duration", str(duration)])
 
+            # Add onset mode
+            cmd.extend(["--onset-mode", self.onset_mode.get()])
+
+            # Add onset threshold for drumtranscriber (default 0.5)
+            cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])
+
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
             self.log_status(f"Mode: {self.output_mode.get()}")
             self.log_status(f"Export format: {self.export_format.get().upper()}")
@@ -571,6 +627,10 @@ class LoopExtractorGUI:
                 self.log_status(f"Time: Automatic snippet detection (30s)")
             else:
                 self.log_status(f"Time: Manual range {start_time}s - {end_time}s (duration: {duration}s)")
+
+            # Log onset mode
+            onset_method = "Librosa" if self.onset_mode.get() == "librosa" else "DrumTranscriber CNN"
+            self.log_status(f"Onset detection: {onset_method}")
             self.log_status("")
 
             # Run pipeline

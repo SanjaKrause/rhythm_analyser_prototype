@@ -411,6 +411,16 @@ def save_bar_tempos_csv(
 
     df = pd.DataFrame(data)
 
+    # Calculate average BPM from corrected tempos (excluding NaN values)
+    corrected_tempos = df['tempo_corrected_bpm'].dropna()
+    if len(corrected_tempos) > 0:
+        avg_bpm = corrected_tempos.mean()
+    else:
+        avg_bpm = np.nan
+
+    # Add avg_bpm as a separate column (same value for all rows for easy access)
+    df['avg_bpm'] = avg_bpm
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)

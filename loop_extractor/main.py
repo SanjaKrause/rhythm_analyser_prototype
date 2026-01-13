@@ -14,6 +14,7 @@ Complete pipeline for music microtiming analysis and loop extraction:
 7. Audio example generation
 8. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
 9. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
+11. Drum transcription (DrumTranscriber CNN - 6 drum classes)
 
 Environment: loop_extractor_main
 Subprocess: new_beatnet_env (for beat detection only)
@@ -30,6 +31,12 @@ Required Pretrained Models:
     3. libf0 (for pitch detection)
        - Installation: pip install libf0
        - No separate model files needed
+
+    4. DrumTranscriber model (optional, for Step 11)
+       - Location: drumtranscriber/model/drum_transcriber.h5
+       - Download from: https://drive.google.com/file/d/1w2fIHeyr-st3sbk1PYrtGOYW6YAD1fsi/view
+       - Repository: https://github.com/yoshi-man/DrumTranscriber
+       - Note: Pipeline will skip Step 11 if model is not available
 
 Usage:
     python main.py --audio track.wav --track-id 123 --output-dir output/
@@ -56,7 +63,7 @@ config = config_module.config
 from stem_separation import spleeter_interface
 from beat_detection import transformer
 from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots
-from utils import audio_export, raster_plots, midi_export, microtiming_plots
+from utils import audio_export, raster_plots, midi_export, microtiming_plots, drumtranscriber_interface
 
 
 def run_complete_pipeline(
@@ -66,6 +73,8 @@ def run_complete_pipeline(
     pattern_file: Optional[str] = None,
     snippet_offset_file: Optional[str] = None,
     onset_file: Optional[str] = None,
+    onset_mode: str = 'librosa',
+    onset_threshold_drumtranscriber: float = 0.5,  # Filter onsets closer than this fraction of 1/16th note (0.5 = 1/32nd)
     skip_existing: bool = False,
     create_audio_examples: bool = True,
     daw_ready: bool = False,
@@ -362,6 +371,127 @@ def run_complete_pipeline(
         if verbose:
             print(f"  ✗ ERROR: {e}")
         raise
+
+    # ========================================================================
+    # STEP 4.1: DRUM TRANSCRIPTION (if using drumtranscriber onset mode)
+    # ========================================================================
+    # Run DrumTranscriber before pattern detection so we can use CNN-detected onsets
+    try:
+        # Check if DrumTranscriber is available and onset_mode is drumtranscriber
+        if onset_mode == 'drumtranscriber':
+            if not drumtranscriber_interface.DRUMTRANSCRIBER_AVAILABLE:
+                if verbose:
+                    print("\n[4.1/7] Drum transcription - SKIPPED (DrumTranscriber not available)")
+                    print("         Falling back to librosa onsets from Step 4")
+                results['steps_completed'].append('drumtranscriber_unavailable')
+            elif daw_ready:
+                # Skip in DAW mode (not essential for loop creation)
+                if verbose:
+                    print("\n[4.1/7] Drum transcription - SKIPPED (DAW mode)")
+                    print("         Using librosa onsets from Step 4")
+                results['steps_completed'].append('drumtranscriber_skipped_daw')
+            else:
+                # Check if already exists
+                transcription_csv = paths['drumtranscriber_dir'] / f'{track_id}_drum_transcription.csv'
+                drumtranscriber_onsets_csv = paths['drumtranscriber_dir'] / f'{track_id}_onsets.csv'
+
+                if skip_existing and transcription_csv.exists() and drumtranscriber_onsets_csv.exists():
+                    if verbose:
+                        print("\n[4.1/7] Drum transcription - SKIPPED (exists)")
+                    results['steps_completed'].append('drumtranscriber_skipped')
+                    # Override onset_file with existing drumtranscriber onsets
+                    onset_file = str(drumtranscriber_onsets_csv)
+                    if verbose:
+                        print(f"         Using DrumTranscriber onsets: {onset_file}")
+                else:
+                    if verbose:
+                        print("\n[4.1/7] Drum transcription...")
+
+                    # Transcribe the drum stem (not the full mix)
+                    drum_stem_path = paths['stems_dir'] / 'drums.wav'
+                    transcription_results = drumtranscriber_interface.transcribe_drums(
+                        str(drum_stem_path),
+                        str(paths['drumtranscriber_dir']),
+                        track_id,
+                        sr=44100
+                    )
+
+                    results['drumtranscriber'] = {
+                        'predictions_csv': transcription_results['predictions_csv'],
+                        'timeline_csv': transcription_results.get('timeline_csv'),
+                        'onsets_csv': transcription_results.get('onsets_csv'),
+                        'summary_json': transcription_results['summary_json'],
+                        'total_hits': transcription_results['summary']['total_hits']
+                    }
+                    results['steps_completed'].append('drumtranscriber')
+
+                    # Override onset_file to use DrumTranscriber onsets for all downstream analysis
+                    if 'onsets_csv' in transcription_results:
+                        onset_file = transcription_results['onsets_csv']
+                        if verbose:
+                            print(f"  ✓ Transcribed {transcription_results['summary']['total_hits']} drum hits")
+                            print(f"  ✓ Onset mode: Using DrumTranscriber onsets for all analysis")
+        else:
+            # Using librosa onset mode (default)
+            if verbose:
+                print(f"\n[4.1/7] Onset mode: librosa (using onsets from Step 4)")
+
+    except Exception as e:
+        error_msg = f"Step 4.1 (DrumTranscriber) failed: {e} - falling back to librosa onsets"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ⚠ WARNING: {e}")
+            print(f"  Falling back to librosa onsets from Step 4")
+
+    # ========================================================================
+    # STEP 4.2: FILTER CLOSE ONSETS (if using drumtranscriber mode)
+    # ========================================================================
+    try:
+        if onset_mode == 'drumtranscriber' and onset_file:
+            # Check if tempo CSV exists (created in Step 3.5)
+            if paths['tempo_csv'].exists():
+                if verbose:
+                    print(f"\n[4.2/7] Filtering close onsets...")
+
+                # Create filtered onset file path
+                onset_file_path = Path(onset_file)
+                filtered_onset_file = onset_file_path.parent / f'{track_id}_onsets_filtered.csv'
+
+                # Check if filtered file already exists
+                if skip_existing and filtered_onset_file.exists():
+                    if verbose:
+                        print(f"  ✓ Filtered onsets - SKIPPED (exists)")
+                    onset_file = str(filtered_onset_file)
+                    results['steps_completed'].append('onset_filtering_skipped')
+                else:
+                    # Filter onsets that are too close together
+                    filter_stats = drumtranscriber_interface.filter_close_onsets(
+                        onset_file,
+                        str(paths['tempo_csv']),
+                        str(filtered_onset_file),
+                        min_interval_16th_fraction=onset_threshold_drumtranscriber
+                    )
+
+                    # Use filtered onsets for all downstream analysis
+                    onset_file = str(filtered_onset_file)
+                    results['onset_filter_stats'] = filter_stats
+                    results['steps_completed'].append('onset_filtering')
+
+                    if verbose:
+                        print(f"  ✓ Filtered onsets saved: {filtered_onset_file.name}")
+            else:
+                if verbose:
+                    print(f"\n[4.2/7] Onset filtering - SKIPPED (no tempo CSV yet)")
+        else:
+            if verbose and onset_mode == 'drumtranscriber':
+                print(f"\n[4.2/7] Onset filtering - SKIPPED (no onsets to filter)")
+
+    except Exception as e:
+        error_msg = f"Step 4.2 (Onset filtering) failed: {e} - using unfiltered onsets"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ⚠ WARNING: {e}")
+            print(f"  Using unfiltered onsets")
 
     # ========================================================================
     # STEP 4.5: PATTERN LENGTH DETECTION
@@ -1105,7 +1235,7 @@ def run_complete_pipeline(
                         print(f"  ⚠️  No loop files created")
 
     except Exception as e:
-        error_msg = f"Step 9 failed: {e}"
+        error_msg = f"Step 10 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
@@ -1170,6 +1300,10 @@ Environment:
     parser.add_argument('--analyse-all', action='store_true',
                        help='Process all audio files in --audio-dir')
     parser.add_argument('--onset-file', help='Path to onsets CSV file')
+    parser.add_argument('--onset-mode', choices=['librosa', 'drumtranscriber'], default='librosa',
+                       help='Onset detection method: librosa (Step 4) or drumtranscriber (Step 11, requires DrumTranscriber)')
+    parser.add_argument('--onset-threshold-drumtranscriber', type=float, default=0.5,
+                       help='Minimum onset interval as fraction of 1/16th note (default: 0.5 = 1/32nd note). Only used with --onset-mode drumtranscriber')
     parser.add_argument('--pattern-file', help='Path to pattern lengths CSV')
     parser.add_argument('--snippet-file', help='Path to snippet offsets CSV')
 
@@ -1260,6 +1394,8 @@ Environment:
                     pattern_file=args.pattern_file,
                     snippet_offset_file=args.snippet_file,
                     onset_file=args.onset_file,
+                    onset_mode=args.onset_mode,
+                    onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
                     skip_existing=False,
                     create_audio_examples=not args.no_audio_examples,
                     daw_ready=args.daw_ready,
@@ -1417,6 +1553,8 @@ Environment:
             pattern_file=args.pattern_file,
             snippet_offset_file=args.snippet_file,
             onset_file=args.onset_file,
+            onset_mode=args.onset_mode,
+            onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
             skip_existing=False,
             create_audio_examples=not args.no_audio_examples,
             daw_ready=args.daw_ready,
