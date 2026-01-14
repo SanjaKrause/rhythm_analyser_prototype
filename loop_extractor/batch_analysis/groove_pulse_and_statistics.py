@@ -127,7 +127,7 @@ def create_groove_pulse_histograms(
             continue
 
         # Extract statistics using specified phase column
-        hist, median_phases, iqr_phases, raw_iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
+        hist, median_phases, iqr_16th, raw_iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
         num_positions = pattern_length * 16
 
         # Calculate onset strength (normalize to max)
@@ -148,7 +148,7 @@ def create_groove_pulse_histograms(
 
         # Filter median phases and IQR to match (set to NaN where filtered out)
         filtered_median_phases = np.where(filtered_mask, median_phases, np.nan)
-        filtered_iqr_phases = np.where(filtered_mask, iqr_phases, np.nan)
+        filtered_iqr_16th = np.where(filtered_mask, iqr_16th, np.nan)
         filtered_raw_iqr_phases = np.where(filtered_mask, raw_iqr_phases, np.nan)
 
         # Calculate number of patterns
@@ -183,13 +183,13 @@ def create_groove_pulse_histograms(
                 ax.bar(shifted_positions[i], filtered_onset_strength[i], width=bar_width,
                       color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
 
-        # Add error bars (sqrt(IQR)/1.5) positioned 10% below bar top
+        # Add error bars (IQR in 16th note units) positioned 10% below bar top
         for i in range(num_positions):
-            if not np.isnan(filtered_iqr_phases[i]) and filtered_iqr_phases[i] > 0 and filtered_onset_strength[i] > 0:
+            if not np.isnan(filtered_iqr_16th[i]) and filtered_iqr_16th[i] > 0 and filtered_onset_strength[i] > 0:
                 # Position error bar at 90% of bar height
                 error_bar_y = filtered_onset_strength[i] * 0.9
                 ax.errorbar(shifted_positions[i], error_bar_y,
-                           xerr=filtered_iqr_phases[i], fmt='none',
+                           xerr=filtered_iqr_16th[i], fmt='none',
                            ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
 
         # Add relative median phase value labels on top of bars
@@ -228,9 +228,12 @@ def create_groove_pulse_histograms(
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
 
-        # Add vertical lines at bar boundaries (every 16 positions)
+        # Add vertical lines at bar boundaries (centered on bar beginnings)
+        # First line at position 1 (start of pattern)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
-            ax.axvline(x=bar_idx * 16 + 0.5, color='red', linestyle='--',
+            ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
                       linewidth=1.5, alpha=0.5)
 
         # Set x-axis limits and ticks (keep at integer positions)
@@ -292,8 +295,8 @@ def create_groove_pulse_histograms(
                 'onset_strength_filtered': float(filtered_onset_strength[pos_idx]),
                 'median_phase': float(filtered_median_phases[pos_idx]) if not np.isnan(filtered_median_phases[pos_idx]) else None,
                 'relative_median_phase': float(relative_median_phase) if relative_median_phase is not None else None,
-                'iqr': float(filtered_raw_iqr_phases[pos_idx]) if not np.isnan(filtered_raw_iqr_phases[pos_idx]) else None,
-                'sqrt_iqr_over_1.5': float(filtered_iqr_phases[pos_idx]) if not np.isnan(filtered_iqr_phases[pos_idx]) else None,
+                'iqr_phase': float(filtered_raw_iqr_phases[pos_idx]) if not np.isnan(filtered_raw_iqr_phases[pos_idx]) else None,
+                'iqr_16th': float(filtered_iqr_16th[pos_idx]) if not np.isnan(filtered_iqr_16th[pos_idx]) else None,
                 'threshold': threshold_value
             })
 

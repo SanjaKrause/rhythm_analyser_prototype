@@ -162,9 +162,12 @@ def create_rhythm_histograms(
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
 
-        # Add vertical lines at bar boundaries (every 16 positions)
+        # Add vertical lines at bar boundaries (centered on bar beginnings)
+        # First line at position 1 (start of pattern)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
-            ax.axvline(x=bar_idx * 16 + 0.5, color='red', linestyle='--',
+            ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
                       linewidth=1.5, alpha=0.5)
 
         # Set x-axis limits and ticks
@@ -427,9 +430,12 @@ def create_rhythm_histograms_with_style(
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
 
-        # Add vertical lines at bar boundaries (every 16 positions)
+        # Add vertical lines at bar boundaries (centered on bar beginnings)
+        # First line at position 1 (start of pattern)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
-            ax.axvline(x=bar_idx * 16 + 0.5, color='red', linestyle='--',
+            ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
                       linewidth=1.5, alpha=0.5)
 
         # Set x-axis limits and ticks
@@ -532,7 +538,7 @@ def extract_phase_statistics_from_csv(
     pattern_length: int
 ) -> tuple:
     """
-    Extract phase statistics (median, sqrt(IQR)/1.5) from CSV with specified phase column.
+    Extract phase statistics (median, IQR in 16th notes) from CSV with specified phase column.
 
     Parameters
     ----------
@@ -546,11 +552,11 @@ def extract_phase_statistics_from_csv(
     Returns
     -------
     tuple
-        (histogram, median_phases, iqr_phases, raw_iqr_phases) where:
+        (histogram, median_phases, iqr_16th, raw_iqr_phases) where:
         - histogram: onset counts per position
-        - median_phases: median phase value per position
-        - iqr_phases: sqrt(IQR)/1.5 per position (for error bars)
-        - raw_iqr_phases: raw IQR per position (no transformations)
+        - median_phases: median phase value per position (0.0-1.0 within bar)
+        - iqr_16th: IQR in 16th note units (for error bars)
+        - raw_iqr_phases: raw IQR in phase units (0.0-1.0, no transformations)
     """
     try:
         df = pd.read_csv(csv_path)
@@ -561,11 +567,11 @@ def extract_phase_statistics_from_csv(
         num_positions = pattern_length * 16
         histogram = np.zeros(num_positions)
         median_phases = np.full(num_positions, np.nan)
-        iqr_phases = np.full(num_positions, np.nan)
+        iqr_16th = np.full(num_positions, np.nan)
         raw_iqr_phases = np.full(num_positions, np.nan)
 
         if len(df_onsets) == 0:
-            return histogram, median_phases, iqr_phases, raw_iqr_phases
+            return histogram, median_phases, iqr_16th, raw_iqr_phases
 
         # Calculate 16th-note position within pattern for each onset
         ticks = df_onsets['tick_16th'].values
@@ -586,17 +592,21 @@ def extract_phase_statistics_from_csv(
                 histogram[pos] = len(phases_at_pos)
                 median_phases[pos] = np.median(phases_at_pos)
 
-                # Calculate IQR and sqrt(IQR) / 1.5
+                # Calculate IQR in 16th note units
                 if len(phases_at_pos) > 1:
                     q75, q25 = np.percentile(phases_at_pos, [75, 25])
-                    iqr = q75 - q25
-                    raw_iqr_phases[pos] = iqr
-                    iqr_phases[pos] = np.sqrt(iqr) / 1.5
+                    iqr_phase = q75 - q25  # IQR in phase units (0.0-1.0)
+                    raw_iqr_phases[pos] = iqr_phase
+
+                    # Convert IQR from phase (0.0-1.0 within bar) to 16th note units
+                    # 1.0 phase = 16 sixteenth notes within a bar
+                    # Multiply by 1.5 to get better error bar representation
+                    iqr_16th[pos] = iqr_phase * 16 * 1.5
                 else:
                     raw_iqr_phases[pos] = 0.0
-                    iqr_phases[pos] = 0.0
+                    iqr_16th[pos] = 0.0
 
-        return histogram, median_phases, iqr_phases, raw_iqr_phases
+        return histogram, median_phases, iqr_16th, raw_iqr_phases
 
     except Exception as e:
         print(f"    Warning: Could not process {csv_path}: {e}")
@@ -711,7 +721,7 @@ def create_rhythm_histograms_with_medians_and_iqr(
             continue
 
         # Extract statistics using specified phase column
-        hist, median_phases, iqr_phases, raw_iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
+        hist, median_phases, iqr_16th, raw_iqr_phases = extract_phase_statistics_from_csv(str(csv_path), phase_column, pattern_length)
         num_positions = pattern_length * 16
 
         # Calculate onset strength (normalize to max)
@@ -760,13 +770,13 @@ def create_rhythm_histograms_with_medians_and_iqr(
         bars = ax.bar(shifted_positions, onset_strength, width=bar_width,
                      color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
 
-        # Add error bars (sqrt(IQR)/1.5) positioned 10% below bar top
+        # Add error bars (IQR in 16th note units) positioned 10% below bar top
         for i in range(num_positions):
-            if not np.isnan(iqr_phases[i]) and iqr_phases[i] > 0 and onset_strength[i] > 0:
+            if not np.isnan(iqr_16th[i]) and iqr_16th[i] > 0 and onset_strength[i] > 0:
                 # Position error bar at 90% of bar height
                 error_bar_y = onset_strength[i] * 0.9
                 ax.errorbar(shifted_positions[i], error_bar_y,
-                           xerr=iqr_phases[i], fmt='none',
+                           xerr=iqr_16th[i], fmt='none',
                            ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
 
         # Add relative median phase value labels on top of bars (horizontal)
@@ -811,9 +821,12 @@ def create_rhythm_histograms_with_medians_and_iqr(
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
 
-        # Add vertical lines at bar boundaries (every 16 positions)
+        # Add vertical lines at bar boundaries (centered on bar beginnings)
+        # First line at position 1 (start of pattern)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
-            ax.axvline(x=bar_idx * 16 + 0.5, color='red', linestyle='--',
+            ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
                       linewidth=1.5, alpha=0.5)
 
         # Set x-axis limits and ticks (keep at integer positions)
@@ -871,8 +884,8 @@ def create_rhythm_histograms_with_medians_and_iqr(
                 'onset_strength': float(onset_strength[pos_idx]),
                 'median_phase': float(median_phases[pos_idx]) if not np.isnan(median_phases[pos_idx]) else None,
                 'relative_median_phase': float(relative_median_phase) if relative_median_phase is not None else None,
-                'iqr': float(raw_iqr_phases[pos_idx]) if not np.isnan(raw_iqr_phases[pos_idx]) else None,
-                'sqrt_iqr_over_1.5': float(iqr_phases[pos_idx]) if not np.isnan(iqr_phases[pos_idx]) else None
+                'iqr_phase': float(raw_iqr_phases[pos_idx]) if not np.isnan(raw_iqr_phases[pos_idx]) else None,
+                'iqr_16th': float(iqr_16th[pos_idx]) if not np.isnan(iqr_16th[pos_idx]) else None
             })
 
     plt.tight_layout()
