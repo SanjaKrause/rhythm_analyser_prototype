@@ -536,12 +536,102 @@ def comprehensive_csv_to_midi(
     return midi_files
 
 
+def _flexstart_to_midi_onset(
+    method: str,
+    grid_output_dir: str,
+    base_name: str,
+    bar_tempos_csv_path: str,
+    output_dir: str,
+    comprehensive_df: pd.DataFrame,
+    onset_times_all: np.ndarray
+) -> List[Path]:
+    """
+    Helper function to create MIDI from FlexStart filtered CSVs (onset-based).
+
+    Returns list with one MIDI file path, or empty list on error.
+    """
+    # Determine pattern length and CSV filename
+    if method == '4bar_flexStart':
+        pattern_length_bars = 4
+        csv_filename = f'{base_name}_comprehensive_phases_4bar_flexStart_filtered.csv'
+    elif method == '2bar_flexStart':
+        pattern_length_bars = 2
+        csv_filename = f'{base_name}_comprehensive_phases_2bar_flexStart_filtered.csv'
+    elif method == '1bar_flexStart':
+        pattern_length_bars = 1
+        csv_filename = f'{base_name}_comprehensive_phases_1bar_flexStart_filtered.csv'
+    else:
+        print(f"  ⚠️  Unknown FlexStart method: {method}")
+        return []
+
+    # Load filtered FlexStart CSV
+    grid_output_dir = Path(grid_output_dir)
+    csv_path = grid_output_dir / csv_filename
+    if not csv_path.exists():
+        print(f"  ⚠️  Filtered CSV not found: {csv_filename}, skipping {method}")
+        return []
+
+    df_flexstart = pd.read_csv(csv_path)
+
+    # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
+    num_16th_notes = pattern_length_bars * 16
+
+    # Check if we have enough grid times
+    if len(df_flexstart) < num_16th_notes + 1:
+        print(f"  ⚠️  Not enough data for {method} (need {num_16th_notes + 1} rows, have {len(df_flexstart)})")
+        return []
+
+    # Get loop boundaries from grid_time column
+    loop_start_time = pd.to_numeric(df_flexstart['grid_time'].iloc[0], errors='coerce')
+    loop_end_time = pd.to_numeric(df_flexstart['grid_time'].iloc[num_16th_notes], errors='coerce')
+
+    if pd.isna(loop_start_time) or pd.isna(loop_end_time):
+        print(f"  ⚠️  Invalid grid times for {method}")
+        return []
+
+    # Filter onsets to only those within the loop boundaries
+    onset_times_subset = onset_times_all[
+        (onset_times_all >= loop_start_time) &
+        (onset_times_all < loop_end_time)
+    ]
+
+    if len(onset_times_subset) == 0:
+        print(f"  ⚠️  No onsets in loop for {method}")
+        return []
+
+    # Load bar tempos and calculate average for this loop
+    df_tempos = pd.read_csv(bar_tempos_csv_path)
+    bar_tempos_corrected = df_tempos['tempo_corrected_bpm'].head(pattern_length_bars).dropna()
+    if len(bar_tempos_corrected) > 0:
+        avg_tempo = float(bar_tempos_corrected.mean())
+    else:
+        avg_tempo = 120.0  # Fallback
+
+    # Create MIDI file
+    output_dir = Path(output_dir)
+    output_file = output_dir / f"{method}.mid"
+    try:
+        midi_path = onsets_to_midi(
+            onset_times_subset,
+            str(output_file),
+            tempo=avg_tempo,
+            loop_end_time=loop_end_time
+        )
+        print(f"  ✓ Exported {method} MIDI ({pattern_length_bars} bars, {len(onset_times_subset)} onsets, {avg_tempo:.1f} BPM): {midi_path.name}")
+        return [midi_path]
+    except Exception as e:
+        print(f"  ✗ Error creating {method} MIDI: {e}")
+        return []
+
+
 def comprehensive_csv_to_onset_midi(
     comprehensive_csv_path: str,
     bar_tempos_csv_path: str,
     output_dir: str,
     snippet_start: float,
-    methods: list = None
+    methods: list = None,
+    grid_output_dir: str = None,
+    base_name: str = None
 ) -> List[Path]:
     """
     Create MIDI files from onset times in comprehensive CSV.
@@ -562,6 +652,10 @@ def comprehensive_csv_to_onset_midi(
         Output directory for MIDI files
     snippet_start : float
         Snippet start time in seconds (for time normalization)
+    grid_output_dir : str, optional
+        Directory containing FlexStart filtered CSVs (for FlexStart methods)
+    base_name : str, optional
+        Base filename for FlexStart CSVs (e.g., 'track_id_comprehensive_phases')
 
     Returns
     -------
@@ -602,12 +696,28 @@ def comprehensive_csv_to_onset_midi(
         print(f"  ⚠️  No onset times found in comprehensive CSV")
         return midi_files
 
-    # Process each method: per_snippet, drum, mel, pitch, standard_L1, standard_L2, standard_L4
+    # Process each method: per_snippet, drum, mel, pitch, standard_L1, standard_L2, standard_L4, FlexStart methods
     if methods is None:
         methods = ['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
 
     for method in methods:
-        # Determine pattern length
+        # Check if this is a FlexStart method
+        if method in ['1bar_flexStart', '2bar_flexStart', '4bar_flexStart']:
+            # Handle FlexStart methods separately - they use filtered CSV files
+            if grid_output_dir is None or base_name is None:
+                print(f"  ⚠️  FlexStart method {method} requires grid_output_dir and base_name, skipping")
+                continue
+
+            # Use flexstart_to_midi_onset helper function
+            flexstart_midi = _flexstart_to_midi_onset(
+                method, grid_output_dir, base_name, bar_tempos_csv_path,
+                output_dir, df, onset_times
+            )
+            if flexstart_midi:
+                midi_files.extend(flexstart_midi)
+            continue
+
+        # Determine pattern length for non-FlexStart methods
         if method == 'per_snippet':
             # per_snippet always uses 4 bars (no pattern length calculated for this correction)
             pattern_length_bars = 4
@@ -693,13 +803,98 @@ def comprehensive_csv_to_onset_midi(
     return midi_files
 
 
+def _flexstart_to_midi_pitch(
+    method: str,
+    grid_output_dir: str,
+    base_name: str,
+    bar_tempos_csv_path: str,
+    f0_csv_path: str,
+    output_dir: str
+) -> List[Path]:
+    """
+    Helper function to create pitch MIDI from FlexStart filtered CSVs.
+
+    Returns list with one MIDI file path, or empty list on error.
+    """
+    # Determine pattern length and CSV filename
+    if method == '4bar_flexStart':
+        pattern_length_bars = 4
+        csv_filename = f'{base_name}_comprehensive_phases_4bar_flexStart_filtered.csv'
+    elif method == '2bar_flexStart':
+        pattern_length_bars = 2
+        csv_filename = f'{base_name}_comprehensive_phases_2bar_flexStart_filtered.csv'
+    elif method == '1bar_flexStart':
+        pattern_length_bars = 1
+        csv_filename = f'{base_name}_comprehensive_phases_1bar_flexStart_filtered.csv'
+    else:
+        print(f"  ⚠️  Unknown FlexStart method: {method}")
+        return []
+
+    # Load filtered FlexStart CSV
+    grid_output_dir = Path(grid_output_dir)
+    csv_path = grid_output_dir / csv_filename
+    if not csv_path.exists():
+        print(f"  ⚠️  Filtered CSV not found: {csv_filename}, skipping {method}")
+        return []
+
+    df_flexstart = pd.read_csv(csv_path)
+
+    # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
+    num_16th_notes = pattern_length_bars * 16
+
+    # Check if we have enough grid times
+    if len(df_flexstart) < num_16th_notes + 1:
+        print(f"  ⚠️  Not enough data for {method} (need {num_16th_notes + 1} rows, have {len(df_flexstart)})")
+        return []
+
+    # Get loop boundaries from grid_time column
+    loop_start_time = pd.to_numeric(df_flexstart['grid_time'].iloc[0], errors='coerce')
+    loop_end_time = pd.to_numeric(df_flexstart['grid_time'].iloc[num_16th_notes], errors='coerce')
+
+    if pd.isna(loop_start_time) or pd.isna(loop_end_time):
+        print(f"  ⚠️  Invalid grid times for {method}")
+        return []
+
+    # Load bar tempos and calculate average for this loop
+    df_tempos = pd.read_csv(bar_tempos_csv_path)
+    bar_tempos_corrected = df_tempos['tempo_corrected_bpm'].head(pattern_length_bars).dropna()
+    if len(bar_tempos_corrected) > 0:
+        avg_tempo = float(bar_tempos_corrected.mean())
+    else:
+        avg_tempo = 120.0  # Fallback
+
+    # Create bass pitch MIDI file
+    output_dir = Path(output_dir)
+    output_file = output_dir / f"{method}_bass.mid"
+    try:
+        midi_path = f0_to_midi(
+            f0_csv_path,
+            str(output_file),
+            start_time=loop_start_time,
+            end_time=loop_end_time,
+            tempo=avg_tempo,
+            min_note_duration=0.1
+        )
+        if midi_path:
+            print(f"  ✓ Exported {method} bass pitch MIDI ({pattern_length_bars} bars, {avg_tempo:.1f} BPM): {midi_path.name}")
+            return [midi_path]
+        else:
+            print(f"  ⚠️  No bass pitch data for {method}")
+            return []
+    except Exception as e:
+        print(f"  ✗ Error creating {method} bass pitch MIDI: {e}")
+        return []
+
+
 def comprehensive_csv_to_pitch_midi(
     comprehensive_csv_path: str,
     bar_tempos_csv_path: str,
     f0_csv_path: str,
     output_dir: str,
     snippet_start: float,
-    methods: list = None
+    methods: list = None,
+    grid_output_dir: str = None,
+    base_name: str = None
 ) -> List[Path]:
     """
     Create bass pitch MIDI files for each correction method.
@@ -719,6 +914,10 @@ def comprehensive_csv_to_pitch_midi(
         Output directory for MIDI files
     snippet_start : float
         Snippet start time in seconds (for time normalization)
+    grid_output_dir : str, optional
+        Directory containing FlexStart filtered CSVs (for FlexStart methods)
+    base_name : str, optional
+        Base filename for FlexStart CSVs (e.g., 'track_id_comprehensive_phases')
 
     Returns
     -------
@@ -754,12 +953,28 @@ def comprehensive_csv_to_pitch_midi(
         print(f"  ⚠️  Bass F0 CSV not found: {f0_csv_path}")
         return midi_files
 
-    # Process each method: per_snippet, drum, mel, pitch, standard_L1, standard_L2, standard_L4
+    # Process each method: per_snippet, drum, mel, pitch, standard_L1, standard_L2, standard_L4, FlexStart methods
     if methods is None:
         methods = ['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4']
 
     for method in methods:
-        # Determine pattern length
+        # Check if this is a FlexStart method
+        if method in ['1bar_flexStart', '2bar_flexStart', '4bar_flexStart']:
+            # Handle FlexStart methods separately - they use filtered CSV files
+            if grid_output_dir is None or base_name is None:
+                print(f"  ⚠️  FlexStart method {method} requires grid_output_dir and base_name, skipping")
+                continue
+
+            # Use flexstart_to_midi_pitch helper function
+            flexstart_midi = _flexstart_to_midi_pitch(
+                method, grid_output_dir, base_name, bar_tempos_csv_path,
+                f0_csv_path, output_dir
+            )
+            if flexstart_midi:
+                midi_files.extend(flexstart_midi)
+            continue
+
+        # Determine pattern length for non-FlexStart methods
         if method == 'per_snippet':
             # per_snippet always uses 4 bars
             pattern_length_bars = 4
@@ -831,6 +1046,116 @@ def comprehensive_csv_to_pitch_midi(
                 print(f"  ⚠️  No bass pitch data for {method}")
         except Exception as e:
             print(f"  ✗ Error creating {method} bass pitch MIDI: {e}")
+
+    return midi_files
+
+
+def flexstart_to_midi(
+    grid_output_dir: str,
+    base_name: str,
+    bar_tempos_csv_path: str,
+    output_dir: str,
+    methods: list = None
+) -> List[Path]:
+    """
+    Create MIDI files from FlexStart filtered CSVs.
+
+    Exports MIDI files for each FlexStart method (1bar, 2bar, 4bar), containing
+    the grid times (16th note positions) for one loop.
+
+    Parameters
+    ----------
+    grid_output_dir : str
+        Directory containing the filtered FlexStart CSV files
+    base_name : str
+        Base filename (e.g., 'track_id_comprehensive_phases')
+    bar_tempos_csv_path : str
+        Path to bar tempos CSV (from Step 3.5)
+    output_dir : str
+        Output directory for MIDI files
+    methods : list, optional
+        Methods to export (default: ['1bar_flexStart', '2bar_flexStart', '4bar_flexStart'])
+
+    Returns
+    -------
+    List[Path]
+        List of created MIDI file paths
+
+    Examples
+    --------
+    >>> midi_files = flexstart_to_midi(
+    ...     'output/track_id/5_grid',
+    ...     'track_id_comprehensive_phases',
+    ...     'output/track_id/5_grid/track_id_bar_tempos.csv',
+    ...     'output/track_id/8_midi'
+    ... )
+    """
+    if methods is None:
+        methods = ['1bar_flexStart', '2bar_flexStart', '4bar_flexStart']
+
+    grid_output_dir = Path(grid_output_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load bar tempos CSV
+    df_tempos = pd.read_csv(bar_tempos_csv_path)
+
+    midi_files = []
+
+    for method in methods:
+        # Determine pattern length and CSV filename
+        if method == '4bar_flexStart':
+            pattern_length_bars = 4
+            csv_filename = f'{base_name}_4bar_flexStart_filtered.csv'
+        elif method == '2bar_flexStart':
+            pattern_length_bars = 2
+            csv_filename = f'{base_name}_2bar_flexStart_filtered.csv'
+        elif method == '1bar_flexStart':
+            pattern_length_bars = 1
+            csv_filename = f'{base_name}_1bar_flexStart_filtered.csv'
+        else:
+            print(f"  ⚠️  Unknown FlexStart method: {method}, skipping")
+            continue
+
+        # Load filtered FlexStart CSV
+        csv_path = grid_output_dir / csv_filename
+        if not csv_path.exists():
+            print(f"  ⚠️  Filtered CSV not found: {csv_filename}, skipping")
+            continue
+
+        df = pd.read_csv(csv_path)
+
+        # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
+        num_16th_notes = pattern_length_bars * 16
+
+        # Check if we have enough grid times
+        if len(df) < num_16th_notes:
+            print(f"  ⚠️  Not enough data for {method} (need {num_16th_notes} rows, have {len(df)})")
+            continue
+
+        # Get grid times for the first loop (first num_16th_notes rows)
+        grid_times = pd.to_numeric(df['grid_time'].head(num_16th_notes), errors='coerce').dropna().values
+
+        if len(grid_times) < num_16th_notes:
+            print(f"  ⚠️  Not enough valid grid times for {method}")
+            continue
+
+        # Calculate average tempo for the first L bars (from corrected tempos)
+        bar_tempos_corrected = df_tempos['tempo_corrected_bpm'].head(pattern_length_bars).dropna()
+        if len(bar_tempos_corrected) > 0:
+            avg_tempo = float(bar_tempos_corrected.mean())
+        else:
+            avg_tempo = 120.0  # Fallback to default
+
+        # Create MIDI file
+        output_file = output_dir / f"{method}.mid"
+        midi_path = grid_times_to_midi(grid_times, str(output_file), pattern_length=num_16th_notes)
+
+        if midi_path:
+            midi_files.append(midi_path)
+            print(f"  ✓ Exported {method} MIDI ({pattern_length_bars} bars = {num_16th_notes} notes, {avg_tempo:.1f} BPM): {midi_path.name}")
+        else:
+            print(f"  ⚠️  Failed to create MIDI for {method}")
 
     return midi_files
 

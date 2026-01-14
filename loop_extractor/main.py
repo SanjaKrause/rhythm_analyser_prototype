@@ -1095,20 +1095,31 @@ def run_complete_pipeline(
                         midi_files_pitch = []
                         if verbose:
                             print(f"  ⚠️  Bass F0 CSV not found, skipping bass pitch MIDI")
+
+                    # No FlexStart MIDI in DAW mode
+                    midi_files_flexstart = []
                 else:
                     # Detailed mode: all methods with subfolders
+                    # Prepare FlexStart parameters
+                    grid_output_dir = Path(paths['comprehensive_csv']).parent
+                    base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
+
                     if verbose:
-                        print("\n  [8a] Onset-based MIDI (drum hits)...")
+                        print("\n  [8a] Onset-based MIDI (drum hits + FlexStart grid)...")
                     midi_files_onset = midi_export.comprehensive_csv_to_onset_midi(
                         str(paths['comprehensive_csv']),
                         str(paths['tempo_csv']),
                         str(paths['midi_dir'] / 'onset'),
-                        snippet_start=snippet_offset
+                        snippet_start=snippet_offset,
+                        methods=['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4',
+                                 '1bar_flexStart', '2bar_flexStart', '4bar_flexStart'],
+                        grid_output_dir=str(grid_output_dir),
+                        base_name=base_name
                     )
 
                     # Export bass pitch MIDI files (F0 converted to MIDI notes)
                     if verbose:
-                        print("\n  [8b] Bass pitch MIDI...")
+                        print("\n  [8b] Bass pitch MIDI (all methods + FlexStart)...")
                     f0_csv_path = paths['stems_dir'] / 'bass_f0.csv'
                     if f0_csv_path.exists():
                         midi_files_pitch = midi_export.comprehensive_csv_to_pitch_midi(
@@ -1116,24 +1127,37 @@ def run_complete_pipeline(
                             str(paths['tempo_csv']),
                             str(f0_csv_path),
                             str(paths['midi_dir'] / 'bass_pitch'),
-                            snippet_start=snippet_offset
+                            snippet_start=snippet_offset,
+                            methods=['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4',
+                                     '1bar_flexStart', '2bar_flexStart', '4bar_flexStart'],
+                            grid_output_dir=str(grid_output_dir),
+                            base_name=base_name
                         )
                     else:
                         midi_files_pitch = []
                         if verbose:
                             print(f"  ⚠️  Bass F0 CSV not found, skipping bass pitch MIDI")
 
+                    # No separate FlexStart export needed - integrated into onset and pitch exports
+                    midi_files_flexstart = []
+
                 # Combine all MIDI files
                 midi_files = midi_files_onset + midi_files_pitch
+                if not daw_ready:
+                    midi_files += midi_files_flexstart
 
                 if midi_files:
                     results['midi_files'] = {
                         'onset': [str(f) for f in midi_files_onset],
-                        'bass_pitch': [str(f) for f in midi_files_pitch]
+                        'bass_pitch': [str(f) for f in midi_files_pitch],
+                        'flexstart': [str(f) for f in midi_files_flexstart] if not daw_ready else []
                     }
                     results['steps_completed'].append('midi_export')
                     if verbose:
-                        print(f"\n  ✓ Exported {len(midi_files_onset)} onset MIDI + {len(midi_files_pitch)} bass pitch MIDI files")
+                        if daw_ready:
+                            print(f"\n  ✓ Exported {len(midi_files_onset)} onset MIDI + {len(midi_files_pitch)} bass pitch MIDI files")
+                        else:
+                            print(f"\n  ✓ Exported {len(midi_files_onset)} onset MIDI + {len(midi_files_pitch)} bass pitch MIDI + {len(midi_files_flexstart)} FlexStart MIDI files")
                 else:
                     results['steps_completed'].append('midi_export_no_data')
                     if verbose:

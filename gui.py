@@ -37,7 +37,7 @@ class LoopExtractorGUI:
         self.output_mode = tk.StringVar(value="detailed")  # Default: detailed analysis + plots
 
         # Export format
-        self.export_format = tk.StringVar(value="mp3")  # "wav" or "mp3"
+        self.export_format = tk.StringVar(value="wav")  # "wav" or "mp3" - Default: wav
 
         # Time selection mode
         self.use_snippet_times = tk.BooleanVar(value=True)  # Default: use snippet times
@@ -45,7 +45,7 @@ class LoopExtractorGUI:
         self.manual_end_time = tk.DoubleVar(value=80.0)
 
         # Onset calculation mode
-        self.onset_mode = tk.StringVar(value="drumtranscriber")  # Default: drumtranscriber
+        self.onset_mode = tk.StringVar(value="librosa")  # Default: librosa
 
         self.setup_ui()
 
