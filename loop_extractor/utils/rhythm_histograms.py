@@ -164,11 +164,26 @@ def create_rhythm_histograms(
 
         # Add vertical lines at bar boundaries (centered on bar beginnings)
         # First line at position 1 (start of pattern)
-        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5, zorder=10)
         # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
             ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
-                      linewidth=1.5, alpha=0.5)
+                      linewidth=1.5, alpha=0.5, zorder=10)
+
+        # Add vertical grid lines at expected 16th note positions (gray)
+        for i in range(num_positions):
+            ax.axvline(x=positions[i], color='gray', linestyle=':',
+                      linewidth=0.8, alpha=0.4, zorder=1)
+
+        # Add vertical lines at center of each bar position (blue, bar height)
+        y_limits = ax.get_ylim()
+        y_range = y_limits[1] - y_limits[0]
+        for i in range(num_positions):
+            if hist[i] > 0:  # Only draw line if there are onsets at this position
+                # Calculate ymax as fraction of axes height
+                ymax_fraction = (hist[i] - y_limits[0]) / y_range
+                ax.axvline(x=positions[i], ymin=0, ymax=ymax_fraction,
+                          color='blue', linestyle='-', linewidth=1.5, alpha=0.7, zorder=10)
 
         # Set x-axis limits and ticks
         ax.set_xlim(0, num_positions + 1)
@@ -432,11 +447,26 @@ def create_rhythm_histograms_with_style(
 
         # Add vertical lines at bar boundaries (centered on bar beginnings)
         # First line at position 1 (start of pattern)
-        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5, zorder=10)
         # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
             ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
-                      linewidth=1.5, alpha=0.5)
+                      linewidth=1.5, alpha=0.5, zorder=10)
+
+        # Add vertical grid lines at expected 16th note positions (gray)
+        for i in range(num_positions):
+            ax.axvline(x=positions[i], color='gray', linestyle=':',
+                      linewidth=0.8, alpha=0.4, zorder=1)
+
+        # Add vertical lines at center of each bar position (blue, bar height)
+        y_limits = ax.get_ylim()
+        y_range = y_limits[1] - y_limits[0]
+        for i in range(num_positions):
+            if hist[i] > 0:  # Only draw line if there are onsets at this position
+                # Calculate ymax as fraction of axes height
+                ymax_fraction = (hist[i] - y_limits[0]) / y_range
+                ax.axvline(x=positions[i], ymin=0, ymax=ymax_fraction,
+                          color='blue', linestyle='-', linewidth=1.5, alpha=0.7, zorder=10)
 
         # Set x-axis limits and ticks
         ax.set_xlim(0, num_positions + 1)
@@ -823,11 +853,26 @@ def create_rhythm_histograms_with_medians_and_iqr(
 
         # Add vertical lines at bar boundaries (centered on bar beginnings)
         # First line at position 1 (start of pattern)
-        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        ax.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5, zorder=10)
         # Subsequent lines at each bar beginning (every 16 positions)
         for bar_idx in range(1, pattern_length):
             ax.axvline(x=bar_idx * 16 + 1, color='red', linestyle='--',
-                      linewidth=1.5, alpha=0.5)
+                      linewidth=1.5, alpha=0.5, zorder=10)
+
+        # Add vertical grid lines at expected 16th note positions (gray)
+        for i in range(num_positions):
+            ax.axvline(x=base_positions[i], color='gray', linestyle=':',
+                      linewidth=0.8, alpha=0.4, zorder=1)
+
+        # Add vertical lines at center of each bar (shifted positions, blue, bar height)
+        y_limits = ax.get_ylim()
+        y_range = y_limits[1] - y_limits[0]
+        for i in range(num_positions):
+            if onset_strength[i] > 0 and not np.isnan(median_phases[i]):
+                # Calculate ymax as fraction of axes height
+                ymax_fraction = (onset_strength[i] - y_limits[0]) / y_range
+                ax.axvline(x=shifted_positions[i], ymin=0, ymax=ymax_fraction,
+                          color='blue', linestyle='-', linewidth=1.5, alpha=0.7, zorder=10)
 
         # Set x-axis limits and ticks (keep at integer positions)
         ax.set_xlim(0, num_positions + 1)
