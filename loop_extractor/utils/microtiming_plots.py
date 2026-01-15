@@ -243,14 +243,15 @@ def create_microtiming_plots(
     # Define methods with their pattern lengths
     methods = [
         ('Uncorrected', 'phase_uncorrected', 'grid_time_uncorrected', 4),
-        ('Per-Snippet', 'phase_per_snippet', 'grid_time_per_snippet', 4),
+        ('Per-Snippet L=4', 'phase_per_snippet', 'grid_time_per_snippet', 4),
+        ('Per-Snippet L=8', 'phase_per_snippet', 'grid_time_per_snippet', 8),
         ('FlexStart Pattern Length 4', 'phase_4bar_pattern_flexStart', 'grid_time_4bar_pattern_flexStart', 4),
         ('FlexStart Pattern Length 2', 'phase_2bar_pattern_flexStart', 'grid_time_2bar_pattern_flexStart', 2),
         ('FlexStart Pattern Length 1', 'phase_1bar_pattern_flexStart', 'grid_time_1bar_pattern_flexStart', 1),
     ]
 
-    # Create figure with 5 subplots
-    fig, axes = plt.subplots(5, 1, figsize=(14, 18))
+    # Create figure with 6 subplots
+    fig, axes = plt.subplots(6, 1, figsize=(14, 22))
     fig.suptitle(f'Microtiming Deviation Plots — {track_id}', fontsize=14, fontweight='bold')
 
     # Plot each method
