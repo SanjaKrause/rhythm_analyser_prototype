@@ -821,7 +821,8 @@ def create_rhythm_histograms_with_medians_and_iqr(
                 phase_diff = median_phases[i] - grid_phase
                 relative_phase = phase_diff / (1.0 / 16.0)  # Normalize by step size
 
-                label_text = f'{relative_phase:.2f}'
+                # Format without leading zero (e.g., .34 instead of 0.34)
+                label_text = f'{relative_phase:.2f}'.replace('0.', '.').replace('-0.', '-.')
                 ax.text(shifted_positions[i], onset_strength[i], label_text,
                        ha='center', va='bottom', fontsize=6, rotation=0)
 
