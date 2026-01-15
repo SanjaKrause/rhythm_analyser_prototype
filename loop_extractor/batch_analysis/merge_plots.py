@@ -23,28 +23,24 @@ import shutil
 from pathlib import Path
 from PyPDF2 import PdfMerger
 from PIL import Image
-from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.lib.utils import ImageReader
 
 
 def png_to_pdf(png_path: Path, pdf_path: Path):
-    """Convert PNG to PDF."""
+    """Convert PNG to PDF with exact image dimensions."""
     img = Image.open(png_path)
     if img.mode != 'RGB':
         img = img.convert('RGB')
 
-    c = pdf_canvas.Canvas(str(pdf_path), pagesize=A4)
-    width, height = A4
+    # Use image dimensions as page size (convert pixels to points at 72 DPI)
     img_width, img_height = img.size
-    scale = min(width / img_width, height / img_height) * 0.9
+    # Assuming 150 DPI (as used in raster plot savefig), convert to points (72 points per inch)
+    width_points = (img_width / 150.0) * 72
+    height_points = (img_height / 150.0) * 72
 
-    scaled_width = img_width * scale
-    scaled_height = img_height * scale
-    x = (width - scaled_width) / 2
-    y = (height - scaled_height) / 2
-
-    c.drawImage(ImageReader(img), x, y, scaled_width, scaled_height)
+    c = pdf_canvas.Canvas(str(pdf_path), pagesize=(width_points, height_points))
+    c.drawImage(ImageReader(img), 0, 0, width_points, height_points)
     c.save()
 
 
