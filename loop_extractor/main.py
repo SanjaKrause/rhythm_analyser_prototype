@@ -997,8 +997,8 @@ def run_complete_pipeline(
             # Define LEPA output directory
             lepa_output_dir = Path(output_dir) / track_id / '10_output_for_lepa'
 
-            # Check if LEPA export already exists
-            lepa_file_exists = (lepa_output_dir / f'{track_id}_bar_durations.csv').exists()
+            # Check if LEPA export already exists (check for L1 file)
+            lepa_file_exists = (lepa_output_dir / f'{track_id}_bar_durations_L1.csv').exists()
 
             if skip_existing and lepa_file_exists:
                 if verbose:

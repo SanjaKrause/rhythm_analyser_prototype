@@ -20,10 +20,10 @@ def export_bar_durations(
     drum_stem_file: str = None
 ):
     """
-    Export bar duration table and full audio for LEPA analysis from a single track.
+    Export bar duration tables and full audio for LEPA analysis from a single track.
 
     Creates:
-    - CSV file with bar timing data
+    - Three CSV files with bar timing data (one for each pattern length: 1, 2, 4)
     - Full audio WAV containing all complete bars (if audio_file provided)
     - Drum stem WAV containing all complete bars (if drum_stem_file provided)
 
@@ -32,6 +32,9 @@ def export_bar_durations(
 
     CSV columns:
     - Taktnummer: Bar number (0-based)
+    - Pattern_Length: The pattern length (1, 2, or 4)
+    - Pattern_Index: Which pattern this bar belongs to
+    - Bar_In_Pattern: Position within the pattern
     - Song_ID: Numeric song identifier
     - Song_Info: Song name and artist
     - Snippet_Start_ms: Uncorrected snippet start time from overview file
@@ -55,7 +58,7 @@ def export_bar_durations(
     Returns
     -------
     str
-        Path to the created CSV file, or None if failed
+        Path to the first created CSV file (L1), or None if failed
     """
     try:
         # Load comprehensive CSV
@@ -129,14 +132,18 @@ def export_bar_durations(
             song_id = track_id
             song_info = track_id
 
-        # Create records for this track
-        bar_data = []
+        # Create output directory
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # First, export per-snippet file (original format without pattern folding)
+        per_snippet_data = []
         for idx, row in bars.iterrows():
             bar_num = int(row['bar_number'])
             bar_start = bar_starts_ms[bars.index.get_loc(idx)]
             bar_duration = bar_durations_ms[bars.index.get_loc(idx)]
 
-            bar_data.append({
+            per_snippet_data.append({
                 'Taktnummer': bar_num,
                 'Song_ID': song_id,
                 'Song_Info': song_info,
@@ -146,16 +153,50 @@ def export_bar_durations(
                 'Taktdauer_ms': bar_duration
             })
 
-        # Create DataFrame
-        result_df = pd.DataFrame(bar_data)
-
-        # Create output directory
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-
-        # Export bar duration table
+        # Export per-snippet file
+        result_df = pd.DataFrame(per_snippet_data)
         output_csv = output_path / f'{track_id}_bar_durations.csv'
         result_df.to_csv(output_csv, index=False)
+        first_csv = str(output_csv)
+
+        # Create records for each pattern length (1, 2, 4) with pattern-relative timing
+        for pattern_length in [1, 2, 4]:
+            bar_data = []
+
+            for idx, row in bars.iterrows():
+                bar_num = int(row['bar_number'])
+                bar_start_absolute = bar_starts_ms[bars.index.get_loc(idx)]
+                bar_duration = bar_durations_ms[bars.index.get_loc(idx)]
+
+                # Calculate pattern index and position within pattern
+                pattern_index = bar_num // pattern_length
+                bar_within_pattern = bar_num % pattern_length
+
+                # Calculate pattern-relative bar start time
+                # Find the start of this pattern (first bar in the pattern)
+                pattern_first_bar = pattern_index * pattern_length
+                pattern_start_absolute = bar_starts_ms[bars.index.get_loc(bars.index[pattern_first_bar])]
+                bar_start_relative = bar_start_absolute - pattern_start_absolute
+
+                bar_data.append({
+                    'Taktnummer': bar_num,
+                    'Pattern_Length': pattern_length,
+                    'Pattern_Index': pattern_index,
+                    'Bar_In_Pattern': bar_within_pattern,
+                    'Song_ID': song_id,
+                    'Song_Info': song_info,
+                    'Snippet_Start_ms': snippet_start_ms,
+                    'First_Bar_Start_ms': first_bar_start_ms,
+                    'Taktbeginn_ms': bar_start_relative,
+                    'Taktdauer_ms': bar_duration
+                })
+
+            # Create DataFrame
+            result_df = pd.DataFrame(bar_data)
+
+            # Export bar duration table for this pattern length
+            output_csv = output_path / f'{track_id}_bar_durations_L{pattern_length}.csv'
+            result_df.to_csv(output_csv, index=False)
 
         # Export full audio containing only complete bars if audio files provided
         if audio_file is not None or drum_stem_file is not None:
@@ -221,7 +262,7 @@ def export_bar_durations(
                 sf.write(str(output_file), drum_full_bars, sr)
                 print(f"    ✓ Exported drum stem: {output_file.name}")
 
-        return str(output_csv)
+        return first_csv
 
     except Exception as e:
         print(f"  Warning: Could not export LEPA data: {e}")

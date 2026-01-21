@@ -22,7 +22,12 @@ from pathlib import Path
 
 def export_lepa_data(output_dir: Path):
     """
-    Export bar duration table for LEPA analysis from all comprehensive CSV files.
+    Export bar duration tables for LEPA analysis from all comprehensive CSV files.
+
+    Creates three CSV files, one for each pattern length:
+    - Pattern length 1: Each bar is its own pattern
+    - Pattern length 2: Bars folded into 2-bar patterns
+    - Pattern length 4: Bars folded into 4-bar patterns
 
     Parameters
     ----------
@@ -30,7 +35,7 @@ def export_lepa_data(output_dir: Path):
         The batch output directory containing individual track folders
     """
     print("\n" + "=" * 80)
-    print("LEPA DATA EXPORT - Bar Duration Table")
+    print("LEPA DATA EXPORT - Bar Duration Tables (Pattern Lengths 1, 2, 4)")
     print("=" * 80)
 
     # Load overview CSV for snippet start times
@@ -56,8 +61,11 @@ def export_lepa_data(output_dir: Path):
 
     print(f"Found {len(track_dirs)} track directories")
 
-    # Collect bar data from all tracks
-    bar_data = []
+    # Collect bar data from all tracks for each pattern length
+    bar_data_per_snippet = []  # Per-snippet (original format)
+    bar_data_L1 = []  # Pattern length 1
+    bar_data_L2 = []  # Pattern length 2
+    bar_data_L4 = []  # Pattern length 4
     tracks_processed = 0
 
     for track_dir in track_dirs:
@@ -133,13 +141,13 @@ def export_lepa_data(output_dir: Path):
                 print(f"  Skipped: {track_dir.name} (only {num_bars} bars, need >= 12)")
                 continue
 
-            # Create records for this track
+            # First, collect per-snippet data (original format without pattern folding)
             for idx, row in bars.iterrows():
                 bar_num = int(row['bar_number'])
                 bar_start = bar_starts_ms[bars.index.get_loc(idx)]
                 bar_duration = bar_durations_ms[bars.index.get_loc(idx)]
 
-                bar_data.append({
+                bar_data_per_snippet.append({
                     'Taktnummer': bar_num,
                     'Song_ID': song_id,
                     'Song_Info': song_info,
@@ -148,6 +156,45 @@ def export_lepa_data(output_dir: Path):
                     'Taktbeginn_ms': bar_start,
                     'Taktdauer_ms': bar_duration
                 })
+
+            # Process for each pattern length: 1, 2, 4 with pattern-relative timing
+            for pattern_length in [1, 2, 4]:
+                # Determine which list to append to
+                if pattern_length == 1:
+                    target_list = bar_data_L1
+                elif pattern_length == 2:
+                    target_list = bar_data_L2
+                else:  # pattern_length == 4
+                    target_list = bar_data_L4
+
+                # Create records for this track with pattern-relative timing
+                for idx, row in bars.iterrows():
+                    bar_num = int(row['bar_number'])
+                    bar_start_absolute = bar_starts_ms[bars.index.get_loc(idx)]
+                    bar_duration = bar_durations_ms[bars.index.get_loc(idx)]
+
+                    # Calculate pattern index and position within pattern
+                    pattern_index = bar_num // pattern_length
+                    bar_within_pattern = bar_num % pattern_length
+
+                    # Calculate pattern-relative bar start time
+                    # Find the start of this pattern (first bar in the pattern)
+                    pattern_first_bar = pattern_index * pattern_length
+                    pattern_start_absolute = bar_starts_ms[bars.index.get_loc(bars.index[pattern_first_bar])]
+                    bar_start_relative = bar_start_absolute - pattern_start_absolute
+
+                    target_list.append({
+                        'Taktnummer': bar_num,
+                        'Pattern_Length': pattern_length,
+                        'Pattern_Index': pattern_index,
+                        'Bar_In_Pattern': bar_within_pattern,
+                        'Song_ID': song_id,
+                        'Song_Info': song_info,
+                        'Snippet_Start_ms': snippet_start_ms,
+                        'First_Bar_Start_ms': first_bar_start_ms,
+                        'Taktbeginn_ms': bar_start_relative,
+                        'Taktdauer_ms': bar_duration
+                    })
 
             tracks_processed += 1
             print(f"  Read: {track_dir.name} ({num_bars} bars)")
@@ -163,25 +210,45 @@ def export_lepa_data(output_dir: Path):
 
     print(f"\nSuccessfully processed {tracks_processed} tracks")
 
-    # Create DataFrame
-    result_df = pd.DataFrame(bar_data)
-    print(f"Total bars: {len(result_df)}")
-
     # Create batch_processed_output_for_lepa directory
     lepa_dir = output_dir / 'batch_processed_output_for_lepa'
     lepa_dir.mkdir(parents=True, exist_ok=True)
 
-    # Export bar duration table
-    output_csv = lepa_dir / 'batch_bar_durations.csv'
-    result_df.to_csv(output_csv, index=False)
-    print(f"\n✓ Saved batch bar duration table: {output_csv}")
-    print(f"  Columns: {list(result_df.columns)}")
+    # Export per-snippet CSV (original format)
+    if bar_data_per_snippet:
+        result_df = pd.DataFrame(bar_data_per_snippet)
+        print(f"\nPer-Snippet (original format): {len(result_df)} bars")
 
-    # Show sample of data
-    print(f"\nSample data (first 10 rows):")
-    print(result_df.head(10).to_string(index=False))
+        output_csv = lepa_dir / 'batch_bar_durations.csv'
+        result_df.to_csv(output_csv, index=False)
+        print(f"✓ Saved: {output_csv}")
+        print(f"  Columns: {list(result_df.columns)}")
 
-    print("=" * 80)
+        # Show sample of data
+        print(f"  Sample data (first 10 rows):")
+        print(result_df.head(10).to_string(index=False))
+    else:
+        print("Warning: No per-snippet data")
+
+    # Export three CSV files, one for each pattern length
+    for pattern_length, bar_data in [(1, bar_data_L1), (2, bar_data_L2), (4, bar_data_L4)]:
+        if not bar_data:
+            print(f"Warning: No data for pattern length {pattern_length}")
+            continue
+
+        result_df = pd.DataFrame(bar_data)
+        print(f"\nPattern Length {pattern_length}: {len(result_df)} bars")
+
+        output_csv = lepa_dir / f'batch_bar_durations_L{pattern_length}.csv'
+        result_df.to_csv(output_csv, index=False)
+        print(f"✓ Saved: {output_csv}")
+        print(f"  Columns: {list(result_df.columns)}")
+
+        # Show sample of data
+        print(f"  Sample data (first 10 rows):")
+        print(result_df.head(10).to_string(index=False))
+
+    print("\n" + "=" * 80)
 
 
 if __name__ == '__main__':

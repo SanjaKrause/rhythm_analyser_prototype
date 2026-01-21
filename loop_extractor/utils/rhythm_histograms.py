@@ -376,7 +376,7 @@ def create_rhythm_histograms_with_style(
 
     # Create figure with 5 subplots
     fig, axes = plt.subplots(5, 1, figsize=(16, 20))
-    fig.suptitle(f'Rhythm Histograms (Filtered FlexStart) — {track_id}', fontsize=14, fontweight='bold')
+    fig.suptitle(f'Rhythm Histograms (Filtered FlexStart) — {track_id}', fontsize=14, fontweight='bold', y=0.995)
 
     # Define colors
     colors = ['#3498DB', '#E67E22', '#2ECC71', '#F39C12', '#9B59B6']
@@ -440,7 +440,7 @@ def create_rhythm_histograms_with_style(
         # Build title with pattern count
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns is not None:
-            title += f' — {num_patterns} patterns'
+            title += f' — {num_patterns} repetitions'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -484,7 +484,7 @@ def create_rhythm_histograms_with_style(
         stats_text += f'Max: {max_count}'
 
         if num_patterns is not None:
-            stats_text += f'\nPatterns: {num_patterns}'
+            stats_text += f'\nRepetitions: {num_patterns}'
 
         ax.text(0.98, 0.97, stats_text,
                 transform=ax.transAxes, fontsize=9,
@@ -495,7 +495,7 @@ def create_rhythm_histograms_with_style(
         if idx == len(methods) - 1:
             ax.set_xlabel('16th-note position within pattern', fontsize=10, fontweight='bold')
 
-        pattern_info = f", {num_patterns} patterns" if num_patterns is not None else ""
+        pattern_info = f", {num_patterns} repetitions" if num_patterns is not None else ""
         print(f"    {method_title}: {total_onsets} onsets, {occupied_positions}/{num_positions} positions{pattern_info}")
 
     plt.tight_layout()
@@ -729,7 +729,7 @@ def create_rhythm_histograms_with_medians_and_iqr(
 
     # Create figure with 5 subplots
     fig, axes = plt.subplots(5, 1, figsize=(16, 20))
-    fig.suptitle(f'Rhythm Histograms with Median Phase & IQR — {track_id}', fontsize=14, fontweight='bold')
+    fig.suptitle(f'Rhythm Histograms with Median Phase & IQR — {track_id}', fontsize=14, fontweight='bold', y=0.995)
 
     # Define colors
     colors = ['#3498DB', '#E67E22', '#2ECC71', '#F39C12', '#9B59B6']
@@ -847,7 +847,7 @@ def create_rhythm_histograms_with_medians_and_iqr(
         # Build title with pattern count
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns is not None:
-            title += f' — {num_patterns} patterns'
+            title += f' — {num_patterns} repetitions'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -894,7 +894,7 @@ def create_rhythm_histograms_with_medians_and_iqr(
         stats_text += f'Max: {max_count}'
 
         if num_patterns is not None:
-            stats_text += f'\nPatterns: {num_patterns}'
+            stats_text += f'\nRepetitions: {num_patterns}'
 
         if time_signature is not None:
             stats_text += f'\nTime Sig: {time_signature}/4'
@@ -908,7 +908,7 @@ def create_rhythm_histograms_with_medians_and_iqr(
         if idx == len(methods) - 1:
             ax.set_xlabel('16th-note position within pattern', fontsize=10, fontweight='bold')
 
-        pattern_info = f", {num_patterns} patterns" if num_patterns is not None else ""
+        pattern_info = f", {num_patterns} repetitions" if num_patterns is not None else ""
         print(f"    {method_title}: {total_onsets} onsets, {occupied_positions}/{num_positions} positions{pattern_info}")
 
         # Store CSV data
