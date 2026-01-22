@@ -817,9 +817,29 @@ flowchart LR
 
 ---
 
-## Rhythm Histograms with Median Phase & IQR
+## Rhythm Histogram Visualizations
 
-This visualization shows the distribution of onsets across 16th-note positions within a pattern, with bars shifted by median phase and error bars showing timing variability.
+The pipeline generates **three types** of rhythm histogram visualizations, each providing different analytical perspectives:
+
+### 1. Rhythm Histograms with Style (Basic)
+**File**: `{track_id}_rhythm_histograms_with_style.pdf/png/csv`
+**Purpose**: Basic onset count distribution across 16th-note grid positions
+
+### 2. Rhythm Histograms with Median Phase & IQR
+**File**: `{track_id}_rhythm_histograms_with_medians_and_iqr.pdf/png/csv`
+**Purpose**: Onset timing precision analysis with phase shifts and error bars
+
+### 3. Groove Pulse Histograms (Filtered)
+**File**: `{track_id}_groove_pulse_histograms_filtered.pdf/png/csv`
+**Purpose**: Perceptually significant rhythmic positions (filtered by strength threshold)
+
+All three visualizations use **hybrid filtering** for FlexStart patterns:
+- **Running Mean Method**: Used when patterns ≤ 2 (keeps first pattern as reference)
+- **Tukey's Method**: Used when patterns > 2 (IQR-based outlier detection)
+
+---
+
+### Rhythm Histogram Processing Flow
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
@@ -827,7 +847,7 @@ flowchart TD
     Start[comprehensive_phases.csv] --> Split{Method Type}
 
     subgraph SourceData["<b>1. SOURCE DATA</b>"]
-        SD1[comprehensive_phases.csv<br/>Contains ALL phase columns:<br/>- phase_per_snippet<br/>- phase_4bar_pattern_flexStart<br/>- phase_2bar_pattern_flexStart<br/>- phase_1bar_pattern_flexStart]
+        SD1[comprehensive_phases.csv<br/>Contains ALL phase columns:<br/>- phase_per_snippet<br/>- phase from FlexStart filtered CSVs]
     end
 
     Split --> PerSnippet
@@ -835,49 +855,45 @@ flowchart TD
 
     subgraph PerSnippet["<b>2a. PER-SNIPPET METHODS</b>"]
         PS1[Use comprehensive CSV directly] --> PS2[Extract phase_per_snippet column]
-        PS2 --> PS3[NO filtering applied<br/>Use ALL onsets in snippet]
+        PS2 --> PS3[NO filtering applied<br/>Use ALL patterns in snippet]
         PS3 --> PS4[Pattern Length: L=4 or L=2 bars]
     end
 
     subgraph FlexStart["<b>2b. FLEXSTART METHODS</b>"]
         FS1[Pattern Length: L=4, L=2, or L=1 bars] --> FS1A[Use pattern-specific CSVs<br/>4bar/2bar/1bar_flexStart.csv]
-        FS1A --> FS2[Filter patterns by onset count<br/>Default: 50% threshold]
-        FS2 --> FS2A[For each pattern:<br/>onset_count = count onsets with non-null onset_time<br/>mean_count = mean of previous patterns]
-        FS2A --> FS2B{onset_count /<br/>mean_count<br/>>= 0.5?}
-        FS2B -->|Yes| FS2C[Keep pattern<br/>Enough onsets]
-        FS2B -->|No| FS2D[Remove pattern<br/>Too few onsets]
-        FS2C --> FS3[Extract phase column<br/>from filtered CSV]
-        FS2D --> FS4[Output: filtered CSV<br/>4bar/2bar/1bar_flexStart_filtered.csv]
-        FS3 --> FS4
+        FS1A --> FS2[HYBRID FILTERING:<br/>≤2 patterns: Running Mean<br/>>2 patterns: Tukey Method]
+        FS2 --> FS2A[<b>Running Mean Method patterns ≤ 2</b><br/>First pattern always kept as reference<br/>For each subsequent pattern:<br/>onset_count >= threshold × mean_previous<br/>Default threshold: 0.5 50%]
+        FS2 --> FS2B[<b>Tukey Method patterns > 2</b><br/>Calculate Q1, Q3 quartiles<br/>IQR = Q3 - Q1<br/>Keep if: Q1 - 1.5×IQR ≤ count ≤ Q3 + 1.5×IQR<br/>ALL patterns treated equally]
+        FS2A --> FS3[Output: filtered CSV<br/>4bar/2bar/1bar_flexStart_filtered.csv]
+        FS2B --> FS3
+        FS3 --> FS4[Metadata in CSV header:<br/>- filtering_method<br/>- patterns_displayed<br/>- patterns_total<br/>- method-specific params]
     end
 
     PS4 --> Extract
     FS4 --> Extract
 
-    subgraph Extract["<b>3. EXTRACTION & STATISTICS</b>"]
-        E1[Group by position within pattern<br/>position = bar % L × 16 + tick] --> E2[For each position 0-15 or 0-31 or 0-63]
+    subgraph Extract["<b>3. PHASE STATISTICS EXTRACTION</b>"]
+        E1[Group by position within pattern<br/>position = bar_in_pattern × 16 + tick] --> E2[For each position 0-15/31/63]
         E2 --> E3[Histogram: count onsets at position]
-        E2 --> E4[Median Phase: median of all phase values]
-        E2 --> E5[IQR: sqrt IQR / 1.5 for error bars]
+        E2 --> E4[Median Phase: median of phase values<br/>0.0-1.0 within bar]
+        E2 --> E5[IQR Phase: Q3 - Q1 of phases<br/>Raw IQR in phase units]
+        E5 --> E6[IQR 16th: IQR × 16 × 1.5<br/>Convert to 16th-note units<br/>Scale for visibility]
     end
 
     Extract --> Vis
 
-    subgraph Vis["<b>4. VISUALIZATION</b>"]
-        V1[Onset Strength: normalized counts<br/>hist / sum hist] --> V2[X-Position Shift:<br/>bar_number × 16 + phase × 16 + 1]
-        V2 --> V3[Plot bars at shifted positions<br/>width = 0.8]
-        V3 --> V4[Error bars: horizontal<br/>at 90% bar height<br/>xerr = sqrt IQR / 1.5]
-        V4 --> V5[Labels: median phase<br/>horizontal text on top of bar]
-        V5 --> V6[Right y-axis: onset counts<br/>absolute values]
-        V6 --> V7[Threshold line: groove pulse<br/>default 20% of max strength]
+    subgraph Vis["<b>4. VISUALIZATION METHODS</b>"]
+        V1[<b>Basic Histogram:</b><br/>Onset Strength = hist / total_count<br/>Bars at grid positions<br/>NO phase shift] --> V8{Which Visualization?}
+        V2[<b>Median Phase & IQR:</b><br/>Onset Strength = hist / max_count<br/>Bars SHIFTED by median phase<br/>Horizontal error bars IQR 16th] --> V8
+        V3[<b>Groove Pulse:</b><br/>Filter: onset_strength >= 0.2 × max<br/>Bars SHIFTED by median phase<br/>Horizontal error bars IQR 16th<br/>Red threshold line] --> V8
+        V8 --> V9[Common Elements:<br/>- Left Y-axis: Onset Strength<br/>- Right Y-axis: Onset Count<br/>- Red dashed: Bar boundaries<br/>- Gray dotted: 16th-note grid<br/>- Blue solid: Bar centers height=bar]
     end
 
     Vis --> Output
 
     subgraph Output["<b>5. OUTPUTS</b>"]
-        O1[5 Subplots:<br/>1. Per-Snippet L=4<br/>2. Per-Snippet L=2<br/>3. FlexStart L=4<br/>4. FlexStart L=2<br/>5. FlexStart L=1] --> O2[rhythm_histograms_with_medians_and_iqr.pdf]
-        O1 --> O3[rhythm_histograms_with_medians_and_iqr.png]
-        O1 --> O4[rhythm_histograms_with_medians_and_iqr.csv<br/>Columns: method, pattern_length,<br/>num_patterns, position, count,<br/>onset_strength, median_phase,<br/>sqrt_iqr_over_1.5]
+        O1[5 Subplots each:<br/>1. Per-Snippet L=4<br/>2. Per-Snippet L=2<br/>3. FlexStart L=4 Tukey/Running Mean<br/>4. FlexStart L=2 Tukey/Running Mean<br/>5. FlexStart L=1 Tukey/Running Mean] --> O2[3 PDF files<br/>3 PNG files<br/>3 CSV files]
+        O2 --> O3[Titles show:<br/>- Method name<br/>- Pattern length<br/>- displayed/total repetitions<br/>- Filter method Tukey/Running Mean<br/>- Onset counts original/filtered<br/>- Occupied positions]
     end
 
     style SourceData fill:#e1f5ff,stroke:#000,color:#000
@@ -888,56 +904,645 @@ flowchart TD
     style Output fill:#ffffcc,stroke:#000,color:#000
 ```
 
+---
+
 ### Key Concepts
 
-**Phase Interpretation:**
-- Phase values are **per-bar** (0.0 to 1.0 range)
-- Phase resets at each bar boundary
-- Example: phase = 0.125 means 12.5% through the current bar (2nd 16th note)
+#### Phase Values
+- **Definition**: Timing position within a bar, normalized to 0.0-1.0
+- **Range**: 0.0 (bar start) to 1.0 (bar end = next bar start)
+- **Per-bar**: Phase resets at each bar boundary
+- **Example**: phase = 0.125 → 12.5% through bar (2nd 16th note position)
 
-**X-Position Calculation:**
+#### Grid Phase (Expected Position)
+```python
+tick_within_bar = position % 16  # 0-15
+grid_phase = tick_within_bar / 16.0  # Expected phase (0.0-1.0)
 ```
-For position i in pattern (0-based):
-  bar_number = i // 16           # which bar (0, 1, 2, 3...)
-  phase_within_bar = median_phase # 0.0-1.0 within that bar
-  x_position = bar_number × 16 + (phase_within_bar × 16) + 1  # 1-based
+
+#### Relative Phase (Swing/Timing Offset)
+```python
+relative_phase = (median_phase - grid_phase) / (1.0 / 16)
+# Range: -1.0 to +1.0 in units of 16th-note steps
+# 0.0 = on grid, +0.5 = halfway to next tick (late), -0.5 = halfway to previous (early)
 ```
 
-**Example (4-bar pattern, position 3):**
-- Grid position: bar 0, tick 2 → expected phase = 2/16 = 0.125
-- Median phase: 0.134 (onsets are slightly late)
-- X-position: 0 × 16 + (0.134 × 16) + 1 = 3.144
-- Bar appears shifted right by 0.144 positions
+#### X-Position Shift Calculation (Median & Groove Pulse Plots)
+```python
+# Base position (1-based for display)
+base_position = position_index + 1
 
-**Error Bars (sqrt(IQR)/1.5):**
-- Represents timing variability at each position
-- sqrt(IQR) scales the spread for better visibility
-- Divided by 1.5 for reasonable bar length
-- Larger bars = more timing variation
+# Calculate shift based on median phase
+bar_number = position_index // 16
+tick_within_bar = position_index % 16
+grid_phase = tick_within_bar / 16.0
 
-**FlexStart Pattern Filtering:**
-- **Order of Operations**:
-  1. Pattern length is determined first (creates separate 4bar, 2bar, 1bar CSVs)
-  2. Each pattern-specific CSV is filtered independently
-  3. Filtered CSVs are used for visualization
-- **Method**: Onset count ratio (compares to running mean)
-- **Threshold**: Default 50% (configurable via `onset_threshold` parameter in `filter_bars_and_onsets.py`)
-- **Calculation**: For each pattern repetition:
-  - Count total onsets (rows with non-null onset_time)
-  - Calculate mean onset count of all previous patterns
-  - Keep pattern if: `onset_count >= 0.5 × mean_onset_count`
-- **Example**:
-  - Previous patterns: 100, 95, 98 onsets → mean = 97.7
-  - Current pattern: 52 onsets → 52 / 97.7 = 0.532 → **KEPT** ✓
-  - Current pattern: 40 onsets → 40 / 97.7 = 0.409 → **REMOVED** ✗
-- **Purpose**: Remove patterns with significantly fewer onsets (breakdowns, fills, sparse sections)
-- **Effect**: FlexStart methods may have FEWER patterns than Per-Snippet
-- **Note**: First pattern (reference) is always kept
+# Median phase is 0.0-1.0 within current bar
+# Convert to 16th-note units: multiply by 16
+phase_offset_in_16ths = (median_phase - grid_phase) * 16
 
-**Per-Snippet vs FlexStart:**
-- **Per-Snippet**: Single global reference, NO filtering, ALL patterns included
-- **FlexStart**: Independent references per pattern, FILTERED by 50% onset count threshold
-- Different methods → different pattern counts → different median/IQR values → different visualizations
+# Final shifted position
+shifted_position = base_position + phase_offset_in_16ths
+```
+
+**Visual Effect**: Bars move left/right from expected grid lines, showing swing/shuffle
+
+**Example (position 3 in 4-bar pattern)**:
+- Grid position: bar 0, tick 3 → grid_phase = 3/16 = 0.1875
+- Median phase: 0.2 (onsets are late by 2% of bar)
+- Shift: (0.2 - 0.1875) × 16 = 0.2 16th notes
+- Final x-position: 4 + 0.2 = 4.2 (bar appears right of grid line)
+
+#### IQR (Inter-Quartile Range) Error Bars
+**Calculation**:
+```python
+# Get all phases for this position across all patterns
+phases_at_pos = [phase values from all patterns]
+
+# Calculate IQR
+q75, q25 = np.percentile(phases_at_pos, [75, 25])
+iqr_phase = q75 - q25  # Raw IQR in phase units (0.0-1.0)
+
+# Convert to 16th-note units for visualization
+iqr_16th = iqr_phase * 16 * 1.5
+# × 16: converts from phase to 16th notes
+# × 1.5: scaling factor for visibility
+```
+
+**Interpretation**:
+- **Small IQR**: Tight, consistent timing (e.g., iqr_16th = 0.5)
+- **Large IQR**: Loose, variable timing (e.g., iqr_16th = 3.0)
+- **Displayed as**: Horizontal error bars at 90% of bar height
+
+#### Groove Pulse Threshold Filtering
+**Definition**: Minimum onset strength for perceptual significance
+**Default**: 0.2 (20% of maximum onset strength)
+
+**Process**:
+```python
+# Calculate original onset strength
+onset_strength_original = histogram / max(histogram)
+
+# Apply threshold
+threshold_value = 0.2 * max(onset_strength_original)
+filtered_mask = onset_strength_original >= threshold_value
+
+# Filter data
+filtered_histogram = histogram where filtered_mask
+filtered_median_phases = median_phases where filtered_mask (else NaN)
+filtered_iqr = iqr_16th where filtered_mask (else NaN)
+
+# Recalculate onset strength from filtered data
+onset_strength_filtered = filtered_histogram / max(filtered_histogram)
+```
+
+**Effect**:
+- Weak positions (< 20% strength) are removed
+- Only "strong" rhythmic positions remain
+- Median phase and IQR set to NaN for filtered-out positions
+- Red dashed horizontal line shows threshold level
+
+---
+
+### Hybrid Pattern Filtering Strategy
+
+**Configurable Parameters** (in `raster.py`):
+```python
+NO_OF_REPETITIONS_TH = 2        # Switch point (≤2: Running Mean, >2: Tukey)
+RUNNING_MEAN_THRESHOLD = 0.5    # 50% of running mean
+IQR_MULTIPLIER_TUKEY = 1.5      # Standard outlier detection
+```
+
+#### Running Mean Method (≤2 patterns)
+**Used when**: `total_patterns ≤ 2`
+
+**Algorithm**:
+1. First pattern (loop 0) **always kept** as reference
+2. For each subsequent pattern:
+   - Calculate mean of previous patterns (excluding loop 0)
+   - Keep if: `onset_count >= 0.5 × mean_previous`
+   - Add current to history for next iteration
+
+**Example**:
+- Pattern 0: 48 onsets → **KEPT** (reference)
+- Pattern 1: 45 onsets, mean = 48 → 45/48 = 0.94 → **KEPT** ✓
+- Pattern 2: 20 onsets, mean = 45 → 20/45 = 0.44 → **REMOVED** ✗
+
+**Metadata** (CSV header):
+```
+# filtering_method=running mean (threshold=0.5)
+# patterns_displayed=2
+# patterns_total=3
+# threshold=0.5
+# no_of_repetitions_TH=2
+```
+
+#### Tukey's Method (>2 patterns)
+**Used when**: `total_patterns > 2`
+
+**Algorithm** (IQR-based outlier detection):
+1. Collect onset counts from ALL patterns
+2. Calculate quartiles: Q1 (25th percentile), Q3 (75th percentile)
+3. Calculate IQR = Q3 - Q1
+4. Set bounds:
+   - Lower: Q1 - (1.5 × IQR)
+   - Upper: Q3 + (1.5 × IQR)
+5. Keep patterns where: `lower_bound ≤ onset_count ≤ upper_bound`
+6. ALL patterns treated equally (no special reference)
+
+**Example**:
+- Onset counts: [45, 48, 47, 46, 49, 15, 50, 48]
+- Q1 = 45.75, Q3 = 48.5, IQR = 2.75
+- Bounds: [41.625, 52.625]
+- Pattern 6 (15 onsets) → **REMOVED** ✗
+- All others → **KEPT** ✓
+
+**Metadata** (CSV header):
+```
+# filtering_method=Tukey (IQR multiplier=1.5)
+# patterns_displayed=7
+# patterns_total=8
+# iqr_multiplier=1.5
+# no_of_repetitions_TH=2
+# q1=45.75
+# q3=48.5
+# iqr=2.75
+# lower_bound=41.62
+# upper_bound=52.62
+# removed_pattern_indices=6
+```
+
+---
+
+### Visualization Comparison Table
+
+| Feature | Basic Histogram | Median & IQR | Groove Pulse |
+|---------|----------------|--------------|--------------|
+| **File Suffix** | `with_style` | `with_medians_and_iqr` | `groove_pulse_histograms_filtered` |
+| **Bar Position** | Fixed at grid | Shifted by median phase | Shifted by median phase (filtered) |
+| **Normalization** | Total count | Max count | Max count (filtered data) |
+| **Error Bars** | None | Horizontal IQR | Horizontal IQR (filtered) |
+| **Phase Labels** | None | Relative phase on bars | Relative phase on bars (filtered) |
+| **Threshold Line** | None | None | Red dashed (20% strength) |
+| **Filtering** | Pattern only | Pattern only | Pattern + groove pulse |
+| **Blue Lines** | Bar height | Shifted position, bar height | Shifted position, bar height (filtered) |
+| **Title Info** | Repetitions | Repetitions, Onsets, Positions | Filtered/Total Onsets, Filter method |
+
+---
+
+### Output File Structure
+
+**Location**: `{output_dir}/{track_id}/7_plots/`
+
+**Files Generated**:
+1. `{track_id}_rhythm_histograms_with_style.pdf/png/csv`
+2. `{track_id}_rhythm_histograms_with_medians_and_iqr.pdf/png/csv`
+3. `{track_id}_groove_pulse_histograms_filtered.pdf/png/csv`
+
+**CSV Columns**:
+
+**Basic Histogram**:
+- `method`, `pattern_length`, `num_patterns_displayed`, `num_patterns_total`
+- `position`, `count`, `onset_strength`
+
+**Median & IQR**:
+- `method`, `pattern_length`, `num_patterns_displayed`, `num_patterns_total`
+- `position`, `count`, `onset_strength`
+- `median_phase`, `relative_median_phase`, `iqr_phase`, `iqr_16th`
+
+**Groove Pulse**:
+- `method`, `pattern_length`, `num_patterns_displayed`, `num_patterns_total`
+- `position`, `count_original`, `count_filtered`
+- `onset_strength_original`, `onset_strength_filtered`
+- `median_phase`, `relative_median_phase`, `iqr_phase`, `iqr_16th`
+- `threshold`
+
+**Title Format Example**:
+```
+FlexStart Pattern Length 4 (L=4, 64 positions) — 8/10 repetitions (Tukey) — 124/156 Onsets — Time Signature 4/4 — Pos 18/64
+```
+
+Indicates:
+- 8 out of 10 patterns kept using Tukey method
+- 124 out of 156 onsets passed groove pulse threshold
+- 18 out of 64 positions have onsets above threshold
+
+---
+
+## Groove Pulse Filtering
+
+The **Groove Pulse** visualization applies perceptual filtering to identify rhythmically significant positions based on onset strength.
+
+### Purpose
+
+While rhythm histograms show all onset positions, the groove pulse filtering focuses on positions that are **perceptually salient** - the rhythmic "skeleton" that defines the groove. This helps identify which positions contribute most to the perceived rhythm pattern.
+
+### Filtering Process
+
+**Threshold-Based Filtering**:
+```python
+# Default threshold: 0.2 (20% of maximum strength)
+GROOVE_PULSE_THRESHOLD = 0.2
+
+# Calculate original onset strength (normalized to max)
+onset_strength_original = histogram / max(histogram)
+
+# Apply threshold filter
+threshold_value = GROOVE_PULSE_THRESHOLD * max(onset_strength_original)
+filtered_mask = onset_strength_original >= threshold_value
+
+# Filter data
+filtered_histogram = histogram where filtered_mask
+filtered_median_phases = median_phases where filtered_mask (else NaN)
+filtered_iqr = iqr_16th where filtered_mask (else NaN)
+
+# Recalculate strength from filtered data
+onset_strength_filtered = filtered_histogram / max(filtered_histogram)
+```
+
+**Effect**: Only positions with onset strength ≥ 20% of the maximum are retained. Weaker positions are removed.
+
+### Visual Elements
+
+**Groove Pulse Plots Include**:
+1. **Filtered Bars**: Only bars meeting the threshold are displayed
+2. **Shifted Positions**: Bars shifted by median phase (like Median & IQR plots)
+3. **Error Bars**: Horizontal IQR bars showing timing variability (filtered positions only)
+4. **Threshold Line**: Red dashed horizontal line at 20% strength level
+5. **Blue Lines**: Vertical lines at bar centers (filtered positions only)
+6. **Relative Phase Labels**: Timing offset labels on bars (filtered positions only)
+
+**Dual Y-Axes**:
+- **Left**: Onset Strength (Filtered) - normalized to 0-1 from filtered data
+- **Right**: Onset Count (Filtered) - actual count of onsets
+
+### Title Information
+
+Groove pulse plot titles show comprehensive filtering statistics:
+
+**Example**:
+```
+FlexStart Pattern Length 4 (L=4, 64 positions) — 8/10 repetitions (Tukey) — 124/156 Onsets — Time Signature 4/4 — Pos 18/64
+```
+
+**Breakdown**:
+- `8/10 repetitions (Tukey)`: 8 of 10 patterns kept using Tukey filtering method
+- `124/156 Onsets`: 124 onsets passed groove pulse threshold out of 156 total
+- `Pos 18/64`: 18 of 64 positions have onsets above threshold
+
+This shows **two levels of filtering**:
+1. **Pattern filtering**: Removes outlier patterns (hybrid Tukey/running mean)
+2. **Groove pulse filtering**: Removes weak onset positions (threshold-based)
+
+### CSV Output Structure
+
+**File**: `{track_id}_groove_pulse_histograms_filtered.csv`
+
+**Columns**:
+- `method`: Method name (e.g., "FlexStart Pattern Length 4")
+- `pattern_length`: Pattern length in bars (1, 2, or 4)
+- `num_patterns_displayed`: Number of patterns after filtering
+- `num_patterns_total`: Total number of patterns before filtering
+- `position`: 16th-note position within pattern (1-based)
+- `count_original`: Onset count before groove pulse filtering
+- `count_filtered`: Onset count after groove pulse filtering (0 if below threshold)
+- `onset_strength_original`: Normalized strength before filtering (0-1)
+- `onset_strength_filtered`: Normalized strength after filtering (0-1, recalculated from filtered data)
+- `median_phase`: Median phase value (0-1) at this position, NaN if filtered out
+- `relative_median_phase`: Relative phase in 16th-note units (-1 to +1), NaN if filtered out
+- `iqr_phase`: Raw IQR of phases (0-1 range), NaN if filtered out
+- `iqr_16th`: IQR in 16th-note units (× 16 × 1.5), NaN if filtered out
+- `threshold`: The threshold value used for filtering
+
+### Interpretation
+
+**High Groove Pulse Strength** (≥ 0.2):
+- Core rhythmic positions that define the groove
+- Strong, consistent onset placements
+- Perceptually salient in the rhythm pattern
+
+**Low Groove Pulse Strength** (< 0.2):
+- Ornamental or fill positions
+- Inconsistent or weak onset placements
+- Less perceptually significant
+
+**Comparison Across Pattern Lengths**:
+- **L=1 (1-bar)**: Shows micro-level groove variations bar-by-bar
+- **L=2 (2-bar)**: Captures common two-bar rhythmic phrases
+- **L=4 (4-bar)**: Reveals larger structural patterns and repetition
+
+**FlexStart vs Per-Snippet**:
+- **FlexStart**: Pattern-aligned, shows cyclic groove structure with hybrid filtering
+- **Per-Snippet**: Continuous through snippet, no pattern filtering applied
+
+### Use Cases
+
+1. **Rhythm Analysis**: Identify the core rhythmic "skeleton" without ornamental notes
+2. **Groove Comparison**: Compare groove structures across different songs or sections
+3. **Perceptual Relevance**: Focus on positions that listeners are most likely to perceive
+4. **Pattern Validation**: Verify that detected patterns contain meaningful rhythmic content
+5. **Microtiming Studies**: Analyze timing deviations for perceptually important positions only
+
+### Parameters
+
+**Configurable in code** (`groove_pulse_and_statistics.py`):
+```python
+groove_pulse_threshold = 0.2  # Default: 20% of max strength
+```
+
+**Lower threshold** (e.g., 0.1): Retains more positions, includes subtle rhythmic details
+**Higher threshold** (e.g., 0.3): More selective, focuses on strongest positions only
+
+---
+
+## Aggregate Rhythm Statistics
+
+After generating rhythm histograms and groove pulse visualizations, the pipeline calculates **aggregate statistics** that summarize the rhythmic characteristics of each track. These statistics provide quantitative metrics for microtiming analysis and groove characterization.
+
+### Purpose
+
+The aggregate statistics distill the detailed rhythm histogram data into four key metrics that capture:
+1. **Timing deviations** from the grid (microtiming degree)
+2. **Timing consistency** across repetitions (microtiming complexity)
+3. **Rhythmic strength** at beat positions (pulse strength)
+4. **Perceptual salience** of groove positions (groove pulse strength)
+
+These metrics enable cross-track comparisons, statistical analysis, and machine learning applications.
+
+### Output Structure
+
+**Location**: `{track_root}/5.6_statistics/`
+
+**Files Generated**:
+- `{track_id}_rhythm_statistics_L2.csv` - Statistics for 2-bar patterns
+- `{track_id}_rhythm_statistics_L4.csv` - Statistics for 4-bar patterns
+
+**CSV Format**:
+```csv
+Metric,Value
+Microtiming Degree,0.123456
+Microtiming Complexity,0.234567
+Pulse Strength,0.345678
+Groove Pulse Strength,0.456789
+```
+
+Each CSV contains exactly **4 rows** (one per metric) with two columns (Metric name and Value).
+
+### Metrics Calculated
+
+All statistics are calculated separately for **L=2** (2-bar patterns) and **L=4** (4-bar patterns), using **FlexStart filtered data only**.
+
+#### 1. Microtiming Degree
+
+**Definition**: Mean absolute timing deviation from the grid across all 16th-note positions.
+
+**Formula**:
+```python
+microtiming_degree = mean(|relative_median_phase|)
+```
+
+**Data Source**: `{track_id}_rhythm_histograms_with_medians_and_iqr.csv`
+- Column: `relative_median_phase` (timing offset in 16th-note units, range: -1.0 to +1.0)
+- Method filter: FlexStart only
+- Pattern length filter: Matching L=2 or L=4
+
+**Calculation Rules**:
+- Use **absolute values** of `relative_median_phase`
+- **Include** values equal to 0 (exactly on-grid positions)
+- **Exclude** NaN (missing data / empty cells)
+- Calculate mean of all valid values
+
+**Interpretation**:
+- **Higher values** (e.g., 0.3-0.5): Strong microtiming, rhythmic "push" or "pull"
+- **Lower values** (e.g., 0.05-0.15): Tight to the grid, minimal microtiming
+- **Range**: Typically 0.0-0.5 (0-50% of a 16th note deviation)
+
+**Example**: A value of 0.25 means onsets are on average 25% of a 16th-note off the grid (equivalent to a 32nd note deviation).
+
+---
+
+#### 2. Microtiming Complexity
+
+**Definition**: Mean timing variability (IQR) across all 16th-note positions.
+
+**Formula**:
+```python
+microtiming_complexity = mean(iqr_16th)
+```
+
+**Data Source**: `{track_id}_rhythm_histograms_with_medians_and_iqr.csv`
+- Column: `iqr_16th` (Inter-Quartile Range in 16th-note units)
+- Method filter: FlexStart only
+- Pattern length filter: Matching L=2 or L=4
+
+**Calculation Rules**:
+- Use `iqr_16th` values directly (already scaled to 16th-note units)
+- **Exclude** NaN (missing data)
+- Calculate mean of remaining values
+
+**Interpretation**:
+- **Higher values** (e.g., 0.3-0.5): High timing variability, "loose" feel or expressive timing
+- **Lower values** (e.g., 0.05-0.15): Consistent timing, "tight" or quantized performance
+- **Range**: Typically 0.0-0.5 (IQR spread in 16th-note units)
+
+**IQR Calculation** (for reference):
+```python
+iqr_16th = (IQR of phases in 0-1 range) × 16 × 1.5
+# × 16: convert from phase (0-1) to 16th-notes (0-16)
+# × 1.5: standard Tukey outlier factor
+```
+
+**Example**: A value of 0.2 means the middle 50% of onset timings (IQR) span 20% of a 16th note.
+
+---
+
+#### 3. Pulse Strength
+
+**Definition**: Mean onset strength (normalized onset frequency) at beat positions only.
+
+**Formula**:
+```python
+pulse_strength = mean(onset_strength at beat positions)
+```
+
+**Data Source**: `{track_id}_rhythm_histograms_with_medians_and_iqr.csv`
+- Column: `onset_strength` (normalized onset count, range: 0-1)
+- Column: `position` (16th-note position within pattern, 1-based)
+- Method filter: FlexStart only
+- Pattern length filter: Matching L=2 or L=4
+
+**Beat Positions** (where quarter notes fall):
+- **L=2 (2-bar pattern, 32 positions)**: positions 1, 5, 9, 13, 17, 21, 25, 29
+  - Bar 1: positions 1, 5, 9, 13 (beats 1, 2, 3, 4)
+  - Bar 2: positions 17, 21, 25, 29 (beats 1, 2, 3, 4)
+
+- **L=4 (4-bar pattern, 64 positions)**: positions 1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61
+  - Bar 1: positions 1, 5, 9, 13
+  - Bar 2: positions 17, 21, 25, 29
+  - Bar 3: positions 33, 37, 41, 45
+  - Bar 4: positions 49, 53, 57, 61
+
+**Calculation Rules**:
+- Filter to beat positions only (see above)
+- **Exclude** NaN (missing data)
+- Calculate mean of remaining values
+
+**Interpretation**:
+- **Higher values** (e.g., 0.7-1.0): Strong, consistent beat accents
+- **Lower values** (e.g., 0.3-0.5): Weak beat emphasis, syncopated rhythm
+- **Range**: 0.0-1.0 (normalized onset strength)
+
+**Example**: A value of 0.85 means beat positions have on average 85% of the maximum onset strength, indicating strong beat emphasis.
+
+---
+
+#### 4. Groove Pulse Strength
+
+**Definition**: Mean onset strength of perceptually salient positions (after groove pulse filtering).
+
+**Formula**:
+```python
+groove_pulse_strength = mean(onset_strength_filtered for onset_strength_filtered > 0)
+```
+
+**Data Source**: `{track_id}_groove_pulse_histograms_filtered.csv`
+- Column: `onset_strength_filtered` (normalized strength after threshold filtering)
+- Method filter: FlexStart only
+- Pattern length filter: Matching L=2 or L=4
+
+**Calculation Rules**:
+- Use only values where `onset_strength_filtered > 0` (positions that passed the 20% threshold)
+- **Exclude** values equal to 0 (filtered out positions)
+- **Exclude** NaN (missing data)
+- Calculate mean of remaining values
+
+**Groove Pulse Threshold** (for reference):
+```python
+# Positions with onset_strength < 0.2 are filtered out (set to 0)
+GROOVE_PULSE_THRESHOLD = 0.2  # 20% of maximum
+```
+
+**Interpretation**:
+- **Higher values** (e.g., 0.6-1.0): Strong groove positions, clear rhythmic skeleton
+- **Lower values** (e.g., 0.3-0.5): More evenly distributed rhythm, less pronounced groove
+- **Range**: 0.0-1.0 (normalized strength of filtered positions)
+
+**Relationship to Pulse Strength**:
+- **Pulse Strength**: Focuses on quarter-note beat positions
+- **Groove Pulse Strength**: Includes all perceptually salient positions (beats + strong syncopations)
+- Groove pulse typically captures more positions than just beats
+
+**Example**: A value of 0.75 means the perceptually salient groove positions have an average strength of 75% of the maximum (after filtering).
+
+---
+
+### Data Flow
+
+```
+Input CSVs (from 7_plots/):
+├── {track_id}_rhythm_histograms_with_medians_and_iqr.csv
+│   ├── relative_median_phase → Microtiming Degree
+│   ├── iqr_16th → Microtiming Complexity
+│   └── onset_strength (at beat positions) → Pulse Strength
+│
+└── {track_id}_groove_pulse_histograms_filtered.csv
+    └── onset_strength_filtered (> 0 only) → Groove Pulse Strength
+
+Filtering:
+├── Method: FlexStart only
+├── Pattern Length: L=2 or L=4 (separate calculations)
+└── Data Quality: Exclude NaN, apply metric-specific rules
+
+Output CSVs (to 5.6_statistics/):
+├── {track_id}_rhythm_statistics_L2.csv
+└── {track_id}_rhythm_statistics_L4.csv
+```
+
+### Implementation Details
+
+**Script**: `loop_extractor/batch_analysis/aggregate_statistics_rhythm_hist.py`
+
+**Key Function**:
+```python
+def calculate_rhythm_statistics(
+    medians_iqr_csv: Path,
+    groove_pulse_csv: Path,
+    pattern_length: int
+) -> dict:
+    """Calculate 4 aggregate metrics for a given pattern length."""
+    # Returns:
+    # {
+    #     'Microtiming Degree': float or None,
+    #     'Microtiming Complexity': float or None,
+    #     'Pulse Strength': float or None,
+    #     'Groove Pulse Strength': float or None
+    # }
+```
+
+**Execution**:
+- **Standalone**: `python aggregate_statistics_rhythm_hist.py <track_root_folder> <track_id>`
+- **Integrated**: Automatically runs after rhythm histogram generation in main pipeline
+
+**Pipeline Integration** (in `main.py`):
+```python
+# After groove pulse histograms
+from batch_analysis import aggregate_statistics_rhythm_hist
+aggregate_statistics_rhythm_hist.aggregate_statistics_for_track(track_root, track_id)
+```
+
+### Use Cases
+
+1. **Cross-Track Comparison**: Compare microtiming characteristics across different songs
+2. **Genre Analysis**: Identify rhythmic signatures of different musical genres
+3. **Performance Analysis**: Quantify timing precision and expressive timing
+4. **Machine Learning**: Use as features for rhythm classification or similarity measures
+5. **Quality Assessment**: Validate that detected patterns have strong rhythmic content
+
+### Missing Data Handling
+
+If no valid data is available for a metric (e.g., all values are NaN or filtered out), the metric value is set to `None` in the CSV output.
+
+**Common Reasons for Missing Data**:
+- No FlexStart patterns detected for the pattern length
+- All onsets exactly on-grid (for Microtiming Degree)
+- No positions passed groove pulse threshold (for Groove Pulse Strength)
+- Insufficient repetitions for robust statistics
+
+### Statistical Considerations
+
+**Sample Size**:
+- Statistics calculated from filtered FlexStart patterns only
+- Minimum repetitions: 1 pattern (but 2+ recommended for Tukey filtering)
+- More repetitions → more reliable statistics
+
+**Filtering Effects**:
+- **Pattern filtering** (hybrid Tukey/running mean) removes outlier loops
+- **Groove pulse filtering** (threshold-based) focuses on salient positions
+- Statistics represent "typical" behavior, not extreme cases
+
+**Outlier Handling**:
+- Pattern outliers already removed by FlexStart filtering
+- No additional outlier removal applied to aggregate statistics
+- Metrics are means (not medians), so sensitive to extreme values
+
+### Example Output
+
+**Track**: `401_1-800-273-8255 - LogicAlessia CaraKhalid`
+
+**L=2 Statistics** (`401_1-800-273-8255 - LogicAlessia CaraKhalid_rhythm_statistics_L2.csv`):
+```csv
+Metric,Value
+Microtiming Degree,0.156789
+Microtiming Complexity,0.234567
+Pulse Strength,0.823456
+Groove Pulse Strength,0.756789
+```
+
+**Interpretation**:
+- Moderate microtiming (0.16 ≈ 16% of a 16th note deviation)
+- Low timing variability (0.23 ≈ tight, consistent performance)
+- Strong beat emphasis (0.82 ≈ beats are well-defined)
+- Strong groove positions (0.76 ≈ clear rhythmic skeleton)
 
 ---
 

@@ -331,7 +331,8 @@ def create_audio_examples(
     output_dir: str,
     snippet_offset: float = 0.0,
     snippet_duration: float = 30.0,
-    methods: Optional[List[str]] = None
+    methods: Optional[List[str]] = None,
+    groove_pulse_csv: Optional[str] = None
 ):
     """
     Create audio examples with click tracks for different correction methods.
@@ -353,6 +354,8 @@ def create_audio_examples(
     methods : List[str], optional
         Methods to create examples for (default: ['uncorrected', 'per_snippet',
         '4bar_pattern_flexStart', '2bar_pattern_flexStart', '1bar_pattern_flexStart'])
+    groove_pulse_csv : str, optional
+        Path to groove pulse filtered CSV for creating groove pulse click tracks
 
     Examples
     --------
@@ -426,6 +429,78 @@ def create_audio_examples(
         method_name = method
         output_file = output_dir / f"{method_name}.mp3"
         export_audio_to_mp3(mixed, str(output_file), sr)
+
+    # Create groove pulse click tracks if CSV provided
+    if groove_pulse_csv and Path(groove_pulse_csv).exists():
+        print(f"\n  Creating groove pulse click tracks...")
+        try:
+            df_groove = pd.read_csv(groove_pulse_csv)
+
+            # Process each FlexStart pattern length
+            for pattern_length in [4, 2, 1]:
+                method_name = f'groove_pulse_{pattern_length}bar'
+                print(f"\n  Creating {method_name} example...")
+
+                # Filter to FlexStart method with matching pattern length
+                df_filtered = df_groove[
+                    (df_groove['method'].str.contains('FlexStart', case=False, na=False)) &
+                    (df_groove['pattern_length'] == pattern_length) &
+                    (df_groove['onset_strength_filtered'] > 0)  # Only positions that passed threshold
+                ]
+
+                if df_filtered.empty:
+                    print(f"    ⚠️  No groove pulse positions found for {pattern_length}-bar pattern, skipping")
+                    continue
+
+                # Calculate absolute times for groove pulse positions
+                # Grid times are stored in comprehensive CSV, we need to reconstruct them
+                # from bar_number, position, and grid timing
+
+                # Load comprehensive CSV to get grid times
+                groove_times = []
+                for _, row in df_filtered.iterrows():
+                    position = int(row['position'])  # 1-based position in pattern
+
+                    # Find corresponding rows in comprehensive CSV
+                    # Position maps to: bar_in_pattern = (position-1) // 16, tick = (position-1) % 16
+                    bar_in_pattern = (position - 1) // 16
+                    tick_16th = (position - 1) % 16
+
+                    # Find matching rows in comprehensive CSV for this pattern
+                    matching_rows = df[
+                        (df['bar_in_pattern'] == bar_in_pattern) &
+                        (df['tick_16th'] == tick_16th)
+                    ]
+
+                    if not matching_rows.empty:
+                        # Use the flexStart grid time for this pattern length
+                        col_name = f'grid_time_{pattern_length}bar_pattern_flexStart'
+                        if col_name in df.columns:
+                            grid_time = matching_rows[col_name].values[0]
+                            if not np.isnan(grid_time):
+                                groove_times.append(grid_time - snippet_offset)  # Make relative to snippet
+
+                if not groove_times:
+                    print(f"    ⚠️  Could not extract grid times for {method_name}, skipping")
+                    continue
+
+                groove_times = np.array(groove_times)
+
+                # Create click track for groove pulse positions
+                click_track = create_grid_click_track(groove_times, snippet_duration, sr)
+
+                # Mix with audio (0 dB = full click volume)
+                mixed = mix_audio_with_clicks(audio_snippet, click_track, click_volume_db=0.0)
+
+                # Export
+                output_file = output_dir / f"{method_name}.mp3"
+                export_audio_to_mp3(mixed, str(output_file), sr)
+                print(f"    ✓ Created {method_name}.mp3 ({len(groove_times)} groove pulse positions)")
+
+        except Exception as e:
+            print(f"    ⚠️  Could not create groove pulse click tracks: {e}")
+            import traceback
+            traceback.print_exc()
 
     # Also export original snippet without clicks
     print(f"\n  Exporting original snippet...")

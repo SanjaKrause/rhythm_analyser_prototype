@@ -37,7 +37,9 @@ MAX_MATCH_FRAC_BEFORE = 0.49  # Max distance before grid position (prevents over
 MAX_MATCH_FRAC_AFTER = 0.51  # Max distance after grid position (prevents overlap)
 SEARCH_WINDOW_START_PHASE = 0.5  # Search window before 1/16th for reference onset
 SEARCH_WINDOW_END_PHASE = 0.75  # Search window after 1/16th for reference onset
-ONSET_THRESHOLD_FULL_LOOPS = 0.5  # Threshold for filtering full loops
+IQR_MULTIPLIER_TUKEY = 1.5  # IQR multiplier for Tukey outlier detection (1.5=standard, 3.0=extreme)
+RUNNING_MEAN_THRESHOLD = 0.5  # Threshold for running mean filtering (0.5 = 50%)
+NO_OF_REPETITIONS_TH = 2  # Threshold for choosing filtering method (≤2: running mean, >2: Tukey)
 
 # ============================================================================
 # INPUT PARSING
@@ -1926,10 +1928,16 @@ def create_raster_csv(
     )
 
     # Import and run filter
-    print("  Creating filtered flexStart patterns CSVs (50% onset threshold)...")
+    print("  Creating filtered flexStart patterns CSVs (hybrid filtering)...")
     try:
         from .filter_bars_and_onsets import filter_all_flexstart_patterns
-        filter_all_flexstart_patterns(output_path.parent, output_path.stem, threshold=ONSET_THRESHOLD_FULL_LOOPS)
+        filter_all_flexstart_patterns(
+            output_path.parent,
+            output_path.stem,
+            iqr_multiplier=IQR_MULTIPLIER_TUKEY,
+            threshold=RUNNING_MEAN_THRESHOLD,
+            no_of_repetitions_TH=NO_OF_REPETITIONS_TH
+        )
     except Exception as e:
         print(f"  ! Warning: Could not create filtered CSVs: {e}")
 

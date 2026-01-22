@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 
-def read_filtered_csv_metadata(csv_path: str) -> Tuple[Optional[int], Optional[int]]:
+def read_filtered_csv_metadata(csv_path: str) -> Tuple[Optional[int], Optional[int], Optional[str]]:
     """
     Read metadata from filtered FlexStart CSV header.
 
@@ -27,12 +27,13 @@ def read_filtered_csv_metadata(csv_path: str) -> Tuple[Optional[int], Optional[i
     Returns
     -------
     tuple
-        (patterns_displayed, patterns_total) or (None, None) if not found
+        (patterns_displayed, patterns_total, filtering_method) or (None, None, None) if not found
     """
     try:
         with open(csv_path, 'r') as f:
             patterns_displayed = None
             patterns_total = None
+            filtering_method = None
 
             # Read first few lines looking for metadata
             for i, line in enumerate(f):
@@ -42,10 +43,12 @@ def read_filtered_csv_metadata(csv_path: str) -> Tuple[Optional[int], Optional[i
                     patterns_displayed = int(line.split('=')[1].strip())
                 elif line.startswith('# patterns_total='):
                     patterns_total = int(line.split('=')[1].strip())
+                elif line.startswith('# filtering_method='):
+                    filtering_method = line.split('=')[1].strip()
 
-            return patterns_displayed, patterns_total
+            return patterns_displayed, patterns_total, filtering_method
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def extract_rhythm_histogram(
@@ -440,8 +443,9 @@ def create_rhythm_histograms_with_style(
         num_patterns_total = None
 
         # For FlexStart filtered CSVs, read metadata from header
+        filtering_method = None
         if not is_per_snippet:
-            patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+            patterns_displayed_meta, patterns_total_meta, filtering_method = read_filtered_csv_metadata(str(csv_path))
             if patterns_displayed_meta is not None and patterns_total_meta is not None:
                 num_patterns_displayed = patterns_displayed_meta
                 num_patterns_total = patterns_total_meta
@@ -493,8 +497,14 @@ def create_rhythm_histograms_with_style(
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns_displayed is not None and num_patterns_total is not None:
             if not is_per_snippet:
-                # FlexStart method: always show displayed/total
+                # FlexStart method: always show displayed/total with filtering method
                 title += f' — {num_patterns_displayed}/{num_patterns_total} repetitions'
+                if filtering_method:
+                    # Extract short method name (e.g., "Tukey" or "running mean")
+                    if 'Tukey' in filtering_method:
+                        title += ' (Tukey)'
+                    elif 'running mean' in filtering_method:
+                        title += ' (Running Mean)'
             else:
                 # Per-snippet: show just count
                 title += f' — {num_patterns_displayed} repetitions'
@@ -602,7 +612,7 @@ def create_rhythm_histograms_with_style(
                     pass
             else:
                 # FlexStart: try to read metadata from filtered CSV
-                patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+                patterns_displayed_meta, patterns_total_meta, _ = read_filtered_csv_metadata(str(csv_path))
                 if patterns_displayed_meta is not None and patterns_total_meta is not None:
                     num_patterns_displayed = patterns_displayed_meta
                     num_patterns_total = patterns_total_meta
@@ -842,8 +852,9 @@ def create_rhythm_histograms_with_medians_and_iqr(
         num_patterns_total = None
 
         # For FlexStart filtered CSVs, read metadata from header
+        filtering_method = None
         if not is_per_snippet:
-            patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+            patterns_displayed_meta, patterns_total_meta, filtering_method = read_filtered_csv_metadata(str(csv_path))
             if patterns_displayed_meta is not None and patterns_total_meta is not None:
                 num_patterns_displayed = patterns_displayed_meta
                 num_patterns_total = patterns_total_meta
@@ -953,8 +964,14 @@ def create_rhythm_histograms_with_medians_and_iqr(
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns_displayed is not None and num_patterns_total is not None:
             if not is_per_snippet:
-                # FlexStart method: always show displayed/total
+                # FlexStart method: always show displayed/total with filtering method
                 title += f' — {num_patterns_displayed}/{num_patterns_total} repetitions'
+                if filtering_method:
+                    # Extract short method name (e.g., "Tukey" or "running mean")
+                    if 'Tukey' in filtering_method:
+                        title += ' (Tukey)'
+                    elif 'running mean' in filtering_method:
+                        title += ' (Running Mean)'
             else:
                 # Per-snippet: show just count
                 title += f' — {num_patterns_displayed} repetitions'

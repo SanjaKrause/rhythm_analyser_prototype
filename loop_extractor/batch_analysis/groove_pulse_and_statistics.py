@@ -154,10 +154,11 @@ def create_groove_pulse_histograms(
         # Calculate number of patterns (displayed vs total for FlexStart methods)
         num_patterns_displayed = None
         num_patterns_total = None
+        filtering_method = None
 
         # For FlexStart filtered CSVs, read metadata from header
         if not is_per_snippet:
-            patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+            patterns_displayed_meta, patterns_total_meta, filtering_method = read_filtered_csv_metadata(str(csv_path))
             if patterns_displayed_meta is not None and patterns_total_meta is not None:
                 num_patterns_displayed = patterns_displayed_meta
                 num_patterns_total = patterns_total_meta
@@ -252,8 +253,14 @@ def create_groove_pulse_histograms(
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns_displayed is not None and num_patterns_total is not None:
             if not is_per_snippet:
-                # FlexStart method: always show displayed/total
+                # FlexStart method: always show displayed/total with filtering method
                 title += f' — {num_patterns_displayed}/{num_patterns_total} repetitions'
+                if filtering_method:
+                    # Extract short method name (e.g., "Tukey" or "running mean")
+                    if 'Tukey' in filtering_method:
+                        title += ' (Tukey)'
+                    elif 'running mean' in filtering_method:
+                        title += ' (Running Mean)'
             else:
                 # Per-snippet: show just count
                 title += f' — {num_patterns_displayed} repetitions'
@@ -359,7 +366,7 @@ def create_groove_pulse_histograms(
     # Save CSV
     if csv_data:
         df_out = pd.DataFrame(csv_data)
-        output_csv = output_dir / f'{track_id}_groove_pulse_histograms.csv'
+        output_csv = output_dir / f'{track_id}_groove_pulse_histograms_filtered.csv'
         df_out.to_csv(output_csv, index=False)
         print(f"    Saved: {output_csv}")
 

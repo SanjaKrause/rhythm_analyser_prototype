@@ -870,6 +870,24 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not create groove pulse histograms: {e}")
 
+                # Calculate aggregate rhythm statistics
+                try:
+                    from batch_analysis import aggregate_statistics_rhythm_hist
+
+                    track_root = paths['comprehensive_csv'].parent.parent
+
+                    aggregate_statistics_rhythm_hist.aggregate_statistics_for_track(
+                        track_root,
+                        track_id
+                    )
+
+                    if verbose:
+                        print(f"  ✓ Aggregate rhythm statistics calculated")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not calculate aggregate rhythm statistics: {e}")
+
     except Exception as e:
         error_msg = f"Step 5.7 failed: {e}"
         results['errors'].append(error_msg)
@@ -962,12 +980,18 @@ def run_complete_pipeline(
                         snippet_offset = 0.0
 
                     snippet_dur = manual_duration if manual_duration is not None else config.CORRECT_BARS_SNIPPET_DURATION_S
+
+                    # Check for groove pulse CSV
+                    groove_pulse_csv = track_dir / '5.5_rhythm' / f'{track_id}_groove_pulse_histograms_filtered.csv'
+                    groove_pulse_csv_str = str(groove_pulse_csv) if groove_pulse_csv.exists() else None
+
                     audio_export.create_audio_examples(
                         str(audio_file),
                         str(paths['comprehensive_csv']),
                         str(paths['audio_examples_dir']),
                         snippet_offset=snippet_offset,
-                        snippet_duration=snippet_dur
+                        snippet_duration=snippet_dur,
+                        groove_pulse_csv=groove_pulse_csv_str
                     )
 
                     results['steps_completed'].append('audio_examples')
