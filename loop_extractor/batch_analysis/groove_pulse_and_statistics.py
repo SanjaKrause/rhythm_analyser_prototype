@@ -243,7 +243,12 @@ def create_groove_pulse_histograms(
         # Adjust right y-axis scale to match left axis
         ax2.set_ylim(0, filtered_max_count * 1.2)  # Match padding
 
-        # Build title with pattern count (displayed/total for FlexStart methods)
+        # Calculate statistics for title
+        total_onsets_original = int(np.sum(hist))
+        total_onsets_filtered = int(np.sum(filtered_hist))
+        occupied_positions = int(np.sum(filtered_hist > 0))
+
+        # Build title with pattern count, filtered/total onsets, time signature, and occupied positions
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns_displayed is not None and num_patterns_total is not None:
             if not is_per_snippet:
@@ -252,6 +257,16 @@ def create_groove_pulse_histograms(
             else:
                 # Per-snippet: show just count
                 title += f' — {num_patterns_displayed} repetitions'
+
+        # Add filtered/total onsets count
+        title += f' — {total_onsets_filtered}/{total_onsets_original} Onsets'
+
+        # Add time signature if available
+        if time_signature is not None:
+            title += f' — Time Signature {time_signature}/4'
+
+        # Add occupied positions
+        title += f' — Pos {occupied_positions}/{num_positions}'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -284,34 +299,8 @@ def create_groove_pulse_histograms(
         ax.set_xticks(base_positions)
         ax.tick_params(axis='x', labelsize=7, rotation=90)
 
-        # Calculate statistics
-        total_onsets_original = int(np.sum(hist))
-        total_onsets_filtered = int(np.sum(filtered_hist))
-        occupied_positions = int(np.sum(filtered_hist > 0))
-        max_count_stat = int(filtered_max_count) if filtered_max_count > 0 else 0
+        # Calculate additional statistics for printing
         num_filtered_out = total_onsets_original - total_onsets_filtered
-
-        # Add statistics text box
-        stats_text = f'Original: {total_onsets_original}\n'
-        stats_text += f'Filtered: {total_onsets_filtered}\n'
-        stats_text += f'Removed: {num_filtered_out}\n'
-        stats_text += f'Occupied: {occupied_positions}/{num_positions}\n'
-        stats_text += f'Max: {max_count_stat}\n'
-        stats_text += f'Threshold: {groove_pulse_threshold}'
-
-        if num_patterns_displayed is not None and num_patterns_total is not None:
-            if not is_per_snippet:
-                stats_text += f'\nRepetitions: {num_patterns_displayed}/{num_patterns_total}'
-            else:
-                stats_text += f'\nRepetitions: {num_patterns_displayed}'
-
-        if time_signature is not None:
-            stats_text += f'\nTime Sig: {time_signature}/4'
-
-        ax.text(0.02, 0.97, stats_text,
-                transform=ax.transAxes, fontsize=9,
-                verticalalignment='top', horizontalalignment='left',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
 
         # Only show x-axis label on the bottom plot
         if idx == len(methods) - 1:

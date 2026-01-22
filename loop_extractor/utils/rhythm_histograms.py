@@ -943,9 +943,13 @@ def create_rhythm_histograms_with_medians_and_iqr(
         # Add horizontal threshold line at groove_pulse_threshold * max_onset_strength
         threshold_value = groove_pulse_threshold * max_strength
         ax.axhline(y=threshold_value, color='red', linestyle='--',
-                  linewidth=2, alpha=0.7, label=f'Groove Pulse Threshold ({groove_pulse_threshold})')
+                  linewidth=2, alpha=0.7)
 
-        # Build title with pattern count (displayed/total for FlexStart methods)
+        # Calculate statistics for title
+        total_onsets = int(np.sum(hist))
+        occupied_positions = int(np.sum(hist > 0))
+
+        # Build title with pattern count, onsets, time signature, and occupied positions
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
         if num_patterns_displayed is not None and num_patterns_total is not None:
             if not is_per_snippet:
@@ -954,6 +958,16 @@ def create_rhythm_histograms_with_medians_and_iqr(
             else:
                 # Per-snippet: show just count
                 title += f' — {num_patterns_displayed} repetitions'
+
+        # Add onsets count
+        title += f' — {total_onsets} Onsets'
+
+        # Add time signature if available
+        if time_signature is not None:
+            title += f' — Time Signature {time_signature}/4'
+
+        # Add occupied positions
+        title += f' — Pos {occupied_positions}/{num_positions}'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -985,33 +999,6 @@ def create_rhythm_histograms_with_medians_and_iqr(
         ax.set_xlim(0, num_positions + 1)
         ax.set_xticks(base_positions)
         ax.tick_params(axis='x', labelsize=7, rotation=90)
-
-        # Add legend
-        ax.legend(loc='upper right', fontsize=8)
-
-        # Calculate statistics
-        total_onsets = int(np.sum(hist))
-        occupied_positions = int(np.sum(hist > 0))
-        max_count = int(np.max(hist)) if total_onsets > 0 else 0
-
-        # Add statistics text box
-        stats_text = f'Total: {total_onsets}\n'
-        stats_text += f'Occupied: {occupied_positions}/{num_positions}\n'
-        stats_text += f'Max: {max_count}'
-
-        if num_patterns_displayed is not None and num_patterns_total is not None:
-            if not is_per_snippet:
-                stats_text += f'\nRepetitions: {num_patterns_displayed}/{num_patterns_total}'
-            else:
-                stats_text += f'\nRepetitions: {num_patterns_displayed}'
-
-        if time_signature is not None:
-            stats_text += f'\nTime Sig: {time_signature}/4'
-
-        ax.text(0.02, 0.97, stats_text,
-                transform=ax.transAxes, fontsize=9,
-                verticalalignment='top', horizontalalignment='left',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black'))
 
         # Only show x-axis label on the bottom plot
         if idx == len(methods) - 1:
