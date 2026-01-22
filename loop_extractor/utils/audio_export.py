@@ -593,7 +593,7 @@ def export_stem_loops(
             print(f"    ⚠️  Filtered CSV not found: {csv_filename}, skipping")
             continue
 
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, comment='#')
 
         # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
         num_16th_notes = pattern_length_bars * 16

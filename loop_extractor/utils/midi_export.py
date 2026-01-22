@@ -571,7 +571,7 @@ def _flexstart_to_midi_onset(
         print(f"  ⚠️  Filtered CSV not found: {csv_filename}, skipping {method}")
         return []
 
-    df_flexstart = pd.read_csv(csv_path)
+    df_flexstart = pd.read_csv(csv_path, comment='#')
 
     # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
     num_16th_notes = pattern_length_bars * 16
@@ -837,7 +837,7 @@ def _flexstart_to_midi_pitch(
         print(f"  ⚠️  Filtered CSV not found: {csv_filename}, skipping {method}")
         return []
 
-    df_flexstart = pd.read_csv(csv_path)
+    df_flexstart = pd.read_csv(csv_path, comment='#')
 
     # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
     num_16th_notes = pattern_length_bars * 16
@@ -1123,7 +1123,7 @@ def flexstart_to_midi(
             print(f"  ⚠️  Filtered CSV not found: {csv_filename}, skipping")
             continue
 
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, comment='#')
 
         # Calculate number of 16th notes (L bars * 16 16th notes per bar in 4/4)
         num_16th_notes = pattern_length_bars * 16

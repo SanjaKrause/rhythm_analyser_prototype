@@ -83,13 +83,24 @@ def filter_loops_by_onset_count(
     df_filtered = df[df['loop_index'].isin(loops_to_keep)].copy()
     df_filtered = df_filtered.drop(columns=['loop_index'])
 
-    # Save filtered CSV
+    # Save filtered CSV with metadata in header
     output_path = Path(output_csv)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    df_filtered.to_csv(output_csv, index=False)
 
-    removed_loops = len(loop_onset_counts) - len(loops_to_keep)
-    print(f"  ✓ Filtered: kept {len(loops_to_keep)}/{len(loop_onset_counts)} loops (removed {removed_loops})")
+    # Calculate statistics
+    total_patterns = len(loop_onset_counts)
+    kept_patterns = len(loops_to_keep)
+    removed_loops = total_patterns - kept_patterns
+
+    # Write metadata as comments, then the CSV data
+    with open(output_csv, 'w') as f:
+        f.write(f"# patterns_displayed={kept_patterns}\n")
+        f.write(f"# patterns_total={total_patterns}\n")
+        f.write(f"# threshold={threshold}\n")
+        # Write the CSV content
+        df_filtered.to_csv(f, index=False)
+
+    print(f"  ✓ Filtered: kept {kept_patterns}/{total_patterns} loops (removed {removed_loops})")
     print(f"    Input:  {len(df)} rows → Output: {len(df_filtered)} rows")
 
     return df_filtered

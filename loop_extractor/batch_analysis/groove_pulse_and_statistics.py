@@ -19,7 +19,7 @@ import os
 
 # Add parent directory to path to import rhythm_histograms
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.rhythm_histograms import extract_phase_statistics_from_csv
+from utils.rhythm_histograms import extract_phase_statistics_from_csv, read_filtered_csv_metadata
 
 
 def create_groove_pulse_histograms(
@@ -151,17 +151,39 @@ def create_groove_pulse_histograms(
         filtered_iqr_16th = np.where(filtered_mask, iqr_16th, np.nan)
         filtered_raw_iqr_phases = np.where(filtered_mask, raw_iqr_phases, np.nan)
 
-        # Calculate number of patterns
-        num_patterns = None
-        try:
-            df_csv = pd.read_csv(csv_path)
-            min_bar = df_csv['bar_number'].min()
-            pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
-            num_patterns = len(pattern_indices.unique())
-        except Exception as e:
-            print(f"    Warning: Could not count patterns for {method_title}: {e}")
-            if not is_per_snippet and loop_key and loop_key in loop_counts:
-                num_patterns = loop_counts[loop_key]
+        # Calculate number of patterns (displayed vs total for FlexStart methods)
+        num_patterns_displayed = None
+        num_patterns_total = None
+
+        # For FlexStart filtered CSVs, read metadata from header
+        if not is_per_snippet:
+            patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+            if patterns_displayed_meta is not None and patterns_total_meta is not None:
+                num_patterns_displayed = patterns_displayed_meta
+                num_patterns_total = patterns_total_meta
+            else:
+                # Fallback: count from CSV and use loop_counts for total
+                try:
+                    df_csv = pd.read_csv(csv_path, comment='#')
+                    min_bar = df_csv['bar_number'].min()
+                    pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                    num_patterns_displayed = len(pattern_indices.unique())
+                    num_patterns_total = loop_counts.get(loop_key) if loop_key and loop_key in loop_counts else num_patterns_displayed
+                except Exception as e:
+                    print(f"    Warning: Could not count patterns for {method_title}: {e}")
+                    if loop_key and loop_key in loop_counts:
+                        num_patterns_displayed = loop_counts[loop_key]
+                        num_patterns_total = loop_counts[loop_key]
+        else:
+            # Per-snippet: no filtering, displayed = total
+            try:
+                df_csv = pd.read_csv(csv_path, comment='#')
+                min_bar = df_csv['bar_number'].min()
+                pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                num_patterns_displayed = len(pattern_indices.unique())
+                num_patterns_total = num_patterns_displayed
+            except Exception as e:
+                print(f"    Warning: Could not count patterns for {method_title}: {e}")
 
         # X-axis: base positions (1-based)
         base_positions = np.arange(1, num_positions + 1)
@@ -221,10 +243,15 @@ def create_groove_pulse_histograms(
         # Adjust right y-axis scale to match left axis
         ax2.set_ylim(0, filtered_max_count * 1.2)  # Match padding
 
-        # Build title with pattern count
+        # Build title with pattern count (displayed/total for FlexStart methods)
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
-        if num_patterns is not None:
-            title += f' — {num_patterns} repetitions'
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                # FlexStart method: always show displayed/total
+                title += f' — {num_patterns_displayed}/{num_patterns_total} repetitions'
+            else:
+                # Per-snippet: show just count
+                title += f' — {num_patterns_displayed} repetitions'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -272,8 +299,11 @@ def create_groove_pulse_histograms(
         stats_text += f'Max: {max_count_stat}\n'
         stats_text += f'Threshold: {groove_pulse_threshold}'
 
-        if num_patterns is not None:
-            stats_text += f'\nRepetitions: {num_patterns}'
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                stats_text += f'\nRepetitions: {num_patterns_displayed}/{num_patterns_total}'
+            else:
+                stats_text += f'\nRepetitions: {num_patterns_displayed}'
 
         if time_signature is not None:
             stats_text += f'\nTime Sig: {time_signature}/4'
@@ -287,7 +317,13 @@ def create_groove_pulse_histograms(
         if idx == len(methods) - 1:
             ax.set_xlabel('16th-note position within pattern', fontsize=10, fontweight='bold')
 
-        pattern_info = f", {num_patterns} repetitions" if num_patterns is not None else ""
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                pattern_info = f", {num_patterns_displayed}/{num_patterns_total} repetitions"
+            else:
+                pattern_info = f", {num_patterns_displayed} repetitions"
+        else:
+            pattern_info = ""
         print(f"    {method_title}: {total_onsets_filtered}/{total_onsets_original} onsets (removed {num_filtered_out}), {occupied_positions}/{num_positions} positions{pattern_info}")
 
         # Store CSV data
@@ -303,7 +339,8 @@ def create_groove_pulse_histograms(
             csv_data.append({
                 'method': method_title,
                 'pattern_length': pattern_length,
-                'num_patterns': num_patterns,
+                'num_patterns_displayed': num_patterns_displayed,
+                'num_patterns_total': num_patterns_total,
                 'position': pos_idx + 1,  # 1-based
                 'count_original': int(hist[pos_idx]),
                 'count_filtered': int(filtered_hist[pos_idx]),

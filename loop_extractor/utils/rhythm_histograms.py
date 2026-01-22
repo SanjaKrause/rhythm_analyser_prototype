@@ -12,7 +12,40 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
+
+
+def read_filtered_csv_metadata(csv_path: str) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Read metadata from filtered FlexStart CSV header.
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to filtered CSV file
+
+    Returns
+    -------
+    tuple
+        (patterns_displayed, patterns_total) or (None, None) if not found
+    """
+    try:
+        with open(csv_path, 'r') as f:
+            patterns_displayed = None
+            patterns_total = None
+
+            # Read first few lines looking for metadata
+            for i, line in enumerate(f):
+                if i > 10:  # Stop after 10 lines
+                    break
+                if line.startswith('# patterns_displayed='):
+                    patterns_displayed = int(line.split('=')[1].strip())
+                elif line.startswith('# patterns_total='):
+                    patterns_total = int(line.split('=')[1].strip())
+
+            return patterns_displayed, patterns_total
+    except Exception:
+        return None, None
 
 
 def extract_rhythm_histogram(
@@ -281,7 +314,7 @@ def extract_rhythm_histogram_from_flexstart_csv(
         Histogram counts for each 16th-note position (length: pattern_length * 16)
     """
     try:
-        df = pd.read_csv(flexstart_csv)
+        df = pd.read_csv(flexstart_csv, comment='#')
 
         # Filter to rows with actual onsets (non-null onset_time)
         df_onsets = df[df['onset_time'].notna()].copy()
@@ -402,20 +435,39 @@ def create_rhythm_histograms_with_style(
         total_counts = np.sum(hist)
         onset_strength = hist / total_counts if total_counts > 0 else hist
 
-        # Calculate number of patterns used
-        # For both Per-Snippet and FlexStart: read CSV and count unique patterns based on bar_number modulo pattern_length
-        # This is more reliable than relying on loop_counts which may not always be available
-        num_patterns = None
-        try:
-            df_csv = pd.read_csv(csv_path)
-            min_bar = df_csv['bar_number'].min()
-            pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
-            num_patterns = len(pattern_indices.unique())
-        except Exception as e:
-            print(f"    Warning: Could not count patterns for {method_title}: {e}")
-            # Fallback to loop_counts for FlexStart methods if CSV reading fails
-            if not is_per_snippet and loop_key and loop_key in loop_counts:
-                num_patterns = loop_counts[loop_key]
+        # Calculate number of patterns (displayed vs total for FlexStart methods)
+        num_patterns_displayed = None
+        num_patterns_total = None
+
+        # For FlexStart filtered CSVs, read metadata from header
+        if not is_per_snippet:
+            patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+            if patterns_displayed_meta is not None and patterns_total_meta is not None:
+                num_patterns_displayed = patterns_displayed_meta
+                num_patterns_total = patterns_total_meta
+            else:
+                # Fallback: count from CSV and use loop_counts for total
+                try:
+                    df_csv = pd.read_csv(csv_path, comment='#')
+                    min_bar = df_csv['bar_number'].min()
+                    pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                    num_patterns_displayed = len(pattern_indices.unique())
+                    num_patterns_total = loop_counts.get(loop_key) if loop_key and loop_key in loop_counts else num_patterns_displayed
+                except Exception as e:
+                    print(f"    Warning: Could not count patterns for {method_title}: {e}")
+                    if loop_key and loop_key in loop_counts:
+                        num_patterns_displayed = loop_counts[loop_key]
+                        num_patterns_total = loop_counts[loop_key]
+        else:
+            # Per-snippet: no filtering, displayed = total
+            try:
+                df_csv = pd.read_csv(csv_path, comment='#')
+                min_bar = df_csv['bar_number'].min()
+                pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                num_patterns_displayed = len(pattern_indices.unique())
+                num_patterns_total = num_patterns_displayed
+            except Exception as e:
+                print(f"    Warning: Could not count patterns for {method_title}: {e}")
 
         # X-axis: 16th-note positions (1-based for display)
         positions = np.arange(1, num_positions + 1)
@@ -437,10 +489,15 @@ def create_rhythm_histograms_with_style(
         max_count = np.max(hist) if total_counts > 0 else 1.0
         ax2.set_ylim(0, max_count * 1.1)  # Add 10% padding
 
-        # Build title with pattern count
+        # Build title with pattern count (displayed/total for FlexStart methods)
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
-        if num_patterns is not None:
-            title += f' — {num_patterns} repetitions'
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                # FlexStart method: always show displayed/total
+                title += f' — {num_patterns_displayed}/{num_patterns_total} repetitions'
+            else:
+                # Per-snippet: show just count
+                title += f' — {num_patterns_displayed} repetitions'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -483,8 +540,11 @@ def create_rhythm_histograms_with_style(
         stats_text += f'Occupied: {occupied_positions}/{num_positions}\n'
         stats_text += f'Max: {max_count}'
 
-        if num_patterns is not None:
-            stats_text += f'\nRepetitions: {num_patterns}'
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                stats_text += f'\nRepetitions: {num_patterns_displayed}/{num_patterns_total}'
+            else:
+                stats_text += f'\nRepetitions: {num_patterns_displayed}'
 
         ax.text(0.98, 0.97, stats_text,
                 transform=ax.transAxes, fontsize=9,
@@ -495,7 +555,13 @@ def create_rhythm_histograms_with_style(
         if idx == len(methods) - 1:
             ax.set_xlabel('16th-note position within pattern', fontsize=10, fontweight='bold')
 
-        pattern_info = f", {num_patterns} repetitions" if num_patterns is not None else ""
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                pattern_info = f", {num_patterns_displayed}/{num_patterns_total} repetitions"
+            else:
+                pattern_info = f", {num_patterns_displayed} repetitions"
+        else:
+            pattern_info = ""
         print(f"    {method_title}: {total_onsets} onsets, {occupied_positions}/{num_positions} positions{pattern_info}")
 
     plt.tight_layout()
@@ -520,18 +586,30 @@ def create_rhythm_histograms_with_style(
             hist = extract_rhythm_histogram_from_flexstart_csv(str(csv_path), pattern_length)
             num_positions = pattern_length * 16
 
-            # Calculate number of patterns
-            num_patterns = None
+            # Calculate number of patterns (displayed/total)
+            num_patterns_displayed = None
+            num_patterns_total = None
+
             if is_per_snippet:
+                # Per-snippet: no filtering, displayed = total
                 try:
-                    df_csv = pd.read_csv(csv_path)
+                    df_csv = pd.read_csv(csv_path, comment='#')
                     min_bar = df_csv['bar_number'].min()
                     pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
-                    num_patterns = len(pattern_indices.unique())
+                    num_patterns_displayed = len(pattern_indices.unique())
+                    num_patterns_total = num_patterns_displayed
                 except Exception:
                     pass
             else:
-                num_patterns = loop_counts.get(loop_key, None) if loop_key else None
+                # FlexStart: try to read metadata from filtered CSV
+                patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+                if patterns_displayed_meta is not None and patterns_total_meta is not None:
+                    num_patterns_displayed = patterns_displayed_meta
+                    num_patterns_total = patterns_total_meta
+                else:
+                    # Fallback: use loop_counts
+                    num_patterns_displayed = loop_counts.get(loop_key, None) if loop_key else None
+                    num_patterns_total = num_patterns_displayed
 
             # Calculate onset strength
             total_counts = np.sum(hist)
@@ -541,7 +619,8 @@ def create_rhythm_histograms_with_style(
                 csv_data.append({
                     'method': method_title,
                     'pattern_length': pattern_length,
-                    'num_patterns': num_patterns,
+                    'num_patterns_displayed': num_patterns_displayed,
+                    'num_patterns_total': num_patterns_total,
                     'position': pos_idx + 1,  # 1-based
                     'count': int(hist[pos_idx]),
                     'onset_strength': float(onset_strength[pos_idx])
@@ -589,7 +668,7 @@ def extract_phase_statistics_from_csv(
         - raw_iqr_phases: raw IQR in phase units (0.0-1.0, no transformations)
     """
     try:
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, comment='#')
 
         # Filter to rows with actual onsets (non-null phase in the specified column)
         df_onsets = df[df[phase_column].notna()].copy()
@@ -758,17 +837,39 @@ def create_rhythm_histograms_with_medians_and_iqr(
         max_count = np.max(hist)
         onset_strength = hist / max_count if max_count > 0 else hist
 
-        # Calculate number of patterns
-        num_patterns = None
-        try:
-            df_csv = pd.read_csv(csv_path)
-            min_bar = df_csv['bar_number'].min()
-            pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
-            num_patterns = len(pattern_indices.unique())
-        except Exception as e:
-            print(f"    Warning: Could not count patterns for {method_title}: {e}")
-            if not is_per_snippet and loop_key and loop_key in loop_counts:
-                num_patterns = loop_counts[loop_key]
+        # Calculate number of patterns (displayed vs total for FlexStart methods)
+        num_patterns_displayed = None
+        num_patterns_total = None
+
+        # For FlexStart filtered CSVs, read metadata from header
+        if not is_per_snippet:
+            patterns_displayed_meta, patterns_total_meta = read_filtered_csv_metadata(str(csv_path))
+            if patterns_displayed_meta is not None and patterns_total_meta is not None:
+                num_patterns_displayed = patterns_displayed_meta
+                num_patterns_total = patterns_total_meta
+            else:
+                # Fallback: count from CSV and use loop_counts for total
+                try:
+                    df_csv = pd.read_csv(csv_path, comment='#')
+                    min_bar = df_csv['bar_number'].min()
+                    pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                    num_patterns_displayed = len(pattern_indices.unique())
+                    num_patterns_total = loop_counts.get(loop_key) if loop_key and loop_key in loop_counts else num_patterns_displayed
+                except Exception as e:
+                    print(f"    Warning: Could not count patterns for {method_title}: {e}")
+                    if loop_key and loop_key in loop_counts:
+                        num_patterns_displayed = loop_counts[loop_key]
+                        num_patterns_total = loop_counts[loop_key]
+        else:
+            # Per-snippet: no filtering, displayed = total
+            try:
+                df_csv = pd.read_csv(csv_path, comment='#')
+                min_bar = df_csv['bar_number'].min()
+                pattern_indices = (df_csv['bar_number'] - min_bar) // pattern_length
+                num_patterns_displayed = len(pattern_indices.unique())
+                num_patterns_total = num_patterns_displayed
+            except Exception as e:
+                print(f"    Warning: Could not count patterns for {method_title}: {e}")
 
         # X-axis: base positions (1-based)
         base_positions = np.arange(1, num_positions + 1)
@@ -844,10 +945,15 @@ def create_rhythm_histograms_with_medians_and_iqr(
         ax.axhline(y=threshold_value, color='red', linestyle='--',
                   linewidth=2, alpha=0.7, label=f'Groove Pulse Threshold ({groove_pulse_threshold})')
 
-        # Build title with pattern count
+        # Build title with pattern count (displayed/total for FlexStart methods)
         title = f'{method_title} (L={pattern_length}, {num_positions} positions)'
-        if num_patterns is not None:
-            title += f' — {num_patterns} repetitions'
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                # FlexStart method: always show displayed/total
+                title += f' — {num_patterns_displayed}/{num_patterns_total} repetitions'
+            else:
+                # Per-snippet: show just count
+                title += f' — {num_patterns_displayed} repetitions'
 
         ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
@@ -893,8 +999,11 @@ def create_rhythm_histograms_with_medians_and_iqr(
         stats_text += f'Occupied: {occupied_positions}/{num_positions}\n'
         stats_text += f'Max: {max_count}'
 
-        if num_patterns is not None:
-            stats_text += f'\nRepetitions: {num_patterns}'
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                stats_text += f'\nRepetitions: {num_patterns_displayed}/{num_patterns_total}'
+            else:
+                stats_text += f'\nRepetitions: {num_patterns_displayed}'
 
         if time_signature is not None:
             stats_text += f'\nTime Sig: {time_signature}/4'
@@ -908,7 +1017,13 @@ def create_rhythm_histograms_with_medians_and_iqr(
         if idx == len(methods) - 1:
             ax.set_xlabel('16th-note position within pattern', fontsize=10, fontweight='bold')
 
-        pattern_info = f", {num_patterns} repetitions" if num_patterns is not None else ""
+        if num_patterns_displayed is not None and num_patterns_total is not None:
+            if not is_per_snippet:
+                pattern_info = f", {num_patterns_displayed}/{num_patterns_total} repetitions"
+            else:
+                pattern_info = f", {num_patterns_displayed} repetitions"
+        else:
+            pattern_info = ""
         print(f"    {method_title}: {total_onsets} onsets, {occupied_positions}/{num_positions} positions{pattern_info}")
 
         # Store CSV data
@@ -924,7 +1039,8 @@ def create_rhythm_histograms_with_medians_and_iqr(
             csv_data.append({
                 'method': method_title,
                 'pattern_length': pattern_length,
-                'num_patterns': num_patterns,
+                'num_patterns_displayed': num_patterns_displayed,
+                'num_patterns_total': num_patterns_total,
                 'position': pos_idx + 1,  # 1-based
                 'count': int(hist[pos_idx]),
                 'onset_strength': float(onset_strength[pos_idx]),
