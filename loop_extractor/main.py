@@ -991,7 +991,8 @@ def run_complete_pipeline(
                         str(paths['audio_examples_dir']),
                         snippet_offset=snippet_offset,
                         snippet_duration=snippet_dur,
-                        groove_pulse_csv=groove_pulse_csv_str
+                        groove_pulse_csv=groove_pulse_csv_str,
+                        export_format=export_format
                     )
 
                     results['steps_completed'].append('audio_examples')
