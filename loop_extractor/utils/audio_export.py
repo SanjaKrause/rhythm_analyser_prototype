@@ -322,6 +322,41 @@ def export_audio_to_mp3(
 
 
 # ============================================================================
+# WAV EXPORT
+# ============================================================================
+
+def export_audio_to_wav(
+    audio: np.ndarray,
+    output_path: str,
+    sample_rate: int = 44100
+):
+    """
+    Export audio to WAV file.
+
+    Parameters
+    ----------
+    audio : np.ndarray
+        Audio waveform
+    output_path : str
+        Output WAV file path
+    sample_rate : int
+        Audio sample rate
+
+    Examples
+    --------
+    >>> audio = np.random.randn(88200)
+    >>> export_audio_to_wav(audio, 'output.wav')
+    """
+    import soundfile as sf
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    sf.write(str(output_path), audio, sample_rate)
+    print(f"  ✓ Exported to {output_path}")
+
+
+# ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
@@ -332,7 +367,8 @@ def create_audio_examples(
     snippet_offset: float = 0.0,
     snippet_duration: float = 30.0,
     methods: Optional[List[str]] = None,
-    groove_pulse_csv: Optional[str] = None
+    groove_pulse_csv: Optional[str] = None,
+    export_format: str = 'wav'
 ):
     """
     Create audio examples with click tracks for different correction methods.
@@ -356,6 +392,8 @@ def create_audio_examples(
         '4bar_pattern_flexStart', '2bar_pattern_flexStart', '1bar_pattern_flexStart'])
     groove_pulse_csv : str, optional
         Path to groove pulse filtered CSV for creating groove pulse click tracks
+    export_format : str
+        Export format: 'wav' or 'mp3' (default: 'wav')
 
     Examples
     --------
@@ -425,10 +463,14 @@ def create_audio_examples(
         mixed = mix_audio_with_clicks(audio_snippet, click_track, click_volume_db=0.0)
 
         # Export
-        # Use simple naming: uncorrected.mp3, per_snippet.mp3, 4bar_pattern_flexStart.mp3, etc.
+        # Use simple naming: uncorrected.wav/.mp3, per_snippet.wav/.mp3, etc.
         method_name = method
-        output_file = output_dir / f"{method_name}.mp3"
-        export_audio_to_mp3(mixed, str(output_file), sr)
+        output_file = output_dir / f"{method_name}.{export_format}"
+
+        if export_format == 'mp3':
+            export_audio_to_mp3(mixed, str(output_file), sr)
+        else:
+            export_audio_to_wav(mixed, str(output_file), sr)
 
     # Create groove pulse click tracks if CSV provided
     if groove_pulse_csv and Path(groove_pulse_csv).exists():
@@ -453,32 +495,101 @@ def create_audio_examples(
                     continue
 
                 # Calculate absolute times for groove pulse positions
-                # Grid times are stored in comprehensive CSV, we need to reconstruct them
-                # from bar_number, position, and grid timing
+                # Strategy: Load the filtered flexStart CSV to get timing for all repetitions
 
-                # Load comprehensive CSV to get grid times
-                groove_times = []
-                for _, row in df_filtered.iterrows():
-                    position = int(row['position'])  # 1-based position in pattern
+                # Load the filtered flexStart CSV for this pattern length
+                pattern_csv_name = f'{Path(comprehensive_csv_file).stem}_{pattern_length}bar_flexStart_filtered.csv'
+                pattern_csv_path = Path(comprehensive_csv_file).parent / pattern_csv_name
 
-                    # Find corresponding rows in comprehensive CSV
-                    # Position maps to: bar_in_pattern = (position-1) // 16, tick = (position-1) % 16
+                if not pattern_csv_path.exists():
+                    print(f"    ⚠️  FlexStart CSV not found: {pattern_csv_path.name}, skipping")
+                    continue
+
+                # Read CSV, skipping comment lines (metadata headers starting with #)
+                df_pattern = pd.read_csv(pattern_csv_path, comment='#')
+
+                # Calculate bar_in_pattern from bar_number for the filtered CSV
+                # bar_in_pattern = bar_number % pattern_length (0-indexed position within pattern)
+                min_bar = df_pattern['bar_number'].min()
+                df_pattern['bar_in_pattern'] = (df_pattern['bar_number'] - min_bar) % pattern_length
+
+                # Get groove pulse positions (which positions in the pattern have strong groove)
+                groove_positions = df_filtered['position'].values  # 1-based positions in pattern
+                groove_relative_phases = df_filtered['relative_median_phase'].values  # Relative median phase (in 16th-note units, -1 to +1)
+
+                # Convert positions to bar_in_pattern and tick_16th
+                # Position maps to: bar_in_pattern = (position-1) // 16, tick = (position-1) % 16
+                groove_pattern = []
+                for position, relative_phase in zip(groove_positions, groove_relative_phases):
                     bar_in_pattern = (position - 1) // 16
                     tick_16th = (position - 1) % 16
+                    groove_pattern.append((bar_in_pattern, tick_16th, relative_phase))
 
-                    # Find matching rows in comprehensive CSV for this pattern
-                    matching_rows = df[
-                        (df['bar_in_pattern'] == bar_in_pattern) &
-                        (df['tick_16th'] == tick_16th)
+                # Check reference pattern (first occurrence) to see which positions have onsets
+                # Extract first pattern: bars 0 to pattern_length-1
+                first_pattern = df_pattern[df_pattern['bar_number'] < pattern_length].copy()
+
+                # Build a set of (bar_in_pattern, tick_16th) tuples that have onsets in the reference
+                reference_onsets = set()
+                for _, row in first_pattern.iterrows():
+                    if pd.notna(row.get('onset_time')):
+                        reference_onsets.add((row['bar_number'], row['tick_16th']))
+
+                # Find all matching positions in the filtered flexStart CSV
+                # Strategy: For positions with reference onsets, use grid_time + relative_phase across all repetitions
+                groove_times = []
+                for bar_in_pattern, tick_16th, relative_phase in groove_pattern:
+                    # Check if this position has an onset in the reference pattern
+                    if (bar_in_pattern, tick_16th) not in reference_onsets:
+                        continue  # Skip positions without reference onsets
+
+                    # Find all occurrences of this position across all loop repetitions
+                    # Use modulo to match bar_in_pattern across all repetitions
+                    matching_rows = df_pattern[
+                        (df_pattern['bar_number'] % pattern_length == bar_in_pattern) &
+                        (df_pattern['tick_16th'] == tick_16th)
                     ]
 
-                    if not matching_rows.empty:
-                        # Use the flexStart grid time for this pattern length
-                        col_name = f'grid_time_{pattern_length}bar_pattern_flexStart'
-                        if col_name in df.columns:
-                            grid_time = matching_rows[col_name].values[0]
-                            if not np.isnan(grid_time):
-                                groove_times.append(grid_time - snippet_offset)  # Make relative to snippet
+                    for _, row in matching_rows.iterrows():
+                        # Use grid_time + relative_phase to get groove pulse timing
+                        if 'grid_time' in row and not np.isnan(row['grid_time']):
+                            grid_time = row['grid_time']
+                            current_bar_number = row['bar_number']
+
+                            # Calculate step duration (time between 16th notes)
+                            # Need to find the next 16th-note position
+                            if tick_16th < 15:
+                                # Next position is in the same bar
+                                next_tick = tick_16th + 1
+                                next_bar = current_bar_number
+                            else:
+                                # tick_16th == 15, next position is in the next bar
+                                next_tick = 0
+                                next_bar = current_bar_number + 1
+
+                            # Find the next grid position
+                            next_row = df_pattern[
+                                (df_pattern['bar_number'] == next_bar) &
+                                (df_pattern['tick_16th'] == next_tick)
+                            ]
+
+                            if next_row.empty or 'grid_time' not in next_row.iloc[0] or np.isnan(next_row.iloc[0]['grid_time']):
+                                # Can't find next grid time (probably last bar in snippet), skip this click
+                                continue
+
+                            next_grid_time = next_row.iloc[0]['grid_time']
+                            step_duration = next_grid_time - grid_time
+
+                            # Calculate groove pulse time: grid_time + (relative_phase * step_duration)
+                            # relative_phase is in 16th-note units, so multiply by step_duration to get seconds
+                            groove_pulse_time = grid_time + (relative_phase * step_duration)
+
+                            # Make relative to snippet start
+                            relative_time = groove_pulse_time - snippet_offset
+
+                            # Only include if within snippet bounds
+                            if 0 <= relative_time <= snippet_duration:
+                                groove_times.append(relative_time)
 
                 if not groove_times:
                     print(f"    ⚠️  Could not extract grid times for {method_name}, skipping")
@@ -493,9 +604,14 @@ def create_audio_examples(
                 mixed = mix_audio_with_clicks(audio_snippet, click_track, click_volume_db=0.0)
 
                 # Export
-                output_file = output_dir / f"{method_name}.mp3"
-                export_audio_to_mp3(mixed, str(output_file), sr)
-                print(f"    ✓ Created {method_name}.mp3 ({len(groove_times)} groove pulse positions)")
+                output_file = output_dir / f"{method_name}.{export_format}"
+
+                if export_format == 'mp3':
+                    export_audio_to_mp3(mixed, str(output_file), sr)
+                else:
+                    export_audio_to_wav(mixed, str(output_file), sr)
+
+                print(f"    ✓ Created {method_name}.{export_format} ({len(groove_times)} groove pulse positions)")
 
         except Exception as e:
             print(f"    ⚠️  Could not create groove pulse click tracks: {e}")
@@ -504,8 +620,12 @@ def create_audio_examples(
 
     # Also export original snippet without clicks
     print(f"\n  Exporting original snippet...")
-    output_file = output_dir / "original.mp3"
-    export_audio_to_mp3(audio_snippet, str(output_file), sr)
+    output_file = output_dir / f"original.{export_format}"
+
+    if export_format == 'mp3':
+        export_audio_to_mp3(audio_snippet, str(output_file), sr)
+    else:
+        export_audio_to_wav(audio_snippet, str(output_file), sr)
 
     print(f"\n  ✓ Audio examples created in {output_dir}")
 

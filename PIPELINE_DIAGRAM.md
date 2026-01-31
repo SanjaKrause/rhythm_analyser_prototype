@@ -1243,6 +1243,145 @@ This shows **two levels of filtering**:
 4. **Pattern Validation**: Verify that detected patterns contain meaningful rhythmic content
 5. **Microtiming Studies**: Analyze timing deviations for perceptually important positions only
 
+### Groove Pulse Audio Export
+
+The pipeline generates **groove pulse click tracks** that sonify the filtered groove pulse positions, allowing you to hear the perceptually salient rhythmic skeleton with median timing.
+
+#### Purpose
+
+While standard click tracks mark all grid positions or all detected onsets, groove pulse click tracks focus only on the **strongest rhythmic positions** (those passing the 0.2 threshold) and place clicks at the **median timing** across all repetitions. This provides an audible representation of the core groove pattern.
+
+#### Generation Process
+
+For each FlexStart pattern length (4-bar, 2-bar, 1-bar):
+
+1. **Load Groove Pulse Data**: Read `{track_id}_groove_pulse_histograms_filtered.csv` to identify positions with `onset_strength_filtered > 0` and extract their `relative_median_phase` values
+2. **Load FlexStart Grid Data**: Read `{track_id}_comprehensive_phases_{L}bar_flexStart_filtered.csv` containing grid times for all positions across all repetitions
+3. **Identify Reference Pattern**: Extract the first pattern (bars 0 to L-1) to determine which positions have onsets
+4. **Build Groove Pattern**: For each strong groove position, create clicks across all loop repetitions:
+   - Check if position has onset in reference pattern
+   - For each repetition, get grid_time from flexStart CSV
+   - Calculate step_duration from consecutive grid positions
+   - Apply relative_median_phase to get click time
+5. **Generate Click Track**: Create click sounds at the calculated times
+6. **Mix with Audio**: Combine click track with original audio snippet at 0 dB
+
+#### Implementation Details
+
+**Key Logic** (`audio_export.py`):
+```python
+# 1. Load groove pulse data: positions with strong onsets
+df_filtered = df_groove[
+    (df_groove['method'].str.contains('FlexStart', case=False)) &
+    (df_groove['pattern_length'] == pattern_length) &
+    (df_groove['onset_strength_filtered'] > 0)
+]
+
+groove_positions = df_filtered['position'].values  # 1-based (1-64 for L=4)
+relative_phases = df_filtered['relative_median_phase'].values  # In 16th-note units
+
+# 2. Load flexStart grid data (all repetitions)
+df_pattern = pd.read_csv(f'{track_id}_comprehensive_phases_{pattern_length}bar_flexStart_filtered.csv')
+
+# 3. Identify reference onsets (first pattern only)
+first_pattern = df_pattern[df_pattern['bar_number'] < pattern_length]
+reference_onsets = set()
+for _, row in first_pattern.iterrows():
+    if pd.notna(row['onset_time']):
+        reference_onsets.add((row['bar_number'], row['tick_16th']))
+
+# 4. Build clicks for all repetitions
+for position, relative_phase in zip(groove_positions, relative_phases):
+    bar_in_pattern = (position - 1) // 16  # Which bar (0-3 for L=4)
+    tick_16th = (position - 1) % 16         # Which 16th note (0-15)
+
+    # Skip if no onset in reference pattern
+    if (bar_in_pattern, tick_16th) not in reference_onsets:
+        continue
+
+    # Find all occurrences across repetitions (using modulo)
+    matching_rows = df_pattern[
+        (df_pattern['bar_number'] % pattern_length == bar_in_pattern) &
+        (df_pattern['tick_16th'] == tick_16th)
+    ]
+
+    for _, row in matching_rows:
+        grid_time = row['grid_time']
+        current_bar = row['bar_number']
+
+        # Calculate step_duration from next grid position
+        next_tick = tick_16th + 1 if tick_16th < 15 else 0
+        next_bar = current_bar if tick_16th < 15 else current_bar + 1
+
+        next_row = df_pattern[
+            (df_pattern['bar_number'] == next_bar) &
+            (df_pattern['tick_16th'] == next_tick)
+        ]
+
+        if next_row.empty:
+            continue  # Skip if no next position (last bar)
+
+        step_duration = next_row.iloc[0]['grid_time'] - grid_time
+
+        # Calculate click time: grid_time + (relative_phase × step_duration)
+        click_time = grid_time + (relative_phase * step_duration)
+        groove_times.append(click_time)
+```
+
+#### Output Files
+
+**Location**: `{track_dir}/7_audio_examples/`
+
+**Files Generated**:
+- `groove_pulse_4bar.wav` - Clicks for 4-bar pattern groove positions
+- `groove_pulse_2bar.wav` - Clicks for 2-bar pattern groove positions
+- `groove_pulse_1bar.wav` - Clicks for 1-bar pattern groove positions
+
+Each file contains:
+- Original audio snippet (30 seconds)
+- Click track with clicks only at strong groove positions
+- Clicks placed at median timing (not individual onset times)
+
+#### Key Features
+
+**Reference Pattern Filtering**: Only positions with onsets in the first pattern (reference) are included, ensuring the same groove pattern repeats across all loop cycles
+
+**Relative Median Phase**: Uses `relative_median_phase` from groove pulse CSV (in 16th-note units, e.g., 0.2 = 20% of a 16th note late), not absolute phase
+
+**Adaptive Step Duration**: Calculates step_duration dynamically from consecutive grid positions in the flexStart CSV:
+- For tick 0-14: uses next tick in same bar
+- For tick 15: uses tick 0 in next bar
+- Skips click if next position unavailable (last bar in snippet)
+
+**Tempo-Adaptive Timing**: Each repetition uses its own grid_time (adapts to tempo fluctuations) but applies the same relative_median_phase, maintaining consistent groove feel
+
+**Pattern Repetition**: The groove pattern defined in bars 0 to L-1 repeats for every L-bar cycle throughout the snippet
+
+#### Interpretation
+
+**Comparing Click Tracks**:
+- **Standard clicks** (per_snippet, flexStart): All onsets or all grid positions → full rhythmic detail
+- **Groove pulse clicks**: Only strong positions with median timing → perceptually salient skeleton
+
+**Pattern Length Comparison**:
+- **4-bar**: Fewest clicks, shows only positions strong across all 4 bars
+- **2-bar**: Medium density, shows positions strong in 2-bar phrases
+- **1-bar**: Most clicks, shows positions strong within single bars
+
+**Listening Strategy**:
+1. Listen to `original.wav` to hear the unprocessed audio
+2. Listen to groove pulse click tracks to hear the rhythmic skeleton
+3. Compare across pattern lengths to understand hierarchical groove structure
+4. Note which positions are emphasized as perceptually salient
+
+#### Use Cases
+
+1. **Groove Verification**: Confirm that detected groove positions match perceptual experience
+2. **Pattern Validation**: Verify pattern lengths by hearing which clicks align with musical structure
+3. **Timing Analysis**: Compare median timing (groove pulse) vs individual timings (standard clicks)
+4. **Teaching/Demonstration**: Illustrate rhythmic skeletons for music education or analysis
+5. **Quality Control**: Quickly audit pipeline output by listening to groove structure
+
 ### Parameters
 
 **Configurable in code** (`groove_pulse_and_statistics.py`):
