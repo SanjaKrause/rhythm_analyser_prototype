@@ -478,6 +478,9 @@ def create_audio_examples(
         try:
             df_groove = pd.read_csv(groove_pulse_csv)
 
+            # Collect plot data for all pattern lengths
+            plot_data = []
+
             # Process each FlexStart pattern length
             for pattern_length in [4, 2, 1]:
                 method_name = f'groove_pulse_{pattern_length}bar'
@@ -505,8 +508,37 @@ def create_audio_examples(
                     print(f"    ⚠️  FlexStart CSV not found: {pattern_csv_path.name}, skipping")
                     continue
 
+                # Read metadata from CSV header
+                pattern_start_time = None
+                pattern_end_time = None
+                pattern_start_time_relative = None
+                pattern_end_time_relative = None
+                with open(pattern_csv_path, 'r') as f:
+                    for line in f:
+                        if line.startswith('# pattern_start_time_relative='):
+                            pattern_start_time_relative = float(line.split('=')[1].strip())
+                        elif line.startswith('# pattern_end_time_relative='):
+                            pattern_end_time_relative = float(line.split('=')[1].strip())
+                        elif line.startswith('# pattern_start_time='):
+                            pattern_start_time = float(line.split('=')[1].strip())
+                        elif line.startswith('# pattern_end_time='):
+                            pattern_end_time = float(line.split('=')[1].strip())
+                        elif not line.startswith('#'):
+                            break  # Stop at first data line
+
                 # Read CSV, skipping comment lines (metadata headers starting with #)
                 df_pattern = pd.read_csv(pattern_csv_path, comment='#')
+
+                # Debug: Print boundary times
+                if pattern_start_time_relative is not None and pattern_end_time_relative is not None:
+                    print(f"    Pattern boundaries (from metadata): start={pattern_start_time_relative:.3f}s, end={pattern_end_time_relative:.3f}s (relative)")
+                elif pattern_start_time is not None and pattern_end_time is not None:
+                    # Fallback to calculating from absolute times
+                    pattern_start_time_relative = pattern_start_time - snippet_offset
+                    pattern_end_time_relative = pattern_end_time - snippet_offset
+                    print(f"    Pattern boundaries (calculated): start={pattern_start_time_relative:.3f}s, end={pattern_end_time_relative:.3f}s (relative)")
+                else:
+                    print(f"    ⚠️  Warning: No pattern boundary times found in metadata")
 
                 # Calculate bar_in_pattern from bar_number for the filtered CSV
                 # bar_in_pattern = bar_number % pattern_length (0-indexed position within pattern)
@@ -526,16 +558,26 @@ def create_audio_examples(
                     groove_pattern.append((bar_in_pattern, tick_16th, relative_phase))
 
                 # Check reference pattern (first occurrence) to see which positions have onsets
-                # Extract first pattern: bars 0 to pattern_length-1
-                first_pattern = df_pattern[df_pattern['bar_number'] < pattern_length].copy()
+                # Extract first pattern: bar_in_pattern 0 to pattern_length-1
+                # Note: bar_in_pattern was calculated as (bar_number - min_bar) % pattern_length
+                first_pattern = df_pattern[df_pattern['bar_in_pattern'] < pattern_length].copy()
 
                 # Build a set of (bar_in_pattern, tick_16th) tuples that have onsets in the reference
                 reference_onsets = set()
                 for _, row in first_pattern.iterrows():
                     if pd.notna(row.get('onset_time')):
-                        reference_onsets.add((row['bar_number'], row['tick_16th']))
+                        reference_onsets.add((row['bar_in_pattern'], row['tick_16th']))
 
                 # Find all matching positions in the filtered flexStart CSV
+                # Filter df_pattern to only include complete patterns
+                max_bar = df_pattern['bar_number'].max()
+                min_bar = df_pattern['bar_number'].min()
+                num_complete_patterns = (max_bar - min_bar + 1) // pattern_length
+                last_complete_pattern_bar = min_bar + (num_complete_patterns * pattern_length) - 1
+
+                # Only use bars from complete patterns
+                df_complete = df_pattern[df_pattern['bar_number'] <= last_complete_pattern_bar].copy()
+
                 # Strategy: For positions with reference onsets, use grid_time + relative_phase across all repetitions
                 groove_times = []
                 for bar_in_pattern, tick_16th, relative_phase in groove_pattern:
@@ -543,11 +585,11 @@ def create_audio_examples(
                     if (bar_in_pattern, tick_16th) not in reference_onsets:
                         continue  # Skip positions without reference onsets
 
-                    # Find all occurrences of this position across all loop repetitions
+                    # Find all occurrences of this position across all loop repetitions (only in complete patterns)
                     # Use modulo to match bar_in_pattern across all repetitions
-                    matching_rows = df_pattern[
-                        (df_pattern['bar_number'] % pattern_length == bar_in_pattern) &
-                        (df_pattern['tick_16th'] == tick_16th)
+                    matching_rows = df_complete[
+                        (df_complete['bar_number'] % pattern_length == bar_in_pattern) &
+                        (df_complete['tick_16th'] == tick_16th)
                     ]
 
                     for _, row in matching_rows.iterrows():
@@ -567,10 +609,10 @@ def create_audio_examples(
                                 next_tick = 0
                                 next_bar = current_bar_number + 1
 
-                            # Find the next grid position
-                            next_row = df_pattern[
-                                (df_pattern['bar_number'] == next_bar) &
-                                (df_pattern['tick_16th'] == next_tick)
+                            # Find the next grid position (also from complete patterns only)
+                            next_row = df_complete[
+                                (df_complete['bar_number'] == next_bar) &
+                                (df_complete['tick_16th'] == next_tick)
                             ]
 
                             if next_row.empty or 'grid_time' not in next_row.iloc[0] or np.isnan(next_row.iloc[0]['grid_time']):
@@ -587,6 +629,16 @@ def create_audio_examples(
                             # Make relative to snippet start
                             relative_time = groove_pulse_time - snippet_offset
 
+                            # Only include if within complete pattern boundaries
+                            if pattern_end_time_relative is not None:
+                                if relative_time >= pattern_end_time_relative:
+                                    continue  # Skip clicks at or after the last complete pattern end
+
+                            # Filter by start boundary too
+                            if pattern_start_time_relative is not None:
+                                if relative_time < pattern_start_time_relative:
+                                    continue  # Skip clicks before the first complete pattern start
+
                             # Only include if within snippet bounds
                             if 0 <= relative_time <= snippet_duration:
                                 groove_times.append(relative_time)
@@ -596,6 +648,74 @@ def create_audio_examples(
                     continue
 
                 groove_times = np.array(groove_times)
+                print(f"    Generated {len(groove_times)} clicks within {num_complete_patterns} complete patterns")
+                if len(groove_times) > 0:
+                    print(f"    Click time range: {groove_times.min():.3f}s to {groove_times.max():.3f}s (relative to snippet)")
+                    if pattern_end_time_relative is not None:
+                        clicks_after_end = groove_times[groove_times >= pattern_end_time_relative]
+                        if len(clicks_after_end) > 0:
+                            print(f"    ⚠️  ERROR: {len(clicks_after_end)} clicks still after pattern end {pattern_end_time_relative:.3f}s! Times: {clicks_after_end[:5]}")
+                    if pattern_start_time_relative is not None:
+                        clicks_before_start = groove_times[groove_times < pattern_start_time_relative]
+                        if len(clicks_before_start) > 0:
+                            print(f"    ⚠️  ERROR: {len(clicks_before_start)} clicks before pattern start {pattern_start_time_relative:.3f}s! Times: {clicks_before_start[:5]}")
+
+                # Export groove pulse click timings to CSV
+                csv_output_file = output_dir / f"{method_name}_click_times.csv"
+                df_groove_clicks = pd.DataFrame({
+                    'click_time_relative': groove_times,
+                    'click_time_absolute': groove_times + snippet_offset
+                })
+                df_groove_clicks.to_csv(csv_output_file, index=False)
+                print(f"    ✓ Saved click timings to {csv_output_file.name}")
+
+                # Calculate pattern boundaries (every pattern_length bars) for complete patterns only
+                # Start boundaries only (not the end boundary)
+                pattern_boundaries = []
+                for i in range(num_complete_patterns):  # Only pattern starts, not the end
+                    boundary_bar = min_bar + (i * pattern_length)
+                    boundary_data = df_complete[
+                        (df_complete['bar_number'] == boundary_bar) &
+                        (df_complete['tick_16th'] == 0)
+                    ]
+                    if not boundary_data.empty:
+                        pattern_start = boundary_data['grid_time'].min() - snippet_offset
+                        if 0 <= pattern_start <= snippet_duration:
+                            pattern_boundaries.append(pattern_start)
+
+                # Add the final boundary from metadata (end of last complete pattern)
+                if pattern_end_time_relative is not None:
+                    if 0 <= pattern_end_time_relative <= snippet_duration:
+                        pattern_boundaries.append(pattern_end_time_relative)
+
+                # CRITICAL: Filter groove_times to ONLY include clicks within pattern boundaries
+                if len(pattern_boundaries) >= 2:
+                    start_boundary = pattern_boundaries[0]
+                    end_boundary = pattern_boundaries[-1]
+                    original_count = len(groove_times)
+
+                    # Debug: Check first few clicks
+                    if len(groove_times) > 0:
+                        print(f"    Before boundary filter: first 3 clicks = {groove_times[:3]}")
+                        print(f"    Boundaries: start={start_boundary:.6f}, end={end_boundary:.6f}")
+
+                    # Include clicks at start boundary, exclude clicks at or after end boundary
+                    groove_times = groove_times[(groove_times >= start_boundary) & (groove_times < end_boundary)]
+
+                    if len(groove_times) > 0:
+                        print(f"    After boundary filter: first 3 clicks = {groove_times[:3]}")
+
+                    if original_count != len(groove_times):
+                        print(f"    Filtered clicks to pattern boundaries [{start_boundary:.3f}s, {end_boundary:.3f}s): {original_count} → {len(groove_times)} clicks")
+
+                # Store data for combined plot
+                plot_data.append({
+                    'method_name': method_name,
+                    'pattern_length': pattern_length,
+                    'groove_times': groove_times,
+                    'pattern_boundaries': pattern_boundaries,
+                    'num_complete_patterns': num_complete_patterns
+                })
 
                 # Create click track for groove pulse positions
                 click_track = create_grid_click_track(groove_times, snippet_duration, sr)
@@ -612,6 +732,66 @@ def create_audio_examples(
                     export_audio_to_wav(mixed, str(output_file), sr)
 
                 print(f"    ✓ Created {method_name}.{export_format} ({len(groove_times)} groove pulse positions)")
+
+            # Create combined plot with all 3 subplots
+            if plot_data:
+                import matplotlib.pyplot as plt
+                fig, axes = plt.subplots(3, 1, figsize=(12, 6), sharex=True)
+
+                for idx, data in enumerate(plot_data):
+                    ax = axes[idx]
+                    groove_times = data['groove_times']
+                    pattern_boundaries = data['pattern_boundaries']
+                    pattern_length = data['pattern_length']
+                    method_name = data['method_name']
+                    num_complete_patterns = data['num_complete_patterns']
+
+                    # Plot pattern boundaries as light blue regions
+                    for i in range(len(pattern_boundaries) - 1):
+                        ax.axvspan(pattern_boundaries[i], pattern_boundaries[i + 1],
+                                  alpha=0.15, color='blue', zorder=0)
+
+                    # Plot ALL pattern boundaries (start and end) - more visible
+                    for i, boundary in enumerate(pattern_boundaries):
+                        if i == 0:
+                            label = 'Pattern boundaries'
+                        else:
+                            label = None
+                        ax.axvline(boundary, color='black', linewidth=2, linestyle='--',
+                                  alpha=0.9, label=label, zorder=1)
+
+                    # Debug: Check if any clicks are outside pattern boundaries
+                    if len(pattern_boundaries) > 0:
+                        last_boundary = pattern_boundaries[-1]
+                        clicks_after = groove_times[groove_times > last_boundary]
+                        if len(clicks_after) > 0:
+                            print(f"    ⚠️  PLOT WARNING for {method_name}: {len(clicks_after)} clicks after last boundary {last_boundary:.3f}s")
+                            print(f"       Click times: {clicks_after[:10]}")
+
+                    # Plot clicks as vertical lines
+                    ax.vlines(groove_times, 0, 1, colors='red', linewidth=2, alpha=0.7,
+                             label='Groove pulse clicks', zorder=2)
+
+                    # Formatting
+                    ax.set_xlim(0, snippet_duration)
+                    ax.set_ylim(0, 1)
+                    ax.set_yticks([])
+                    ax.set_title(f'{method_name} ({len(groove_times)} clicks, L={pattern_length}, {num_complete_patterns} patterns)',
+                                fontsize=10, fontweight='bold')
+                    ax.grid(True, axis='x', alpha=0.3)
+                    if idx == 0:
+                        ax.legend(loc='upper right', fontsize=8)
+
+                # Only show x-label on bottom subplot
+                axes[-1].set_xlabel('Time (seconds)', fontsize=10)
+
+                plt.tight_layout()
+
+                # Save combined plot
+                plot_output_file = output_dir / "groove_pulse_click_times.png"
+                plt.savefig(plot_output_file, dpi=150, bbox_inches='tight')
+                plt.close()
+                print(f"\n    ✓ Saved combined click timing plot to {plot_output_file.name}")
 
         except Exception as e:
             print(f"    ⚠️  Could not create groove pulse click tracks: {e}")

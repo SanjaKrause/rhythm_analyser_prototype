@@ -17,7 +17,8 @@ def filter_loops_by_onset_count_tukey(
     pattern_len: int,
     iqr_multiplier: float = 1.5,
     threshold: float = 0.5,
-    no_of_repetitions_TH: int = 2
+    no_of_repetitions_TH: int = 2,
+    snippet_offset: float = None
 ) -> pd.DataFrame:
     """
     Filter loops using hybrid approach based on pattern count.
@@ -61,7 +62,7 @@ def filter_loops_by_onset_count_tukey(
     pd.DataFrame
         Filtered dataframe with 'pattern_removed' column
     """
-    df = pd.read_csv(input_csv)
+    df = pd.read_csv(input_csv, comment='#')
 
     # Calculate loop index (which loop each row belongs to)
     min_bar = df['bar_number'].min()
@@ -152,11 +153,48 @@ def filter_loops_by_onset_count_tukey(
     # Get removed pattern indices for metadata
     removed_indices = sorted(list(loops_to_remove))
 
+    # Calculate pattern boundary times (first and last complete pattern)
+    if not df_filtered.empty and 'grid_time' in df_filtered.columns:
+        # Find the first and last complete pattern boundaries
+        min_bar = df_filtered['bar_number'].min()
+        max_bar = df_filtered['bar_number'].max()
+        num_complete_patterns = (max_bar - min_bar + 1) // pattern_len
+        last_complete_pattern_bar = min_bar + (num_complete_patterns * pattern_len) - 1
+
+        # Get start time of first pattern (first bar, tick_16th=0)
+        first_pattern_start = df_filtered[
+            (df_filtered['bar_number'] == min_bar) &
+            (df_filtered['tick_16th'] == 0)
+        ]
+        pattern_start_time = first_pattern_start['grid_time'].min() if not first_pattern_start.empty else None
+
+        # Get end time of last complete pattern (next bar after last complete pattern, tick_16th=0)
+        next_bar_after_last = last_complete_pattern_bar + 1
+        next_bar_start = df_filtered[
+            (df_filtered['bar_number'] == next_bar_after_last) &
+            (df_filtered['tick_16th'] == 0)
+        ]
+        if not next_bar_start.empty:
+            pattern_end_time = next_bar_start['grid_time'].min()
+        else:
+            # If no next bar, use the max grid_time from last complete pattern bar
+            last_complete_bar_data = df_filtered[df_filtered['bar_number'] == last_complete_pattern_bar]
+            pattern_end_time = last_complete_bar_data['grid_time'].max() if not last_complete_bar_data.empty else None
+    else:
+        pattern_start_time = None
+        pattern_end_time = None
+
     # Write metadata as comments, then the CSV data
     with open(output_csv, 'w') as f:
         f.write(f"# filtering_method={filtering_method}\n")
         f.write(f"# patterns_displayed={kept_patterns}\n")
         f.write(f"# patterns_total={total_patterns}\n")
+        if pattern_start_time is not None and pattern_end_time is not None:
+            f.write(f"# pattern_start_time={pattern_start_time:.6f}\n")
+            f.write(f"# pattern_end_time={pattern_end_time:.6f}\n")
+            if snippet_offset is not None:
+                f.write(f"# pattern_start_time_relative={pattern_start_time - snippet_offset:.6f}\n")
+                f.write(f"# pattern_end_time_relative={pattern_end_time - snippet_offset:.6f}\n")
         if total_patterns <= no_of_repetitions_TH:
             # Running mean method metadata
             f.write(f"# threshold={threshold}\n")
@@ -194,7 +232,8 @@ def filter_all_flexstart_patterns(
     base_name: str,
     iqr_multiplier: float = 1.5,
     threshold: float = 0.5,
-    no_of_repetitions_TH: int = 2
+    no_of_repetitions_TH: int = 2,
+    snippet_offset: float = None
 ):
     """
     Filter all three flexStart pattern CSVs (4bar, 2bar, 1bar) using hybrid filtering.
@@ -238,7 +277,8 @@ def filter_all_flexstart_patterns(
             pattern_len,
             iqr_multiplier,
             threshold,
-            no_of_repetitions_TH
+            no_of_repetitions_TH,
+            snippet_offset
         )
 
 

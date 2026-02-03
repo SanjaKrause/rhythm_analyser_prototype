@@ -1922,6 +1922,7 @@ def create_raster_csv(
         output_path.parent,
         output_path.stem,
         first_bar,
+        snippet_offset,
         flexStart_4bar_ref_bar=flexStart_ref_bar,
         flexStart_2bar_ref_bar=flexStart_2bar_ref_bar,
         flexStart_1bar_ref_bar=flexStart_1bar_ref_bar
@@ -1936,7 +1937,8 @@ def create_raster_csv(
             output_path.stem,
             iqr_multiplier=IQR_MULTIPLIER_TUKEY,
             threshold=RUNNING_MEAN_THRESHOLD,
-            no_of_repetitions_TH=NO_OF_REPETITIONS_TH
+            no_of_repetitions_TH=NO_OF_REPETITIONS_TH,
+            snippet_offset=snippet_offset
         )
     except Exception as e:
         print(f"  ! Warning: Could not create filtered CSVs: {e}")
@@ -1949,6 +1951,7 @@ def create_flexstart_patterns_csv(
     output_dir: Path,
     base_name: str,
     first_bar: int,
+    snippet_offset: float,
     flexStart_4bar_ref_bar: int = None,
     flexStart_2bar_ref_bar: int = None,
     flexStart_1bar_ref_bar: int = None
@@ -1979,16 +1982,40 @@ def create_flexstart_patterns_csv(
     # Add global bar number column
     df['bar_number_global'] = df['bar_number'] + first_bar
 
+    # Calculate snippet boundaries
+    snippet_end = snippet_offset + SNIPPET_DURATION_S
+
     # 4-bar pattern flexStart
     if flexStart_4bar_ref_bar is not None:
         ref_bar_snippet = flexStart_4bar_ref_bar - first_bar
         max_bar = df['bar_number'].max()
         last_complete_4bar = ref_bar_snippet + ((max_bar - ref_bar_snippet) // 4) * 4 + 3
 
-        df_4bar = df[
+        # Filter to complete patterns that are entirely within snippet bounds
+        df_4bar_temp = df[
             (df['bar_number'] >= ref_bar_snippet) &
             (df['bar_number'] <= last_complete_4bar)
         ].copy()
+
+        # Further filter to only include patterns within snippet time bounds
+        # A pattern is included only if all its bars are within [snippet_offset, snippet_end]
+        if not df_4bar_temp.empty and 'grid_time_4bar_pattern_flexStart' in df_4bar_temp.columns:
+            # Find the last bar whose end is within snippet bounds
+            # Check each 4-bar pattern and only include it if it ends before snippet_end
+            valid_bars = []
+            for pattern_start_bar in range(ref_bar_snippet, last_complete_4bar + 1, 4):
+                pattern_end_bar = pattern_start_bar + 3
+                # Get the last grid position in the pattern end bar
+                pattern_last_row = df_4bar_temp[df_4bar_temp['bar_number'] == pattern_end_bar]
+                if not pattern_last_row.empty:
+                    pattern_end_time = pattern_last_row['grid_time_4bar_pattern_flexStart'].max()
+                    if pattern_end_time <= snippet_end:
+                        # This pattern fits entirely within snippet
+                        valid_bars.extend(range(pattern_start_bar, pattern_end_bar + 1))
+
+            df_4bar = df_4bar_temp[df_4bar_temp['bar_number'].isin(valid_bars)].copy()
+        else:
+            df_4bar = df_4bar_temp
 
         # Select columns
         df_4bar = df_4bar[[
@@ -2005,9 +2032,13 @@ def create_flexstart_patterns_csv(
             'grid_time_4bar_pattern_flexStart': 'grid_time'
         })
 
-        # Save to CSV
+        # Save to CSV with metadata
         output_file = output_dir / f"{base_name}_4bar_flexStart.csv"
-        df_4bar.to_csv(output_file, index=False)
+        snippet_end = snippet_offset + SNIPPET_DURATION_S
+        with open(output_file, 'w') as f:
+            f.write(f"# snippet_offset={snippet_offset:.6f}\n")
+            f.write(f"# snippet_end={snippet_end:.6f}\n")
+            df_4bar.to_csv(f, index=False)
         print(f"    ✓ 4-bar flexStart: {len(df_4bar)} rows → {output_file.name}")
 
     # 2-bar pattern flexStart
@@ -2016,10 +2047,26 @@ def create_flexstart_patterns_csv(
         max_bar = df['bar_number'].max()
         last_complete_2bar = ref_bar_snippet + ((max_bar - ref_bar_snippet) // 2) * 2 + 1
 
-        df_2bar = df[
+        # Filter to complete patterns that are entirely within snippet bounds
+        df_2bar_temp = df[
             (df['bar_number'] >= ref_bar_snippet) &
             (df['bar_number'] <= last_complete_2bar)
         ].copy()
+
+        # Further filter to only include patterns within snippet time bounds
+        if not df_2bar_temp.empty and 'grid_time_2bar_pattern_flexStart' in df_2bar_temp.columns:
+            valid_bars = []
+            for pattern_start_bar in range(ref_bar_snippet, last_complete_2bar + 1, 2):
+                pattern_end_bar = pattern_start_bar + 1
+                pattern_last_row = df_2bar_temp[df_2bar_temp['bar_number'] == pattern_end_bar]
+                if not pattern_last_row.empty:
+                    pattern_end_time = pattern_last_row['grid_time_2bar_pattern_flexStart'].max()
+                    if pattern_end_time <= snippet_end:
+                        valid_bars.extend(range(pattern_start_bar, pattern_end_bar + 1))
+
+            df_2bar = df_2bar_temp[df_2bar_temp['bar_number'].isin(valid_bars)].copy()
+        else:
+            df_2bar = df_2bar_temp
 
         df_2bar = df_2bar[[
             'bar_number',
@@ -2036,14 +2083,33 @@ def create_flexstart_patterns_csv(
         })
 
         output_file = output_dir / f"{base_name}_2bar_flexStart.csv"
-        df_2bar.to_csv(output_file, index=False)
+        snippet_end = snippet_offset + SNIPPET_DURATION_S
+        with open(output_file, 'w') as f:
+            f.write(f"# snippet_offset={snippet_offset:.6f}\n")
+            f.write(f"# snippet_end={snippet_end:.6f}\n")
+            df_2bar.to_csv(f, index=False)
         print(f"    ✓ 2-bar flexStart: {len(df_2bar)} rows → {output_file.name}")
 
     # 1-bar pattern flexStart
     if flexStart_1bar_ref_bar is not None:
         ref_bar_snippet = flexStart_1bar_ref_bar - first_bar
 
-        df_1bar = df[df['bar_number'] >= ref_bar_snippet].copy()
+        # Filter to patterns that are entirely within snippet bounds
+        df_1bar_temp = df[df['bar_number'] >= ref_bar_snippet].copy()
+
+        # Further filter to only include bars within snippet time bounds
+        if not df_1bar_temp.empty and 'grid_time_1bar_pattern_flexStart' in df_1bar_temp.columns:
+            valid_bars = []
+            for bar in df_1bar_temp['bar_number'].unique():
+                bar_last_row = df_1bar_temp[df_1bar_temp['bar_number'] == bar]
+                if not bar_last_row.empty:
+                    bar_end_time = bar_last_row['grid_time_1bar_pattern_flexStart'].max()
+                    if bar_end_time <= snippet_end:
+                        valid_bars.append(bar)
+
+            df_1bar = df_1bar_temp[df_1bar_temp['bar_number'].isin(valid_bars)].copy()
+        else:
+            df_1bar = df_1bar_temp
 
         df_1bar = df_1bar[[
             'bar_number',
@@ -2060,7 +2126,11 @@ def create_flexstart_patterns_csv(
         })
 
         output_file = output_dir / f"{base_name}_1bar_flexStart.csv"
-        df_1bar.to_csv(output_file, index=False)
+        snippet_end = snippet_offset + SNIPPET_DURATION_S
+        with open(output_file, 'w') as f:
+            f.write(f"# snippet_offset={snippet_offset:.6f}\n")
+            f.write(f"# snippet_end={snippet_end:.6f}\n")
+            df_1bar.to_csv(f, index=False)
         print(f"    ✓ 1-bar flexStart: {len(df_1bar)} rows → {output_file.name}")
 
 
