@@ -699,8 +699,10 @@ def create_audio_examples(
                         print(f"    Before boundary filter: first 3 clicks = {groove_times[:3]}")
                         print(f"    Boundaries: start={start_boundary:.6f}, end={end_boundary:.6f}")
 
-                    # Include clicks at start boundary, exclude clicks at or after end boundary
-                    groove_times = groove_times[(groove_times >= start_boundary) & (groove_times < end_boundary)]
+                    # Include clicks at start boundary (with small tolerance for negative phase offsets),
+                    # exclude clicks at or after end boundary
+                    epsilon = 0.001  # 1ms tolerance for rounding errors and negative phase offsets
+                    groove_times = groove_times[(groove_times >= start_boundary - epsilon) & (groove_times < end_boundary)]
 
                     if len(groove_times) > 0:
                         print(f"    After boundary filter: first 3 clicks = {groove_times[:3]}")

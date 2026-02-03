@@ -84,6 +84,7 @@ flowchart TD
         G5[Tempo Analysis<br/>8-panel plots + CSV]
         G6[MIDI Export<br/>Onset + Bass Pitch]
         G7[Stem Loops<br/>Perfect loops with crossfade]
+        G8[Rhythm Patterns<br/>Binary patterns from groove pulse]
     end
 
     Analysis --> Final[pipeline_results.json<br/>Complete summary]
@@ -771,6 +772,10 @@ flowchart LR
         A2 --> A3[Mix with Original]
         A3 --> A4[8 MP3 files:<br/>uncorrected, per_snippet,<br/>drum, mel, pitch,<br/>L1, L2, L4]
         A4 --> A5[+ original.mp3]
+
+        A6[Groove Pulse Clicks<br/>filtered positions from flexStart] --> A7[Calculate median phase<br/>per position across patterns]
+        A7 --> A8[Generate click tracks<br/>for 4bar, 2bar, 1bar]
+        A8 --> A9[3 MP3 files + CSVs<br/>+ combined plot PNG]
     end
 
     subgraph Plots["<b>Raster & Microtiming Plots</b>"]
@@ -795,6 +800,11 @@ flowchart LR
         L3 --> L4[7 method folders<br/>× 5 stems each]
     end
 
+    subgraph RhythmPatterns["<b>Rhythm Patterns</b>"]
+        RP1[Read groove pulse CSVs<br/>L=4, L=2, L=1] --> RP2[Apply binary threshold<br/>≥50% → 1.0, <50% → 0.5]
+        RP2 --> RP3[Create 3-subplot histogram<br/>rhythm_patterns.png]
+    end
+
     R4 --> Final
     A5 --> Final
     P4 --> Final
@@ -804,7 +814,8 @@ flowchart LR
     T4 --> Final
     M3 --> Final
     M4 --> Final
-    L4 --> Final[pipeline_results.json<br/>Complete Summary]
+    L4 --> Final
+    RP3 --> Final[pipeline_results.json<br/>Complete Summary]
 
     style RMS fill:#e1f5ff,stroke:#000,color:#000
     style Audio fill:#fff4e1,stroke:#000,color:#000
@@ -1797,4 +1808,64 @@ graph TD
 - Steps 2 and 4 can run in parallel
 - Step 6 produces the most important output: `comprehensive_phases.csv`
 - All correction methods are calculated simultaneously and stored in one CSV
-- Users can compare methods using RMS metrics or by listening to audio examples
+
+---
+
+## TODO
+
+### Groove Pulse Clicks - Boundary Filtering Issue
+
+**Issue:** The end boundary filtering for groove pulse clicks is not working correctly in some cases. The last click sometimes appears after the pattern end boundary in the visualization.
+
+**Current behavior:**
+- `pattern_end_time` is calculated as the grid_time of tick_16th=0 of the bar after the last complete pattern
+- This boundary is used to filter clicks, but some clicks still appear after it in the plot
+
+**Investigation needed:**
+- Check if clicks are being calculated after the last grid position of the last complete pattern bar
+- Verify that the boundary filtering logic (`groove_times < end_boundary`) is being applied correctly
+- Consider whether the end boundary should be the last grid position of the last complete pattern bar, not the first position of the next bar
+
+**Related files:**
+- `loop_extractor/utils/audio_export.py` (lines 691-709): Boundary filtering logic
+- `loop_extractor/analysis/filter_bars_and_onsets.py` (lines 171-182): Pattern end time calculation
+
+---
+
+### Implement Signature Filtering/Correcting
+
+**Task:** Add functionality to filter or correct time signature detection and handling
+
+**Potential improvements:**
+- Validate detected time signatures against common patterns
+- Handle unusual or complex time signatures (e.g., 5/4, 7/8)
+- Implement correction mechanisms for misdetected signatures
+- Add user override options for time signature
+- Improve signature detection accuracy in ambiguous cases
+
+**Files to review:**
+- Time signature detection logic
+- Downbeat correction module
+- Pattern length selection
+
+---
+
+### Code Cleanup and Organization
+
+**Refactor Routines:**
+- Review and consolidate duplicate code across modules
+- Improve function organization and naming consistency
+- Optimize performance bottlenecks
+
+**Clean/Sort Output Data:**
+- Organize output folder structure for better clarity
+- Standardize file naming conventions
+- Add clear metadata to all output files
+- Remove deprecated or redundant output files
+
+**Check Documentation:**
+- Update README files with latest features
+- Verify all docstrings are accurate and complete
+- Update PIPELINE_DIAGRAM.md with any missing steps
+- Ensure TECHNICAL_DETAILS.md is up to date
+- Add usage examples for new features (groove pulse, rhythm patterns)

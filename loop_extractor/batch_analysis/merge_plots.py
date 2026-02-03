@@ -12,6 +12,8 @@ Merges:
 - All rhythm histograms with style into all_rhythm_histograms_with_style.pdf
 - All rhythm histograms with medians and IQR into all_rhythm_histograms_with_medians_and_iqr.pdf
 - All groove pulse histograms into all_groove_pulse_histograms.pdf
+- All groove pulse click tracks into all_groove_pulse_click_tracks.pdf
+- All rhythm patterns into all_rhythm_patterns.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
 
 Usage:
@@ -254,7 +256,55 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 10. Merge new 4-method raster plots (PNG files in 5_grid folder)
+    # 10. Merge groove pulse click track plots (PNG files in 5_grid folder)
+    print('\nLooking for groove pulse click track plots...')
+    groove_click_pngs = []
+    for track_dir in track_dirs:
+        groove_click_png = track_dir / '5_grid' / 'groove_pulse_click_times.png'
+        if groove_click_png.exists():
+            groove_click_pngs.append(groove_click_png)
+            print(f'  Found groove pulse click track: {track_dir.name}')
+
+    if groove_click_pngs:
+        print(f'\nConverting and merging {len(groove_click_pngs)} groove pulse click track PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(groove_click_pngs):
+            temp_pdf = temp_dir / f'groove_click_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_groove_pulse_click_tracks.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 11. Merge rhythm pattern plots (PNG files in 5.5_rhythm folder)
+    print('\nLooking for rhythm pattern plots...')
+    rhythm_pattern_pngs = []
+    for track_dir in track_dirs:
+        rhythm_pattern_png = track_dir / '5.5_rhythm' / f'{track_dir.name}_rhythm_patterns.png'
+        if rhythm_pattern_png.exists():
+            rhythm_pattern_pngs.append(rhythm_pattern_png)
+            print(f'  Found rhythm pattern: {track_dir.name}')
+
+    if rhythm_pattern_pngs:
+        print(f'\nConverting and merging {len(rhythm_pattern_pngs)} rhythm pattern PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(rhythm_pattern_pngs):
+            temp_pdf = temp_dir / f'rhythm_pattern_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_rhythm_patterns.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 12. Merge new 4-method raster plots (PNG files in 5_grid folder)
     print('\nLooking for new 4-method raster plots...')
     raster_4method_pngs = []
     for track_dir in track_dirs:

@@ -870,6 +870,30 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not create groove pulse histograms: {e}")
 
+                # Also create rhythm pattern histograms (binary patterns from groove pulse data)
+                try:
+                    from utils import rhythm_patterns
+
+                    grid_output_dir = paths['comprehensive_csv'].parent
+                    base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
+
+                    pattern_files = rhythm_patterns.create_rhythm_pattern_histograms(
+                        str(grid_output_dir),
+                        base_name,
+                        track_id,
+                        str(rhythm_output_dir)
+                    )
+
+                    if pattern_files:
+                        results['rhythm_pattern_histogram'] = pattern_files.get('rhythm_pattern_histogram')
+
+                    if verbose:
+                        print(f"  ✓ Rhythm pattern histograms created")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not create rhythm pattern histograms: {e}")
+
                 # Calculate aggregate rhythm statistics
                 try:
                     from batch_analysis import aggregate_statistics_rhythm_hist
