@@ -251,6 +251,73 @@ def create_beat_histograms(
             print(f"    Saved: {output_csv.name} ({len(df_pattern)} intervals)")
             output_files[f'L{pattern_length}'] = str(output_csv)
 
+    # Create histogram visualizations
+    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
+    fig.suptitle(f'Beat Histograms (IOI) — {track_id}', fontsize=14, fontweight='bold', y=0.995)
+
+    # Define colors for each pattern length
+    colors = ['#2ECC71', '#F39C12', '#9B59B6']  # Green, Orange, Purple
+
+    # Define IOI categories in ascending order (smallest to largest)
+    category_order = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+
+    for idx, (pattern_length, color) in enumerate(zip(pattern_lengths, colors)):
+        ax = axes[idx]
+        df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
+
+        if df_pattern.empty:
+            ax.text(0.5, 0.5, f'No data for L={pattern_length}',
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.set_title(f'Pattern Length L={pattern_length}', fontsize=11, fontweight='bold')
+            continue
+
+        # Count occurrences of each IOI category
+        category_counts = df_pattern['ioi_category'].value_counts()
+
+        # Ensure all categories are present (even with 0 count)
+        category_counts = category_counts.reindex(category_order, fill_value=0)
+
+        # Create bar plot
+        x_pos = np.arange(len(category_order))
+        bars = ax.bar(x_pos, category_counts.values, color=color, alpha=0.7,
+                     edgecolor='black', linewidth=1.5)
+
+        # Add count labels on top of bars
+        for i, (cat, count) in enumerate(zip(category_order, category_counts.values)):
+            if count > 0:
+                ax.text(i, count, str(int(count)), ha='center', va='bottom',
+                       fontsize=9, fontweight='bold')
+
+        # Formatting
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(category_order, fontsize=10)
+        ax.set_ylabel('Count', fontsize=10, fontweight='bold')
+        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals)',
+                    fontsize=11, fontweight='bold', pad=10)
+        ax.grid(True, alpha=0.3, axis='y')
+        ax.set_ylim(0, max(category_counts.values) * 1.15 if max(category_counts.values) > 0 else 1)
+
+        # Only show x-label on bottom subplot
+        if idx == len(pattern_lengths) - 1:
+            ax.set_xlabel('IOI Category', fontsize=10, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save plot as PDF
+    output_pdf = output_path / f'{track_id}_beat_histograms.pdf'
+    plt.savefig(output_pdf, bbox_inches='tight')
+    print(f"    Saved: {output_pdf.name}")
+
+    # Save plot as PNG
+    output_png = output_path / f'{track_id}_beat_histograms.png'
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    print(f"    Saved: {output_png.name}")
+
+    plt.close()
+
+    output_files['beat_histogram_pdf'] = str(output_pdf)
+    output_files['beat_histogram_png'] = str(output_png)
+
     print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
 
     return output_files
