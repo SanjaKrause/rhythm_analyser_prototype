@@ -54,14 +54,14 @@ def categorize_ioi(ioi_ticks: float) -> str:
     return '1/16'  # Default to smallest
 
 
-def process_bar_based_ioi(
+def process_pattern_based_ioi(
     grid_output_dir: str,
     base_name: str,
     bpm: float,
     snippet_start_time: float
 ) -> pd.DataFrame:
     """
-    Process bar-based IOI from FlexStart filtered CSV files.
+    Process pattern-based IOI from FlexStart filtered CSV files.
 
     Reads the 3 FlexStart filtered CSVs (L=4, L=2, L=1) and calculates
     inter-onset intervals between consecutive onsets within each pattern.
@@ -102,68 +102,82 @@ def process_bar_based_ioi(
             print(f"    Warning: FlexStart filtered CSV not found: {filtered_csv_name}")
             continue
 
-        # Read CSV with metadata
-        df, num_patterns_displayed, filtering_method = read_filtered_csv_metadata(str(filtered_csv_path))
+        # Read CSV data (skip comment lines starting with #)
+        df = pd.read_csv(filtered_csv_path, comment='#')
 
         if df.empty:
             continue
 
-        # Process each pattern
-        for pattern_id in df['pattern_id'].unique():
-            df_pattern = df[df['pattern_id'] == pattern_id].copy()
+        # Get metadata from CSV header
+        num_patterns_displayed, num_patterns_total, filtering_method = read_filtered_csv_metadata(str(filtered_csv_path))
 
-            # Sort by tick_16th to ensure correct ordering
-            df_pattern = df_pattern.sort_values('tick_16th').reset_index(drop=True)
+        # Sort by bar_number and tick_16th to ensure correct ordering
+        df = df.sort_values(['bar_number', 'tick_16th']).reset_index(drop=True)
 
-            # Calculate IOI between consecutive onsets
-            for i in range(len(df_pattern) - 1):
-                onset1 = df_pattern.iloc[i]
-                onset2 = df_pattern.iloc[i + 1]
+        # Filter to only rows with onsets (non-null phase)
+        df = df[df['phase'].notna()].copy()
 
-                # Get tick positions and phases
-                tick1 = onset1['tick_16th']
-                tick2 = onset2['tick_16th']
-                phase1 = onset1['phase']
-                phase2 = onset2['phase']
+        if df.empty:
+            continue
 
-                # Calculate tick delta
-                tick_delta = tick2 - tick1
+        # Calculate IOI between consecutive onsets
+        for i in range(len(df) - 1):
+            onset1 = df.iloc[i]
+            onset2 = df.iloc[i + 1]
 
-                # Calculate phase difference
-                phase_diff = phase2 - phase1
+            # Get tick positions and phases
+            tick1 = onset1['tick_16th']
+            tick2 = onset2['tick_16th']
+            bar1 = onset1['bar_number']
+            bar2 = onset2['bar_number']
+            phase1 = onset1['phase']
+            phase2 = onset2['phase']
 
-                # Calculate exact IOI in ticks
-                ioi_exact_ticks = tick_delta + phase_diff
+            # Calculate absolute tick positions (accounting for bar crossings)
+            tick1_absolute = bar1 * 16 + tick1
+            tick2_absolute = bar2 * 16 + tick2
 
-                # Calculate times in seconds (relative to snippet start)
-                time1_rel = (tick1 + phase1) * tick_duration
-                time2_rel = (tick2 + phase2) * tick_duration
+            # Calculate tick delta (can span multiple bars)
+            tick_delta = tick2_absolute - tick1_absolute
 
-                # Absolute times
-                time1_abs = snippet_start_time + time1_rel
-                time2_abs = snippet_start_time + time2_rel
+            # Calculate phase difference
+            phase_diff = phase2 - phase1
 
-                # Categorize IOI
-                ioi_category = categorize_ioi(ioi_exact_ticks)
+            # Calculate exact IOI in ticks
+            ioi_exact_ticks = tick_delta + phase_diff
 
-                # Store data
-                all_ioi_data.append({
-                    'method': 'Bar-based',
-                    'pattern_length': pattern_length,
-                    'pattern_id': pattern_id,
-                    'onset1_tick': int(tick1),
-                    'onset1_phase': float(phase1),
-                    'onset1_time_abs': float(time1_abs),
-                    'onset1_time_rel': float(time1_rel),
-                    'onset2_tick': int(tick2),
-                    'onset2_phase': float(phase2),
-                    'onset2_time_abs': float(time2_abs),
-                    'onset2_time_rel': float(time2_rel),
-                    'tick_delta': int(tick_delta),
-                    'phase_diff': float(phase_diff),
-                    'ioi_exact_ticks': float(ioi_exact_ticks),
-                    'ioi_category': ioi_category
-                })
+            # Calculate times in seconds (relative to snippet start)
+            time1_rel = (tick1 + phase1) * tick_duration
+            time2_rel = (tick2 + phase2) * tick_duration
+
+            # Absolute times
+            time1_abs = snippet_start_time + time1_rel
+            time2_abs = snippet_start_time + time2_rel
+
+            # Categorize IOI
+            ioi_category = categorize_ioi(ioi_exact_ticks)
+
+            # Store data
+            all_ioi_data.append({
+                'method': 'Pattern-based',
+                'pattern_length': pattern_length,
+                'onset1_bar': int(bar1),
+                'onset1_tick': int(tick1),
+                'onset1_tick_absolute': int(tick1_absolute),
+                'onset1_phase': float(phase1),
+                'onset1_time_abs': float(time1_abs),
+                'onset1_time_rel': float(time1_rel),
+                'onset2_bar': int(bar2),
+                'onset2_tick': int(tick2),
+                'onset2_tick_absolute': int(tick2_absolute),
+                'onset2_phase': float(phase2),
+                'onset2_time_abs': float(time2_abs),
+                'onset2_time_rel': float(time2_rel),
+                'tick_delta': int(tick_delta),
+                'phase_diff': float(phase_diff),
+                'ioi_exact_ticks': float(ioi_exact_ticks),
+                'ioi_category': ioi_category
+            })
 
     if not all_ioi_data:
         return pd.DataFrame()
@@ -217,20 +231,26 @@ def create_beat_histograms(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Process bar-based IOI
-    df_ioi = process_bar_based_ioi(grid_output_dir, base_name, bpm, snippet_start_time)
+    # Process pattern-based IOI
+    df_ioi = process_pattern_based_ioi(grid_output_dir, base_name, bpm, snippet_start_time)
 
     if df_ioi.empty:
         print(f"    ⚠️  No IOI data found")
         return {}
 
-    # Save pre-beat histogram CSV
-    output_csv = output_path / f'{track_id}_pre_beat_histogram_bar_based.csv'
-    df_ioi.to_csv(output_csv, index=False)
-    print(f"    Saved: {output_csv}")
+    # Save separate CSV files for each pattern length
+    output_files = {}
+    pattern_lengths = [4, 2, 1]
 
-    print(f"    ✓ Processed {len(df_ioi)} inter-onset intervals")
+    for pattern_length in pattern_lengths:
+        df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
 
-    return {
-        'pre_beat_histogram_csv': str(output_csv)
-    }
+        if not df_pattern.empty:
+            output_csv = output_path / f'{track_id}_pre_beat_histogram_L{pattern_length}.csv'
+            df_pattern.to_csv(output_csv, index=False)
+            print(f"    Saved: {output_csv.name} ({len(df_pattern)} intervals)")
+            output_files[f'L{pattern_length}'] = str(output_csv)
+
+    print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
+
+    return output_files
