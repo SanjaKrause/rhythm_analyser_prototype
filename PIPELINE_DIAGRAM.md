@@ -1832,6 +1832,23 @@ graph TD
 
 ---
 
+### Fix/Check Bug: LEPA Export Repeating Bar Starts
+
+**Issue:** The LEPA (L=2) pattern export may be generating repeating bar start positions in the audio export or related data.
+
+**Investigation needed:**
+- Check if bar start positions are being duplicated in LEPA pattern processing
+- Verify audio export boundary calculations for 2-bar patterns
+- Review pattern alignment and start time calculations
+- Test with multiple tracks to confirm if issue is systematic
+
+**Files to review:**
+- Audio export routines for LEPA patterns
+- Pattern boundary calculation for L=2
+- Bar start detection logic
+
+---
+
 ### Implement Signature Filtering/Correcting
 
 **Task:** Add functionality to filter or correct time signature detection and handling

@@ -894,6 +894,41 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not create rhythm pattern histograms: {e}")
 
+                # Create beat histograms (inter-onset interval analysis)
+                try:
+                    from utils import beat_histograms
+
+                    # Create 5.7_beat_histograms folder
+                    track_root = paths['comprehensive_csv'].parent.parent
+                    beat_output_dir = track_root / '5.7_beat_histograms'
+                    beat_output_dir.mkdir(parents=True, exist_ok=True)
+
+                    grid_output_dir = paths['comprehensive_csv'].parent
+                    base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
+
+                    # Get BPM and snippet start time from results
+                    bpm = results.get('tempo_estimation', {}).get('bpm', 120.0)
+                    snippet_start_time = results.get('snippet_info', {}).get('start_time', 0.0)
+
+                    beat_files = beat_histograms.create_beat_histograms(
+                        str(grid_output_dir),
+                        base_name,
+                        track_id,
+                        str(beat_output_dir),
+                        bpm,
+                        snippet_start_time
+                    )
+
+                    if beat_files:
+                        results['beat_histogram'] = beat_files.get('pre_beat_histogram_csv')
+
+                    if verbose:
+                        print(f"  ✓ Beat histograms created")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not create beat histograms: {e}")
+
                 # Calculate aggregate rhythm statistics
                 try:
                     from batch_analysis import aggregate_statistics_rhythm_hist
