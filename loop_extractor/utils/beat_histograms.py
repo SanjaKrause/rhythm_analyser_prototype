@@ -261,6 +261,17 @@ def create_beat_histograms(
     # Define IOI categories in ascending order (smallest to largest)
     category_order = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
 
+    # Map categories to tick values for logarithmic positioning
+    category_to_ticks = {
+        '1/16': 1,
+        '1/8': 2,
+        '3/16': 3,
+        '1/4': 4,
+        '6/16': 6,
+        '2/4': 8,
+        '4/4': 16
+    }
+
     for idx, (pattern_length, color) in enumerate(zip(pattern_lengths, colors)):
         ax = axes[idx]
         df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
@@ -271,35 +282,134 @@ def create_beat_histograms(
             ax.set_title(f'Pattern Length L={pattern_length}', fontsize=11, fontweight='bold')
             continue
 
-        # Count occurrences of each IOI category
-        category_counts = df_pattern['ioi_category'].value_counts()
+        # Calculate statistics for each IOI category
+        category_stats = {}
+        for cat in category_order:
+            cat_data = df_pattern[df_pattern['ioi_category'] == cat]['ioi_exact_ticks']
 
-        # Ensure all categories are present (even with 0 count)
-        category_counts = category_counts.reindex(category_order, fill_value=0)
+            if len(cat_data) > 0:
+                count = len(cat_data)
+                mean_ioi = np.mean(cat_data)
 
-        # Create bar plot
-        x_pos = np.arange(len(category_order))
-        bars = ax.bar(x_pos, category_counts.values, color=color, alpha=0.7,
-                     edgecolor='black', linewidth=1.5)
+                # Calculate IQR with 1.5 scaling factor (similar to rhythm histograms)
+                if len(cat_data) > 1:
+                    q75, q25 = np.percentile(cat_data, [75, 25])
+                    iqr_raw = q75 - q25
+                    # Apply scaling factor: multiply by 1.5 for better error bar representation
+                    iqr_scaled = iqr_raw * 1.5
+                else:
+                    iqr_raw = 0.0
+                    iqr_scaled = 0.0
 
-        # Add count labels on top of bars
-        for i, (cat, count) in enumerate(zip(category_order, category_counts.values)):
-            if count > 0:
-                ax.text(i, count, str(int(count)), ha='center', va='bottom',
-                       fontsize=9, fontweight='bold')
+                category_stats[cat] = {
+                    'count': count,
+                    'mean': mean_ioi,
+                    'iqr_scaled': iqr_scaled
+                }
+            else:
+                category_stats[cat] = {
+                    'count': 0,
+                    'mean': np.nan,
+                    'iqr_scaled': 0.0
+                }
 
-        # Formatting
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(category_order, fontsize=10)
-        ax.set_ylabel('Count', fontsize=10, fontweight='bold')
+        # Extract arrays for plotting
+        counts = np.array([category_stats[cat]['count'] for cat in category_order])
+        means = np.array([category_stats[cat]['mean'] for cat in category_order])
+        iqrs_scaled = np.array([category_stats[cat]['iqr_scaled'] for cat in category_order])
+
+        # Calculate onset strength (normalize to max count)
+        max_count = np.max(counts) if len(counts) > 0 else 1
+        onset_strength = counts / max_count if max_count > 0 else counts
+
+        # Calculate base positions in log space (nominal tick values)
+        base_positions_log = np.array([np.log2(category_to_ticks[cat]) for cat in category_order])
+
+        # Calculate shifted positions based on mean IOI (similar to rhythm histograms median phase shifts)
+        shifted_positions_log = base_positions_log.copy()
+        for i, (cat, mean_val) in enumerate(zip(category_order, means)):
+            if not np.isnan(mean_val) and mean_val > 0:
+                # Shift position to actual mean IOI in log space
+                shifted_positions_log[i] = np.log2(mean_val)
+
+        # Create bar plot with shifted logarithmic x-positioning
+        bar_width = 0.15  # Width in log space
+        bars = ax.bar(shifted_positions_log, onset_strength, width=bar_width, color=color, alpha=0.7,
+                     edgecolor='black', linewidth=0.5)
+
+        # Add horizontal IQR error bars (positioned at 90% of bar height)
+        for i, (cat, shifted_log, strength, iqr_val, mean_val) in enumerate(zip(category_order, shifted_positions_log, onset_strength, iqrs_scaled, means)):
+            if strength > 0 and iqr_val > 0 and not np.isnan(mean_val):
+                # Position error bar at 90% of bar height
+                error_bar_y = strength * 0.9
+
+                # Convert IQR from tick units to log space
+                # Calculate log distance for ±IQR/2 around mean
+                log_upper = np.log2(mean_val + iqr_val / 2)
+                log_lower = np.log2(max(0.1, mean_val - iqr_val / 2))  # Prevent log(0)
+                iqr_log = (log_upper - log_lower) / 2
+
+                ax.errorbar(shifted_log, error_bar_y,
+                           xerr=iqr_log, fmt='none',
+                           ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
+
+        # Add relative deviation labels on top of bars (similar to rhythm histograms)
+        for i, (cat, shifted_log, strength, mean_val) in enumerate(zip(category_order, shifted_positions_log, onset_strength, means)):
+            if strength > 0 and not np.isnan(mean_val):
+                # Calculate relative deviation from nominal tick value
+                nominal_ticks = category_to_ticks[cat]
+                relative_deviation = mean_val - nominal_ticks
+
+                # Format without leading zero (e.g., .34 instead of 0.34)
+                label_text = f'{relative_deviation:.2f}'.replace('0.', '.').replace('-0.', '-.')
+                ax.text(shifted_log, strength, label_text, ha='center', va='bottom',
+                       fontsize=7, fontweight='bold')
+
+        # Formatting with logarithmic x-axis
+        tick_values = [1, 2, 3, 4, 6, 8, 16]
+        tick_positions_log = [np.log2(v) for v in tick_values]
+        tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+
+        ax.set_xticks(tick_positions_log)
+        ax.set_xticklabels(tick_labels, fontsize=10)
+        ax.set_ylabel('Onset Strength', fontsize=10, fontweight='bold')
+
+        # Adjust left y-axis scale based on data
+        max_strength = np.max(onset_strength) if max_count > 0 else 1.0
+        ax.set_ylim(0, max_strength * 1.2)  # Extra padding for labels
+
+        # Create second y-axis for counts (right side)
+        ax2 = ax.twinx()
+        ax2.set_ylabel('Onset Count', fontsize=10, fontweight='bold', rotation=270, labelpad=15)
+
+        # Adjust right y-axis scale to match left axis
+        ax2.set_ylim(0, max_count * 1.2)  # Match padding
+
         ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals)',
                     fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
-        ax.set_ylim(0, max(category_counts.values) * 1.15 if max(category_counts.values) > 0 else 1)
+
+        # Add vertical gray grid lines at nominal category positions (log scale)
+        for tick_log in tick_positions_log:
+            ax.axvline(x=tick_log, color='gray', linestyle=':',
+                      linewidth=0.8, alpha=0.4, zorder=1)
+
+        # Add vertical blue lines at center of each bar (shifted positions, bar height)
+        y_limits = ax.get_ylim()
+        y_range = y_limits[1] - y_limits[0]
+        for i, (cat, shifted_log, strength) in enumerate(zip(category_order, shifted_positions_log, onset_strength)):
+            if strength > 0 and not np.isnan(means[i]):
+                # Calculate ymax as fraction of axes height
+                ymax_fraction = (strength - y_limits[0]) / y_range
+                ax.axvline(x=shifted_log, ymin=0, ymax=ymax_fraction,
+                          color='blue', linestyle='-', linewidth=1.5, alpha=0.7, zorder=10)
+
+        # Set x-axis limits with padding in log space
+        ax.set_xlim(-0.5, 4.5)  # log2(1) = 0, log2(16) = 4
 
         # Only show x-label on bottom subplot
         if idx == len(pattern_lengths) - 1:
-            ax.set_xlabel('IOI Category', fontsize=10, fontweight='bold')
+            ax.set_xlabel('IOI Category (16th note ticks, log scale)', fontsize=10, fontweight='bold')
 
     plt.tight_layout()
 
@@ -317,6 +427,146 @@ def create_beat_histograms(
 
     output_files['beat_histogram_pdf'] = str(output_pdf)
     output_files['beat_histogram_png'] = str(output_png)
+
+    print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
+
+    return output_files
+
+
+def create_beat_histograms_all_onsets(
+    grid_output_dir: str,
+    base_name: str,
+    track_id: str,
+    output_dir: str,
+    bpm: float,
+    snippet_start_time: float
+) -> dict:
+    """
+    Create beat-level histograms showing all individual onsets as markers.
+
+    Each IOI is plotted as an 'x' marker at its exact value in log space.
+
+    Parameters
+    ----------
+    grid_output_dir : str
+        Directory containing the FlexStart filtered CSV files
+    base_name : str
+        Base filename (without extension)
+    track_id : str
+        Track identifier for plot title
+    output_dir : str
+        Output directory for saving plots
+    bpm : float
+        Tempo in BPM for time conversion
+    snippet_start_time : float
+        Start time of snippet in seconds
+
+    Returns
+    -------
+    dict
+        Dictionary with paths to saved files and statistics
+    """
+    print(f"\n  [Beat Histograms - All Onsets] Creating individual onset plots...")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Process pattern-based IOI
+    df_ioi = process_pattern_based_ioi(grid_output_dir, base_name, bpm, snippet_start_time)
+
+    if df_ioi.empty:
+        print(f"    ⚠️  No IOI data found")
+        return {}
+
+    # Create visualization
+    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
+    fig.suptitle(f'Beat Histograms — All Onsets (IOI) — {track_id}', fontsize=14, fontweight='bold', y=0.995)
+
+    # Define colors for each pattern length
+    colors = ['#2ECC71', '#F39C12', '#9B59B6']  # Green, Orange, Purple
+
+    # Define IOI categories for x-axis reference
+    category_order = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+    category_to_ticks = {
+        '1/16': 1,
+        '1/8': 2,
+        '3/16': 3,
+        '1/4': 4,
+        '6/16': 6,
+        '2/4': 8,
+        '4/4': 16
+    }
+
+    pattern_lengths = [4, 2, 1]
+
+    for idx, (pattern_length, color) in enumerate(zip(pattern_lengths, colors)):
+        ax = axes[idx]
+        df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
+
+        if df_pattern.empty:
+            ax.text(0.5, 0.5, f'No data for L={pattern_length}',
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.set_title(f'Pattern Length L={pattern_length}', fontsize=11, fontweight='bold')
+            continue
+
+        # Get all IOI values and convert to log space
+        ioi_values = df_pattern['ioi_exact_ticks'].values
+        ioi_log = np.log2(ioi_values)
+
+        # Create y-positions: jittered slightly for visibility
+        np.random.seed(42)  # Reproducible jitter
+        y_positions = np.random.uniform(0.4, 0.6, size=len(ioi_values))
+
+        # Plot each onset as an 'x' marker
+        ax.scatter(ioi_log, y_positions, marker='x', s=50, color=color, alpha=0.6, linewidths=1.5)
+
+        # Formatting with logarithmic x-axis
+        tick_values = [1, 2, 3, 4, 6, 8, 16]
+        tick_positions_log = [np.log2(v) for v in tick_values]
+        tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+
+        ax.set_xticks(tick_positions_log)
+        ax.set_xticklabels(tick_labels, fontsize=10)
+        ax.set_ylabel('Onset Density', fontsize=10, fontweight='bold')
+        ax.set_ylim(0, 1)
+        ax.set_yticks([])  # Hide y-axis ticks (density visualization)
+
+        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals)',
+                    fontsize=11, fontweight='bold', pad=10)
+        ax.grid(True, alpha=0.3, axis='x')
+
+        # Add vertical gray grid lines at nominal category positions (log scale)
+        for tick_log in tick_positions_log:
+            ax.axvline(x=tick_log, color='gray', linestyle=':',
+                      linewidth=0.8, alpha=0.4, zorder=1)
+
+        # Set x-axis limits with padding in log space
+        ax.set_xlim(-0.5, 4.5)  # log2(1) = 0, log2(16) = 4
+
+        # Only show x-label on bottom subplot
+        if idx == len(pattern_lengths) - 1:
+            ax.set_xlabel('IOI Category (16th note ticks, log scale)', fontsize=10, fontweight='bold')
+
+        print(f"    Pattern Length L={pattern_length}: {len(df_pattern)} onsets")
+
+    plt.tight_layout()
+
+    # Save plot as PDF
+    output_pdf = output_path / f'{track_id}_beat_histograms_all_onsets.pdf'
+    plt.savefig(output_pdf, bbox_inches='tight')
+    print(f"    Saved: {output_pdf.name}")
+
+    # Save plot as PNG
+    output_png = output_path / f'{track_id}_beat_histograms_all_onsets.png'
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    print(f"    Saved: {output_png.name}")
+
+    plt.close()
+
+    output_files = {
+        'beat_histogram_all_onsets_pdf': str(output_pdf),
+        'beat_histogram_all_onsets_png': str(output_png)
+    }
 
     print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
 

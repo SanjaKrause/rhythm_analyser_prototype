@@ -922,6 +922,16 @@ def run_complete_pipeline(
                     if beat_files:
                         results['beat_histogram'] = beat_files.get('pre_beat_histogram_csv')
 
+                    # Create all onsets visualization
+                    beat_all_onsets_files = beat_histograms.create_beat_histograms_all_onsets(
+                        str(grid_output_dir),
+                        base_name,
+                        track_id,
+                        str(beat_output_dir),
+                        bpm,
+                        snippet_start_time
+                    )
+
                     if verbose:
                         print(f"  ✓ Beat histograms created")
 

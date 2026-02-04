@@ -304,7 +304,47 @@ def merge_plots(output_dir: Path):
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 12. Merge new 4-method raster plots (PNG files in 5_grid folder)
+    # 12. Merge beat histogram plots (PDF files in 5.7_beat_histograms folder)
+    print('\nLooking for beat histogram plots...')
+    beat_histogram_pdfs = []
+    for track_dir in track_dirs:
+        beat_histogram_pdf = track_dir / '5.7_beat_histograms' / f'{track_dir.name}_beat_histograms.pdf'
+        if beat_histogram_pdf.exists():
+            beat_histogram_pdfs.append(beat_histogram_pdf)
+            print(f'  Found beat histogram: {track_dir.name}')
+
+    if beat_histogram_pdfs:
+        print(f'\nMerging {len(beat_histogram_pdfs)} beat histogram PDFs...')
+        output_pdf = batch_dir / 'all_beat_histograms.pdf'
+        merger = PdfMerger()
+        for pdf in beat_histogram_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 13. Merge beat histogram all onsets plots (PDF files in 5.7_beat_histograms folder)
+    print('\nLooking for beat histogram all onsets plots...')
+    beat_histogram_all_onsets_pdfs = []
+    for track_dir in track_dirs:
+        beat_histogram_all_onsets_pdf = track_dir / '5.7_beat_histograms' / f'{track_dir.name}_beat_histograms_all_onsets.pdf'
+        if beat_histogram_all_onsets_pdf.exists():
+            beat_histogram_all_onsets_pdfs.append(beat_histogram_all_onsets_pdf)
+            print(f'  Found beat histogram all onsets: {track_dir.name}')
+
+    if beat_histogram_all_onsets_pdfs:
+        print(f'\nMerging {len(beat_histogram_all_onsets_pdfs)} beat histogram all onsets PDFs...')
+        output_pdf = batch_dir / 'all_beat_histograms_all_onsets.pdf'
+        merger = PdfMerger()
+        for pdf in beat_histogram_all_onsets_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 14. Merge new 4-method raster plots (PNG files in 5_grid folder)
     print('\nLooking for new 4-method raster plots...')
     raster_4method_pngs = []
     for track_dir in track_dirs:
