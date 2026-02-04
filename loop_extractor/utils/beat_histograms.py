@@ -114,8 +114,8 @@ def process_pattern_based_ioi(
         # Sort by bar_number and tick_16th to ensure correct ordering
         df = df.sort_values(['bar_number', 'tick_16th']).reset_index(drop=True)
 
-        # Filter to only rows with onsets (non-null phase)
-        df = df[df['phase'].notna()].copy()
+        # Filter to only rows with onsets (non-null tick_phase)
+        df = df[df['tick_phase'].notna()].copy()
 
         if df.empty:
             continue
@@ -125,13 +125,13 @@ def process_pattern_based_ioi(
             onset1 = df.iloc[i]
             onset2 = df.iloc[i + 1]
 
-            # Get tick positions and phases
+            # Get tick positions and tick_phases (phase within the 16th note, 0.0-1.0)
             tick1 = onset1['tick_16th']
             tick2 = onset2['tick_16th']
             bar1 = onset1['bar_number']
             bar2 = onset2['bar_number']
-            phase1 = onset1['phase']
-            phase2 = onset2['phase']
+            tick_phase1 = onset1['tick_phase']  # Fractional position within 16th note
+            tick_phase2 = onset2['tick_phase']
 
             # Calculate absolute tick positions (accounting for bar crossings)
             tick1_absolute = bar1 * 16 + tick1
@@ -140,15 +140,15 @@ def process_pattern_based_ioi(
             # Calculate tick delta (can span multiple bars)
             tick_delta = tick2_absolute - tick1_absolute
 
-            # Calculate phase difference
-            phase_diff = phase2 - phase1
+            # Calculate tick_phase difference (fractional ticks)
+            tick_phase_diff = tick_phase2 - tick_phase1
 
             # Calculate exact IOI in ticks
-            ioi_exact_ticks = tick_delta + phase_diff
+            ioi_exact_ticks = tick_delta + tick_phase_diff
 
             # Calculate times in seconds (relative to snippet start)
-            time1_rel = (tick1 + phase1) * tick_duration
-            time2_rel = (tick2 + phase2) * tick_duration
+            time1_rel = (tick1 + tick_phase1) * tick_duration
+            time2_rel = (tick2 + tick_phase2) * tick_duration
 
             # Absolute times
             time1_abs = snippet_start_time + time1_rel
@@ -164,17 +164,17 @@ def process_pattern_based_ioi(
                 'onset1_bar': int(bar1),
                 'onset1_tick': int(tick1),
                 'onset1_tick_absolute': int(tick1_absolute),
-                'onset1_phase': float(phase1),
+                'onset1_tick_phase': float(tick_phase1),
                 'onset1_time_abs': float(time1_abs),
                 'onset1_time_rel': float(time1_rel),
                 'onset2_bar': int(bar2),
                 'onset2_tick': int(tick2),
                 'onset2_tick_absolute': int(tick2_absolute),
-                'onset2_phase': float(phase2),
+                'onset2_tick_phase': float(tick_phase2),
                 'onset2_time_abs': float(time2_abs),
                 'onset2_time_rel': float(time2_rel),
                 'tick_delta': int(tick_delta),
-                'phase_diff': float(phase_diff),
+                'tick_phase_diff': float(tick_phase_diff),
                 'ioi_exact_ticks': float(ioi_exact_ticks),
                 'ioi_category': ioi_category
             })
@@ -509,7 +509,7 @@ def create_beat_histograms_all_onsets(
             ax.set_title(f'Pattern Length L={pattern_length}', fontsize=11, fontweight='bold')
             continue
 
-        # Get all IOI values and convert to log space
+        # Get all IOI values and categories
         ioi_values = df_pattern['ioi_exact_ticks'].values
         ioi_log = np.log2(ioi_values)
 
@@ -518,7 +518,8 @@ def create_beat_histograms_all_onsets(
         y_positions = np.random.uniform(0.4, 0.6, size=len(ioi_values))
 
         # Plot each onset as an 'x' marker
-        ax.scatter(ioi_log, y_positions, marker='x', s=50, color=color, alpha=0.6, linewidths=1.5)
+        ax.scatter(ioi_log, y_positions, marker='x', s=50,
+                  color='black', alpha=0.5, linewidths=1.5)
 
         # Formatting with logarithmic x-axis
         tick_values = [1, 2, 3, 4, 6, 8, 16]
