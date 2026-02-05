@@ -979,6 +979,74 @@ def run_complete_pipeline(
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
+        # Don't raise - continue to full histograms
+
+    # ========================================================================
+    # STEP 5.8: FULL SONG HISTOGRAMS
+    # ========================================================================
+    try:
+        if verbose:
+            print("\n[5.8/7] Creating full song histograms...")
+
+        if daw_ready:
+            if verbose:
+                print("  SKIPPED (DAW ready mode)")
+            results['steps_completed'].append('full_histograms_skipped_daw')
+        elif not paths['comprehensive_csv'].exists():
+            if verbose:
+                print("  SKIPPED (no comprehensive CSV)")
+            results['steps_completed'].append('full_histograms_skipped')
+        else:
+            # Create full song histograms
+            from utils import full_histograms
+
+            # Create 5.8_full_histograms folder (same track_root as beat_histograms)
+            track_root = paths['comprehensive_csv'].parent.parent
+            full_hist_output_dir = track_root / '5.8_full_histograms'
+            full_hist_output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Get BPM from results
+            bpm = results.get('tempo_estimation', {}).get('bpm', None)
+
+            try:
+                # Create full song IOI histogram
+                full_ioi_files = full_histograms.create_full_song_ioi_histogram(
+                    audio_file,
+                    track_id,
+                    str(full_hist_output_dir),
+                    bpm
+                )
+
+                if verbose:
+                    print(f"  ✓ Full song IOI histogram created")
+
+            except Exception as e:
+                if verbose:
+                    print(f"  ! Warning: Could not create full song IOI histogram: {e}")
+
+            try:
+                # Create full song beat histogram
+                full_beat_files = full_histograms.create_full_song_beat_histogram(
+                    audio_file,
+                    track_id,
+                    str(full_hist_output_dir),
+                    bpm
+                )
+
+                if verbose:
+                    print(f"  ✓ Full song beat histogram created")
+
+            except Exception as e:
+                if verbose:
+                    print(f"  ! Warning: Could not create full song beat histogram: {e}")
+
+            results['steps_completed'].append('full_histograms')
+
+    except Exception as e:
+        error_msg = f"Step 5.8 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to RMS analysis
 
     # ========================================================================

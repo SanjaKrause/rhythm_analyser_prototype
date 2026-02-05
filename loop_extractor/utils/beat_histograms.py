@@ -631,8 +631,9 @@ def create_simple_ioi_histogram(
     fig, ax = plt.subplots(1, 1, figsize=(16, 6))
     fig.suptitle(f'Simple IOI Histogram — {track_id}', fontsize=14, fontweight='bold', y=0.98)
 
-    # Get all IOI values in milliseconds
-    ioi_values_ms = df_ioi['ioi_ms'].values
+    # Filter IOI values for plotting: only <= 16 ticks (one bar)
+    df_ioi_filtered = df_ioi[df_ioi['ioi_exact_ticks'] <= 16].copy()
+    ioi_values_ms = df_ioi_filtered['ioi_ms'].values
 
     # Create histogram with automatic binning
     counts, bins, patches = ax.hist(ioi_values_ms, bins=50, color='#3498DB', alpha=0.7,

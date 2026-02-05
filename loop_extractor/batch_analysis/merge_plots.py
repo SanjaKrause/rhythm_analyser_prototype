@@ -408,6 +408,46 @@ def merge_plots(output_dir: Path):
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
+    # 17. Merge full song IOI histogram plots (PDF files in 5.8_full_histograms folder)
+    print('\nLooking for full song IOI histogram plots...')
+    full_ioi_pdfs = []
+    for track_dir in track_dirs:
+        full_ioi_pdf = track_dir / '5.8_full_histograms' / f'{track_dir.name}_full_song_ioi_histogram.pdf'
+        if full_ioi_pdf.exists():
+            full_ioi_pdfs.append(full_ioi_pdf)
+            print(f'  Found full song IOI histogram: {track_dir.name}')
+
+    if full_ioi_pdfs:
+        print(f'\nMerging {len(full_ioi_pdfs)} full song IOI histogram PDFs...')
+        output_pdf = batch_dir / 'all_full_song_ioi_histograms.pdf'
+        merger = PdfMerger()
+        for pdf in full_ioi_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 18. Merge full song beat histogram plots (PDF files in 5.8_full_histograms folder)
+    print('\nLooking for full song beat histogram plots...')
+    full_beat_pdfs = []
+    for track_dir in track_dirs:
+        full_beat_pdf = track_dir / '5.8_full_histograms' / f'{track_dir.name}_full_song_beat_histogram.pdf'
+        if full_beat_pdf.exists():
+            full_beat_pdfs.append(full_beat_pdf)
+            print(f'  Found full song beat histogram: {track_dir.name}')
+
+    if full_beat_pdfs:
+        print(f'\nMerging {len(full_beat_pdfs)} full song beat histogram PDFs...')
+        output_pdf = batch_dir / 'all_full_song_beat_histograms.pdf'
+        merger = PdfMerger()
+        for pdf in full_beat_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
     # Clean up temporary files at the end
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
