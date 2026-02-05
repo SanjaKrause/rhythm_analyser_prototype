@@ -932,6 +932,23 @@ def run_complete_pipeline(
                         snippet_start_time
                     )
 
+                    # Create simple IOI histogram
+                    simple_ioi_files = beat_histograms.create_simple_ioi_histogram(
+                        str(grid_output_dir),
+                        base_name,
+                        track_id,
+                        str(beat_output_dir),
+                        bpm,
+                        snippet_start_time
+                    )
+
+                    # Create simple beat histograms (from pre_beat_histogram CSVs)
+                    simple_beat_files = beat_histograms.create_simple_beat_histograms(
+                        str(beat_output_dir),
+                        track_id,
+                        bpm
+                    )
+
                     if verbose:
                         print(f"  ✓ Beat histograms created")
 

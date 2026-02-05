@@ -572,3 +572,255 @@ def create_beat_histograms_all_onsets(
     print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
 
     return output_files
+
+
+def create_simple_ioi_histogram(
+    grid_output_dir: str,
+    base_name: str,
+    track_id: str,
+    output_dir: str,
+    bpm: float,
+    snippet_start_time: float
+) -> dict:
+    """
+    Create simple IOI histogram showing distribution of all inter-onset intervals in milliseconds.
+
+    Finds all onsets in the snippet and plots IOI values on x-axis (ms) with counts on y-axis.
+
+    Parameters
+    ----------
+    grid_output_dir : str
+        Directory containing the FlexStart filtered CSV files
+    base_name : str
+        Base filename (without extension)
+    track_id : str
+        Track identifier for plot title
+    output_dir : str
+        Output directory for saving plots
+    bpm : float
+        Tempo in BPM for time conversion
+    snippet_start_time : float
+        Start time of snippet in seconds
+
+    Returns
+    -------
+    dict
+        Dictionary with paths to saved files and statistics
+    """
+    print(f"\n  [Simple IOI Histogram] Creating simple IOI distribution plot...")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Process pattern-based IOI (get all IOI data)
+    df_ioi = process_pattern_based_ioi(grid_output_dir, base_name, bpm, snippet_start_time)
+
+    if df_ioi.empty:
+        print(f"    ⚠️  No IOI data found")
+        return {}
+
+    # Convert IOI from ticks to milliseconds
+    # Calculate tick duration in ms
+    bar_duration_s = 60.0 / bpm * 4  # 4 beats per bar at BPM
+    tick_duration_s = bar_duration_s / 16  # 16th note duration in seconds
+    tick_duration_ms = tick_duration_s * 1000  # Convert to milliseconds
+
+    df_ioi['ioi_ms'] = df_ioi['ioi_exact_ticks'] * tick_duration_ms
+
+    # Create histogram
+    fig, ax = plt.subplots(1, 1, figsize=(16, 6))
+    fig.suptitle(f'Simple IOI Histogram — {track_id}', fontsize=14, fontweight='bold', y=0.98)
+
+    # Get all IOI values in milliseconds
+    ioi_values_ms = df_ioi['ioi_ms'].values
+
+    # Create histogram with automatic binning
+    counts, bins, patches = ax.hist(ioi_values_ms, bins=50, color='#3498DB', alpha=0.7,
+                                     edgecolor='black', linewidth=0.5)
+
+    # Formatting
+    ax.set_xlabel('Inter-Onset Interval (ms)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
+    ax.set_title(f'{len(df_ioi)} intervals from all pattern lengths',
+                fontsize=11, fontweight='bold', pad=10)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add vertical lines at common rhythmic intervals (in ms)
+    # Calculate expected IOI values for common categories
+    rhythmic_intervals = {
+        '1/16': 1 * tick_duration_ms,
+        '1/8': 2 * tick_duration_ms,
+        '3/16': 3 * tick_duration_ms,
+        '1/4': 4 * tick_duration_ms,
+        '6/16': 6 * tick_duration_ms,
+        '2/4': 8 * tick_duration_ms,
+        '4/4': 16 * tick_duration_ms,
+    }
+
+    for label, value_ms in rhythmic_intervals.items():
+        if ax.get_xlim()[0] <= value_ms <= ax.get_xlim()[1]:
+            ax.axvline(x=value_ms, color='red', linestyle='--',
+                      linewidth=1.5, alpha=0.5, label=label)
+
+    # Add legend for rhythmic interval lines
+    ax.legend(loc='upper right', fontsize=9, title='Rhythmic Intervals')
+
+    plt.tight_layout()
+
+    # Save plot as PDF
+    output_pdf = output_path / f'{track_id}_simple_ioi_histogram.pdf'
+    plt.savefig(output_pdf, bbox_inches='tight')
+    print(f"    Saved: {output_pdf.name}")
+
+    # Save plot as PNG
+    output_png = output_path / f'{track_id}_simple_ioi_histogram.png'
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    print(f"    Saved: {output_png.name}")
+
+    plt.close()
+
+    # Save CSV with IOI in milliseconds
+    output_csv = output_path / f'{track_id}_simple_ioi_data.csv'
+    df_ioi[['pattern_length', 'ioi_exact_ticks', 'ioi_ms', 'ioi_category',
+            'onset1_time_rel', 'onset2_time_rel']].to_csv(output_csv, index=False)
+    print(f"    Saved: {output_csv.name}")
+
+    output_files = {
+        'simple_ioi_histogram_pdf': str(output_pdf),
+        'simple_ioi_histogram_png': str(output_png),
+        'simple_ioi_data_csv': str(output_csv)
+    }
+
+    print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
+
+    return output_files
+
+
+def create_simple_beat_histograms(
+    output_dir: str,
+    track_id: str,
+    bpm: float
+) -> dict:
+    """
+    Create simple beat histograms from pre_beat_histogram CSV files.
+
+    Reads the L4, L2, L1 CSV files and creates 3 subplots showing IOI distribution
+    in ticks for each pattern length.
+
+    Parameters
+    ----------
+    output_dir : str
+        Directory containing the pre_beat_histogram CSV files
+    track_id : str
+        Track identifier for plot title
+    bpm : float
+        Tempo in BPM (for reference, not used in plotting)
+
+    Returns
+    -------
+    dict
+        Dictionary with paths to saved files
+    """
+    print(f"\n  [Simple Beat Histograms] Creating simple beat histograms from IOI data...")
+
+    output_path = Path(output_dir)
+
+    # Check if pre_beat_histogram files exist
+    pattern_lengths = [4, 2, 1]
+    csv_files = {}
+
+    for L in pattern_lengths:
+        csv_path = output_path / f'{track_id}_pre_beat_histogram_L{L}.csv'
+        if csv_path.exists():
+            csv_files[L] = csv_path
+        else:
+            print(f"    Warning: {csv_path.name} not found")
+
+    if not csv_files:
+        print(f"    ⚠️  No pre_beat_histogram CSV files found")
+        return {}
+
+    # Create figure with 3 subplots
+    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
+    fig.suptitle(f'Simple Beat Histograms — {track_id}', fontsize=14, fontweight='bold', y=0.995)
+
+    # Define colors for each pattern length
+    colors = ['#2ECC71', '#F39C12', '#9B59B6']  # Green, Orange, Purple
+
+    for idx, (L, color) in enumerate(zip(pattern_lengths, colors)):
+        ax = axes[idx]
+
+        if L not in csv_files:
+            ax.text(0.5, 0.5, f'No data for L={L}',
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.set_title(f'Pattern Length L={L}', fontsize=11, fontweight='bold')
+            continue
+
+        # Read CSV
+        df = pd.read_csv(csv_files[L])
+
+        if df.empty:
+            ax.text(0.5, 0.5, f'Empty data for L={L}',
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.set_title(f'Pattern Length L={L}', fontsize=11, fontweight='bold')
+            continue
+
+        # Get IOI values in ticks
+        ioi_values = df['ioi_exact_ticks'].values
+
+        # Create histogram with automatic binning
+        counts, bins, patches = ax.hist(ioi_values, bins=50, color=color, alpha=0.7,
+                                       edgecolor='black', linewidth=0.5)
+
+        # Formatting
+        ax.set_xlabel('IOI (16th note ticks)', fontsize=10, fontweight='bold')
+        ax.set_ylabel('Count', fontsize=10, fontweight='bold')
+        ax.set_title(f'Pattern Length L={L} ({len(df)} intervals)',
+                    fontsize=11, fontweight='bold', pad=10)
+        ax.grid(True, alpha=0.3, axis='y')
+
+        # Add vertical lines at common rhythmic intervals (in ticks)
+        rhythmic_intervals = {
+            '1/16': 1,
+            '1/8': 2,
+            '3/16': 3,
+            '1/4': 4,
+            '6/16': 6,
+            '2/4': 8,
+            '4/4': 16,
+        }
+
+        for label, value_ticks in rhythmic_intervals.items():
+            if ax.get_xlim()[0] <= value_ticks <= ax.get_xlim()[1]:
+                ax.axvline(x=value_ticks, color='red', linestyle='--',
+                          linewidth=1.5, alpha=0.5)
+                # Add text label above the line
+                ax.text(value_ticks, ax.get_ylim()[1] * 0.95, label,
+                       ha='center', va='top', fontsize=8, color='red',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+
+        print(f"    Pattern Length L={L}: {len(df)} intervals")
+
+    plt.tight_layout()
+
+    # Save plot as PDF
+    output_pdf = output_path / f'{track_id}_simple_beat_histograms.pdf'
+    plt.savefig(output_pdf, bbox_inches='tight')
+    print(f"    Saved: {output_pdf.name}")
+
+    # Save plot as PNG
+    output_png = output_path / f'{track_id}_simple_beat_histograms.png'
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    print(f"    Saved: {output_png.name}")
+
+    plt.close()
+
+    output_files = {
+        'simple_beat_histograms_pdf': str(output_pdf),
+        'simple_beat_histograms_png': str(output_png)
+    }
+
+    total_intervals = sum(len(pd.read_csv(csv_files[L])) for L in csv_files.keys())
+    print(f"    ✓ Processed {total_intervals} total inter-onset intervals")
+
+    return output_files
