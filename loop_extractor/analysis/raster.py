@@ -929,11 +929,19 @@ def calculate_phases_4bar_pattern_flexStart(
                     tolerance = MAX_MATCH_FRAC_AFTER * sixteenth_duration
 
                 if distance <= tolerance:
+                    # Calculate grid_phase for this tick (0.0-1.0 within bar)
+                    grid_phase = nearest_tick / steps_per_bar
+
+                    # Calculate tick_phase: phase within the 16th note (0.0-1.0)
+                    # This represents the fractional position within that specific tick
+                    tick_phase = (phase - grid_phase) * steps_per_bar
+
                     rows.append({
                         'bar_number': bar_idx - first_bar,
                         'tick_16th': nearest_tick,
                         'onset_time': onset_time,
-                        'phase_4bar_pattern_flexStart': phase
+                        'phase_4bar_pattern_flexStart': phase,
+                        'tick_phase_4bar_pattern_flexStart': tick_phase
                     })
 
     return pd.DataFrame(rows)
@@ -1154,11 +1162,22 @@ def calculate_phases_pattern_flexStart(
                     tolerance = MAX_MATCH_FRAC_AFTER * sixteenth_duration
 
                 if distance <= tolerance:
+                    # Calculate grid_phase for this tick (0.0-1.0 within bar)
+                    grid_phase = nearest_tick / steps_per_bar
+
+                    # Calculate tick_phase: phase within the 16th note (0.0-1.0)
+                    # This represents the fractional position within that specific tick
+                    tick_phase = (phase - grid_phase) * steps_per_bar
+
+                    # Generate tick_phase column name from phase column name
+                    tick_phase_column_name = phase_column_name.replace('phase_', 'tick_phase_')
+
                     rows.append({
                         'bar_number': bar_idx - first_bar,
                         'tick_16th': nearest_tick,
                         'onset_time': onset_time,
-                        phase_column_name: phase
+                        phase_column_name: phase,
+                        tick_phase_column_name: tick_phase
                     })
 
     return pd.DataFrame(rows)
@@ -1375,8 +1394,11 @@ def create_raster_csv(
     )
 
     # Merge 4-bar pattern flexStart (with its own onset_time - may be different!)
+    columns_to_merge = ['bar_number', 'tick_16th', 'onset_time', 'phase_4bar_pattern_flexStart']
+    if 'tick_phase_4bar_pattern_flexStart' in df_4bar_pattern_flexStart.columns:
+        columns_to_merge.append('tick_phase_4bar_pattern_flexStart')
     df_comprehensive = df_comprehensive.merge(
-        df_4bar_pattern_flexStart[['bar_number', 'tick_16th', 'onset_time', 'phase_4bar_pattern_flexStart']].rename(
+        df_4bar_pattern_flexStart[columns_to_merge].rename(
             columns={'onset_time': 'onset_time_4bar_pattern_flexStart'}
         ),
         on=['bar_number', 'tick_16th'],
@@ -1384,8 +1406,11 @@ def create_raster_csv(
     )
 
     # Merge 2-bar pattern flexStart (with its own onset_time - may be different!)
+    columns_to_merge = ['bar_number', 'tick_16th', 'onset_time', 'phase_2bar_pattern_flexStart']
+    if 'tick_phase_2bar_pattern_flexStart' in df_2bar_pattern_flexStart.columns:
+        columns_to_merge.append('tick_phase_2bar_pattern_flexStart')
     df_comprehensive = df_comprehensive.merge(
-        df_2bar_pattern_flexStart[['bar_number', 'tick_16th', 'onset_time', 'phase_2bar_pattern_flexStart']].rename(
+        df_2bar_pattern_flexStart[columns_to_merge].rename(
             columns={'onset_time': 'onset_time_2bar_pattern_flexStart'}
         ),
         on=['bar_number', 'tick_16th'],
@@ -1393,8 +1418,11 @@ def create_raster_csv(
     )
 
     # Merge 1-bar pattern flexStart (with its own onset_time - may be different!)
+    columns_to_merge = ['bar_number', 'tick_16th', 'onset_time', 'phase_1bar_pattern_flexStart']
+    if 'tick_phase_1bar_pattern_flexStart' in df_1bar_pattern_flexStart.columns:
+        columns_to_merge.append('tick_phase_1bar_pattern_flexStart')
     df_comprehensive = df_comprehensive.merge(
-        df_1bar_pattern_flexStart[['bar_number', 'tick_16th', 'onset_time', 'phase_1bar_pattern_flexStart']].rename(
+        df_1bar_pattern_flexStart[columns_to_merge].rename(
             columns={'onset_time': 'onset_time_1bar_pattern_flexStart'}
         ),
         on=['bar_number', 'tick_16th'],
@@ -2017,8 +2045,8 @@ def create_flexstart_patterns_csv(
         else:
             df_4bar = df_4bar_temp
 
-        # Select columns
-        df_4bar = df_4bar[[
+        # Select columns (include tick_phase if available)
+        columns_to_include = [
             'bar_number',
             'bar_number_global',
             'tick_16th',
@@ -2026,11 +2054,19 @@ def create_flexstart_patterns_csv(
             'phase_4bar_pattern_flexStart',
             'grid_time_4bar_pattern_flexStart',
             'grid_phase'
-        ]].rename(columns={
+        ]
+        rename_mapping = {
             'onset_time_4bar_pattern_flexStart': 'onset_time',
             'phase_4bar_pattern_flexStart': 'phase',
             'grid_time_4bar_pattern_flexStart': 'grid_time'
-        })
+        }
+
+        # Add tick_phase column if it exists
+        if 'tick_phase_4bar_pattern_flexStart' in df_4bar.columns:
+            columns_to_include.append('tick_phase_4bar_pattern_flexStart')
+            rename_mapping['tick_phase_4bar_pattern_flexStart'] = 'tick_phase'
+
+        df_4bar = df_4bar[columns_to_include].rename(columns=rename_mapping)
 
         # Save to CSV with metadata
         output_file = output_dir / f"{base_name}_4bar_flexStart.csv"
@@ -2068,7 +2104,8 @@ def create_flexstart_patterns_csv(
         else:
             df_2bar = df_2bar_temp
 
-        df_2bar = df_2bar[[
+        # Select columns (include tick_phase if available)
+        columns_to_include = [
             'bar_number',
             'bar_number_global',
             'tick_16th',
@@ -2076,11 +2113,19 @@ def create_flexstart_patterns_csv(
             'phase_2bar_pattern_flexStart',
             'grid_time_2bar_pattern_flexStart',
             'grid_phase'
-        ]].rename(columns={
+        ]
+        rename_mapping = {
             'onset_time_2bar_pattern_flexStart': 'onset_time',
             'phase_2bar_pattern_flexStart': 'phase',
             'grid_time_2bar_pattern_flexStart': 'grid_time'
-        })
+        }
+
+        # Add tick_phase column if it exists
+        if 'tick_phase_2bar_pattern_flexStart' in df_2bar.columns:
+            columns_to_include.append('tick_phase_2bar_pattern_flexStart')
+            rename_mapping['tick_phase_2bar_pattern_flexStart'] = 'tick_phase'
+
+        df_2bar = df_2bar[columns_to_include].rename(columns=rename_mapping)
 
         output_file = output_dir / f"{base_name}_2bar_flexStart.csv"
         snippet_end = snippet_offset + SNIPPET_DURATION_S
@@ -2111,7 +2156,8 @@ def create_flexstart_patterns_csv(
         else:
             df_1bar = df_1bar_temp
 
-        df_1bar = df_1bar[[
+        # Select columns (include tick_phase if available)
+        columns_to_include = [
             'bar_number',
             'bar_number_global',
             'tick_16th',
@@ -2119,11 +2165,19 @@ def create_flexstart_patterns_csv(
             'phase_1bar_pattern_flexStart',
             'grid_time_1bar_pattern_flexStart',
             'grid_phase'
-        ]].rename(columns={
+        ]
+        rename_mapping = {
             'onset_time_1bar_pattern_flexStart': 'onset_time',
             'phase_1bar_pattern_flexStart': 'phase',
             'grid_time_1bar_pattern_flexStart': 'grid_time'
-        })
+        }
+
+        # Add tick_phase column if it exists
+        if 'tick_phase_1bar_pattern_flexStart' in df_1bar.columns:
+            columns_to_include.append('tick_phase_1bar_pattern_flexStart')
+            rename_mapping['tick_phase_1bar_pattern_flexStart'] = 'tick_phase'
+
+        df_1bar = df_1bar[columns_to_include].rename(columns=rename_mapping)
 
         output_file = output_dir / f"{base_name}_1bar_flexStart.csv"
         snippet_end = snippet_offset + SNIPPET_DURATION_S

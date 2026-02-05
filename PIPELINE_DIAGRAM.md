@@ -744,6 +744,22 @@ flowchart TD
 3. **4-bar Loop**: Each loop has own equidistant grid + independent offset
 4. **4-bar Pattern FlexStart**: Flexible starting point + independent offset per segment
 
+**Phase Values:**
+- **`phase`**: Bar-relative phase (0.0-1.0 across entire bar)
+  - Represents fractional position within the bar
+  - Example: `phase = 0.13` means 13% through the bar
+  - Used for rhythm visualizations and groove analysis
+
+- **`tick_phase`**: Tick-relative phase (0.0-1.0 within individual 16th note)
+  - Represents fractional position within the specific 16th note tick
+  - Calculated as: `tick_phase = (phase - grid_phase) × 16`
+  - Where `grid_phase = tick_16th / 16`
+  - Example: For tick 2 with `phase = 0.1343`, `grid_phase = 0.125`:
+    - `tick_phase = (0.1343 - 0.125) × 16 = 0.1488`
+    - Onset is 14.88% "late" within tick 2
+  - Used for precise inter-onset interval (IOI) calculations in beat histograms
+  - Only calculated for FlexStart methods (stored in comprehensive CSV and FlexStart CSVs)
+
 ---
 
 ## Output Generation Flow
@@ -1693,6 +1709,188 @@ Groove Pulse Strength,0.756789
 - Low timing variability (0.23 ≈ tight, consistent performance)
 - Strong beat emphasis (0.82 ≈ beats are well-defined)
 - Strong groove positions (0.76 ≈ clear rhythmic skeleton)
+
+---
+
+## Beat Histograms (Inter-Onset Intervals)
+
+Beat histograms analyze **inter-onset intervals (IOI)** - the time between consecutive drum onsets - to reveal rhythmic patterns at the beat level.
+
+### Overview
+
+Unlike rhythm histograms (which show onset strength per 16th note position), beat histograms categorize **time intervals between onsets** into rhythmic categories (whole notes, half notes, quarter notes, etc.) and visualize their distribution.
+
+**Key Features:**
+- **IOI Categories**: 4/4, 2/4, 1/4, 3/16, 1/8, 6/16, 1/16 (in 16th note ticks)
+- **Logarithmic X-Axis**: Natural spacing for rhythmic intervals
+- **Mean-Based Positioning**: Bars positioned at actual mean IOI (shows timing deviation)
+- **IQR Error Bars**: Shows variability within each category (scaled by 1.5×)
+- **Dual Y-Axes**: Left = Onset Strength (normalized), Right = Onset Count (absolute)
+- **Precise Timing**: Uses `tick_phase` for sub-tick accuracy
+
+### Data Flow
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart LR
+    Input[FlexStart Filtered CSVs<br/>L=4, L=2, L=1] --> Process[Process IOI]
+
+    subgraph Process["<b>Calculate Inter-Onset Intervals</b>"]
+        P1[Read filtered CSV] --> P2[Filter to onset rows<br/>tick_phase not null]
+        P2 --> P3[For each consecutive pair:<br/>onset1, onset2]
+        P3 --> P4[Calculate tick_delta<br/>bar_delta × 16 + tick_delta]
+        P4 --> P5[Calculate tick_phase_diff<br/>tick_phase2 - tick_phase1]
+        P5 --> P6[IOI = tick_delta + tick_phase_diff]
+        P6 --> P7[Categorize IOI<br/>round to nearest category]
+    end
+
+    Process --> Stats[Calculate Statistics]
+
+    subgraph Stats["<b>Per Category Stats</b>"]
+        S1[Count onsets] --> S4[Output]
+        S2[Mean IOI] --> S4
+        S3[IQR × 1.5] --> S4
+    end
+
+    Stats --> Plot[Create Visualizations]
+
+    subgraph Plot["<b>Two Visualizations</b>"]
+        V1[Beat Histograms<br/>Bars + Error Bars + Labels] --> V3[PDF + PNG]
+        V2[All Onsets<br/>X markers, jittered] --> V3
+    end
+
+    Process --> CSV[Save CSV per L]
+
+    style Input fill:#e1f5ff,stroke:#000,color:#000
+    style Process fill:#fff4e1,stroke:#000,color:#000
+    style Stats fill:#ffe1f5,stroke:#000,color:#000
+    style Plot fill:#e1ffe1,stroke:#000,color:#000
+    style CSV fill:#f5e1ff,stroke:#000,color:#000
+```
+
+### IOI Calculation
+
+**Formula:**
+```python
+# For consecutive onsets onset1 and onset2:
+tick1_absolute = bar1 × 16 + tick1
+tick2_absolute = bar2 × 16 + tick2
+tick_delta = tick2_absolute - tick1_absolute
+tick_phase_diff = tick_phase2 - tick_phase1
+ioi_exact_ticks = tick_delta + tick_phase_diff
+```
+
+**Example:**
+- **Onset 1**: bar=2, tick=3, tick_phase=0.15
+  - Absolute position: 2×16 + 3 + 0.15 = 35.15 ticks
+- **Onset 2**: bar=2, tick=7, tick_phase=-0.08
+  - Absolute position: 2×16 + 7 - 0.08 = 38.92 ticks
+- **IOI**: 38.92 - 35.15 = **3.77 ticks** (categorized as 1/4 = 4 ticks)
+
+### IOI Categories
+
+| Category | Ticks | Description | Example Use |
+|----------|-------|-------------|-------------|
+| 4/4 | 16 | Whole note | Loop boundaries |
+| 2/4 | 8 | Half note | Phrase markers |
+| 1/4 | 4 | Quarter note | Primary beats |
+| 3/16 | 3 | Dotted eighth | Swing patterns |
+| 1/8 | 2 | Eighth note | Backbeats |
+| 6/16 | 6 | Dotted quarter | Compound meters |
+| 1/16 | 1 | Sixteenth note | Fastest subdivisions |
+
+### Visualizations
+
+**1. Beat Histograms (Main)**
+- **3 subplots**: One per pattern length (L=4, L=2, L=1)
+- **X-axis**: Logarithmic scale (log2 of ticks)
+  - Gray grid lines at nominal category positions
+  - Categories labeled as fractions (1/16, 1/8, etc.)
+- **Bars**:
+  - Positioned at mean IOI in log space (shows timing deviation)
+  - Height = normalized onset strength (count / max_count)
+  - Blue vertical lines at bar centers (up to bar height)
+- **Error bars**:
+  - Horizontal IQR error bars at 90% bar height
+  - Converted from ticks to log space for accurate display
+  - Scaled by 1.5× for visibility
+- **Labels**:
+  - Deviation from nominal value shown on top of each bar
+  - Format: `.34` or `-.12` (no leading zero)
+- **Dual Y-axes**:
+  - Left: Onset Strength (0.0-1.0)
+  - Right: Onset Count (absolute numbers)
+
+**2. Beat Histograms - All Onsets**
+- **3 subplots**: One per pattern length
+- **X-axis**: Same logarithmic scale
+- **Markers**: Each IOI plotted as 'x' marker
+  - Y-position: Random jitter (0.4-0.6) for visibility
+  - Shows distribution density without aggregation
+- **Purpose**: Raw data visualization, complements aggregated histogram
+
+### Output Files
+
+**Per Pattern Length:**
+- `{track_id}_pre_beat_histogram_L4.csv` - Raw IOI data for L=4
+- `{track_id}_pre_beat_histogram_L2.csv` - Raw IOI data for L=2
+- `{track_id}_pre_beat_histogram_L1.csv` - Raw IOI data for L=1
+
+**Visualizations:**
+- `{track_id}_beat_histograms.pdf` - Main histogram (3 subplots)
+- `{track_id}_beat_histograms.png` - Main histogram (150 DPI)
+- `{track_id}_beat_histograms_all_onsets.pdf` - All onsets scatter plot
+- `{track_id}_beat_histograms_all_onsets.png` - All onsets scatter plot (150 DPI)
+
+**Batch Outputs:**
+- `all_beat_histograms.pdf` - Combined histograms from all tracks
+- `all_beat_histograms_all_onsets.pdf` - Combined all-onsets plots
+
+### CSV Structure
+
+**IOI Data CSV Columns:**
+```
+method                  : "Pattern-based"
+pattern_length          : 4, 2, or 1
+onset1_bar              : Bar number of first onset
+onset1_tick             : Tick (0-15) of first onset
+onset1_tick_absolute    : Absolute tick position (bar×16 + tick)
+onset1_tick_phase       : Phase within 16th note (0.0-1.0)
+onset1_time_abs         : Absolute time in seconds
+onset1_time_rel         : Time relative to snippet start
+onset2_bar              : Bar number of second onset
+onset2_tick             : Tick (0-15) of second onset
+onset2_tick_absolute    : Absolute tick position
+onset2_tick_phase       : Phase within 16th note (0.0-1.0)
+onset2_time_abs         : Absolute time in seconds
+onset2_time_rel         : Time relative to snippet start
+tick_delta              : Integer tick difference
+tick_phase_diff         : Fractional tick difference
+ioi_exact_ticks         : Exact IOI (tick_delta + tick_phase_diff)
+ioi_category            : Categorical IOI (4/4, 2/4, 1/4, etc.)
+```
+
+### Interpretation
+
+**Timing Precision:**
+- **Bars centered on grid**: IOI mean matches nominal category → precise timing
+- **Bars shifted right**: IOI mean > nominal → onsets tend to be "late" (rushed feel)
+- **Bars shifted left**: IOI mean < nominal → onsets tend to be "early" (laid-back feel)
+
+**Timing Consistency:**
+- **Narrow error bars**: Low variability → consistent performance
+- **Wide error bars**: High variability → loose or expressive timing
+
+**Rhythmic Structure:**
+- **Tall bars**: Dominant intervals → primary rhythmic skeleton
+- **Short bars**: Rare intervals → decorative fills or variations
+- **Missing categories**: Certain subdivisions not used
+
+**Example:**
+- **1/4 bar** at log2(4.12) with small error bar:
+  - Quarter notes averaging 4.12 ticks (slightly rushed)
+  - Low variability (tight performance)
+  - Deviation label shows `+.12` above bar
 
 ---
 
