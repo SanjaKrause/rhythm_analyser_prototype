@@ -5,6 +5,35 @@
 
 ---
 
+## Table of Contents
+
+1. [Main Pipeline Flow](#main-pipeline-flow)
+2. [Step 3: Tempo Correction (Simple Overview)](#step-3-tempo-correction-simple-overview)
+3. [Detailed Step 3: Downbeat Correction Logic](#detailed-step-3-downbeat-correction-logic)
+4. [Detailed Step 5: Pattern Length Detection Methods](#detailed-step-5-pattern-length-detection-methods)
+5. [Method 1: Drum Onset Pattern Detection (Detailed)](#method-1-drum-onset-pattern-detection-detailed)
+6. [Method 2: Mel-Band Pattern Detection (Detailed)](#method-2-mel-band-pattern-detection-detailed)
+7. [Method 3: Bass Pitch Pattern Detection (Detailed)](#method-3-bass-pitch-pattern-detection-detailed)
+8. [Pattern Detection: Similarity Matrix Visualization](#pattern-detection-similarity-matrix-visualization)
+9. [Detailed Step 6: Grid Correction Methods](#detailed-step-6-grid-correction-methods)
+10. [Detailed Step 6: Grid Correction - Data Preparation & Method Details](#detailed-step-6-grid-correction---data-preparation--method-details)
+11. [Output Generation Flow](#output-generation-flow)
+12. [Rhythm Histogram Visualizations](#rhythm-histogram-visualizations)
+13. [Groove Pulse Filtering](#groove-pulse-filtering)
+14. [Aggregate Rhythm Statistics](#aggregate-rhythm-statistics)
+15. [Beat Histograms (Inter-Onset Intervals)](#beat-histograms-inter-onset-intervals)
+16. [Simple IOI Histograms (Full Song)](#simple-ioi-histograms-full-song)
+17. [Snippet IOI Histograms (Complete Bars Only)](#snippet-ioi-histograms-complete-bars-only)
+18. [Full Song IOI Histogram](#full-song-ioi-histogram)
+19. [Beat Histogram Repetition Information](#beat-histogram-repetition-information)
+20. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+21. [Data Dependencies](#data-dependencies)
+22. [Legend](#legend)
+23. [Notes](#notes)
+24. [TODO](#todo)
+
+---
+
 ## Main Pipeline Flow
 
 ```mermaid
