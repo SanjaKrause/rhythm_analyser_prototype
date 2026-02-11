@@ -54,6 +54,39 @@ def categorize_ioi(ioi_ticks: float) -> str:
     return '1/16'  # Default to smallest
 
 
+def get_pattern_metadata(grid_output_dir: str, base_name: str) -> dict:
+    """
+    Get metadata (patterns_displayed/patterns_total) for each pattern length.
+
+    Parameters
+    ----------
+    grid_output_dir : str
+        Directory containing the FlexStart filtered CSV files
+    base_name : str
+        Base filename (without extension)
+
+    Returns
+    -------
+    dict
+        Dictionary with pattern_length as key and (displayed, total) tuple as value
+    """
+    grid_dir = Path(grid_output_dir)
+    pattern_lengths = [4, 2, 1]
+    metadata = {}
+
+    for pattern_length in pattern_lengths:
+        filtered_csv_name = f'{base_name}_comprehensive_phases_{pattern_length}bar_flexStart_filtered.csv'
+        filtered_csv_path = grid_dir / filtered_csv_name
+
+        if filtered_csv_path.exists():
+            num_displayed, num_total, _ = read_filtered_csv_metadata(str(filtered_csv_path))
+            metadata[pattern_length] = (num_displayed, num_total)
+        else:
+            metadata[pattern_length] = (None, None)
+
+    return metadata
+
+
 def process_pattern_based_ioi(
     grid_output_dir: str,
     base_name: str,
@@ -238,6 +271,9 @@ def create_beat_histograms(
         print(f"    ⚠️  No IOI data found")
         return {}
 
+    # Get metadata for each pattern length (displayed/total repetitions)
+    pattern_metadata = get_pattern_metadata(grid_output_dir, base_name)
+
     # Save separate CSV files for each pattern length
     output_files = {}
     pattern_lengths = [4, 2, 1]
@@ -385,7 +421,14 @@ def create_beat_histograms(
         # Adjust right y-axis scale to match left axis
         ax2.set_ylim(0, max_count * 1.2)  # Match padding
 
-        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals)',
+        # Get repetition info for this pattern length
+        num_displayed, num_total = pattern_metadata.get(pattern_length, (None, None))
+        if num_displayed is not None and num_total is not None:
+            rep_info = f' — Repetitions: {num_displayed}/{num_total}'
+        else:
+            rep_info = ''
+
+        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals){rep_info}',
                     fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='y')
 
@@ -478,6 +521,9 @@ def create_beat_histograms_all_onsets(
         print(f"    ⚠️  No IOI data found")
         return {}
 
+    # Get metadata for each pattern length (displayed/total repetitions)
+    pattern_metadata = get_pattern_metadata(grid_output_dir, base_name)
+
     # Create visualization
     fig, axes = plt.subplots(3, 1, figsize=(16, 12))
     fig.suptitle(f'Beat Histograms — All Onsets (IOI) — {track_id}', fontsize=14, fontweight='bold', y=0.995)
@@ -532,7 +578,14 @@ def create_beat_histograms_all_onsets(
         ax.set_ylim(0, 1)
         ax.set_yticks([])  # Hide y-axis ticks (density visualization)
 
-        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals)',
+        # Get repetition info for this pattern length
+        num_displayed, num_total = pattern_metadata.get(pattern_length, (None, None))
+        if num_displayed is not None and num_total is not None:
+            rep_info = f' — Repetitions: {num_displayed}/{num_total}'
+        else:
+            rep_info = ''
+
+        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals){rep_info}',
                     fontsize=11, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3, axis='x')
 
