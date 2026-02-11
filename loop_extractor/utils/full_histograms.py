@@ -2,9 +2,9 @@
 """
 Full Song Histograms - Create histograms from the entire song instead of just the snippet.
 
-This module processes onset detection data from the full audio file and creates
-IOI (inter-onset interval) histograms similar to beat_histograms.py but using
-all onsets from the complete song.
+This module reads pre-detected onset data from the 4_onsets CSV file and creates
+IOI (inter-onset interval) histograms using all onsets from the complete song.
+Uses tempo from the corrected downbeats file (avg_kept_corrected).
 
 Environment: Base (numpy, pandas, matplotlib)
 """
@@ -13,54 +13,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict
-import librosa
-import warnings
-
-
-def load_full_song_onsets(audio_path: str, sr: int = 22050) -> Tuple[np.ndarray, float]:
-    """
-    Load audio file and detect onsets across the entire song.
-
-    Parameters
-    ----------
-    audio_path : str
-        Path to audio file
-    sr : int
-        Sample rate (default: 22050)
-
-    Returns
-    -------
-    onset_times : np.ndarray
-        Onset times in seconds
-    bpm : float
-        Estimated tempo
-    """
-    print(f"    Loading full audio: {Path(audio_path).name}")
-
-    # Suppress librosa warnings about deprecated scipy functions
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=DeprecationWarning)
-
-        # Load audio
-        y, sr = librosa.load(audio_path, sr=sr)
-
-        # Detect onsets using onset strength envelope
-        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-        onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, backtrack=True)
-        onset_times = librosa.frames_to_time(onset_frames, sr=sr)
-
-        # Estimate tempo using onset strength envelope
-        tempo = librosa.beat.tempo(onset_envelope=onset_env, sr=sr)
-        if isinstance(tempo, np.ndarray):
-            tempo = float(tempo[0])
-        else:
-            tempo = float(tempo)
-
-    print(f"    Detected {len(onset_times)} onsets across {len(y)/sr:.1f}s")
-    print(f"    Estimated BPM: {tempo:.1f}")
-
-    return onset_times, tempo
 
 
 def calculate_ioi_from_onsets(onset_times: np.ndarray, bpm: float) -> pd.DataFrame:
@@ -148,24 +100,31 @@ def categorize_ioi(ioi_ticks: float) -> str:
 
 
 def create_full_song_ioi_histogram(
-    audio_path: str,
+    onsets_file: str,
+    corrected_downbeats_file: str,
     track_id: str,
-    output_dir: str,
-    bpm: Optional[float] = None
+    output_dir: str
 ) -> dict:
     """
-    Create IOI histogram from the entire song.
+    Create IOI histogram from the entire song using pre-detected onsets.
+
+    Reads ALL onset times from the entire song directly from the 4_onsets CSV
+    and calculates IOI as differences between consecutive onsets. Uses tempo
+    from corrected downbeats file (avg_kept_corrected) for rhythmic interval
+    reference lines.
 
     Parameters
     ----------
-    audio_path : str
-        Path to audio file
+    onsets_file : str
+        Path to the onsets CSV file (4_onsets/{track_id}_onsets.csv).
+        The entire file is read - all onsets from the full song.
+    corrected_downbeats_file : str
+        Path to corrected downbeats file (3_corrected/{track_id}_downbeats_corrected.txt)
+        Used to extract avg_kept_corrected tempo from comments
     track_id : str
         Track identifier for plot title
     output_dir : str
         Output directory for saving plots
-    bpm : Optional[float]
-        Known BPM (if None, will be estimated)
 
     Returns
     -------
@@ -177,15 +136,37 @@ def create_full_song_ioi_histogram(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Load onsets from full song
-    onset_times, estimated_bpm = load_full_song_onsets(audio_path)
+    # Read onset times from CSV
+    onsets_path = Path(onsets_file)
+    if not onsets_path.exists():
+        print(f"    ⚠️  Onsets file not found: {onsets_file}")
+        return {}
 
-    # Use provided BPM or estimated BPM
-    if bpm is None:
-        bpm = estimated_bpm
-        print(f"    Using estimated BPM: {bpm:.1f}")
-    else:
-        print(f"    Using provided BPM: {bpm:.1f}")
+    df_onsets = pd.read_csv(onsets_path)
+    if df_onsets.empty or 'onset_times' not in df_onsets.columns:
+        print(f"    ⚠️  No onset data found in {onsets_file}")
+        return {}
+
+    onset_times = df_onsets['onset_times'].values
+
+    if len(onset_times) < 2:
+        print(f"    ⚠️  Need at least 2 onsets to calculate IOI")
+        return {}
+
+    # Get tempo from corrected downbeats file comments
+    bpm = 120.0  # Default
+    corrected_path = Path(corrected_downbeats_file)
+    if corrected_path.exists():
+        with open(corrected_path, 'r') as f:
+            for line in f:
+                if line.startswith('# avg_kept_corrected='):
+                    try:
+                        bpm = float(line.split('=')[1].strip())
+                    except ValueError:
+                        pass
+                    break
+
+    print(f"    Using tempo from corrected downbeats: {bpm:.1f} BPM")
 
     # Calculate IOI
     df_ioi = calculate_ioi_from_onsets(onset_times, bpm)
@@ -209,7 +190,7 @@ def create_full_song_ioi_histogram(
     # Formatting
     ax.set_xlabel('Inter-Onset Interval (ms)', fontsize=12, fontweight='bold')
     ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-    ax.set_title(f'{len(df_ioi_filtered)}/{len(df_ioi)} intervals (≤16 ticks) from entire song',
+    ax.set_title(f'{len(df_ioi_filtered)}/{len(df_ioi)} intervals (≤16 ticks) from entire song — Tempo: {bpm:.1f} BPM',
                 fontsize=11, fontweight='bold', pad=10)
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -260,118 +241,6 @@ def create_full_song_ioi_histogram(
         'full_song_ioi_histogram_pdf': str(output_pdf),
         'full_song_ioi_histogram_png': str(output_png),
         'full_song_ioi_data_csv': str(output_csv)
-    }
-
-    print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals from full song")
-
-    return output_files
-
-
-def create_full_song_beat_histogram(
-    audio_path: str,
-    track_id: str,
-    output_dir: str,
-    bpm: Optional[float] = None
-) -> dict:
-    """
-    Create beat histogram from the entire song (similar to beat_histograms.py).
-
-    Shows IOI distribution in ticks with logarithmic x-axis.
-
-    Parameters
-    ----------
-    audio_path : str
-        Path to audio file
-    track_id : str
-        Track identifier for plot title
-    output_dir : str
-        Output directory for saving plots
-    bpm : Optional[float]
-        Known BPM (if None, will be estimated)
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files
-    """
-    print(f"\n  [Full Song Beat Histogram] Creating beat histogram from entire song...")
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Load onsets from full song
-    onset_times, estimated_bpm = load_full_song_onsets(audio_path)
-
-    # Use provided BPM or estimated BPM
-    if bpm is None:
-        bpm = estimated_bpm
-        print(f"    Using estimated BPM: {bpm:.1f}")
-    else:
-        print(f"    Using provided BPM: {bpm:.1f}")
-
-    # Calculate IOI
-    df_ioi = calculate_ioi_from_onsets(onset_times, bpm)
-
-    if df_ioi.empty:
-        print(f"    ⚠️  No IOI data found")
-        return {}
-
-    # Create visualization
-    fig, ax = plt.subplots(1, 1, figsize=(16, 6))
-    fig.suptitle(f'Full Song Beat Histogram — {track_id}', fontsize=14, fontweight='bold', y=0.98)
-
-    # Filter IOI values for plotting: only <= 16 ticks (one bar)
-    df_ioi_filtered = df_ioi[df_ioi['ioi_ticks'] <= 16].copy()
-    ioi_values = df_ioi_filtered['ioi_ticks'].values
-
-    # Create histogram with automatic binning
-    counts, bins, patches = ax.hist(ioi_values, bins=50, color='#2ECC71', alpha=0.7,
-                                   edgecolor='black', linewidth=0.5)
-
-    # Formatting
-    ax.set_xlabel('IOI (16th note ticks)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-    ax.set_title(f'{len(df_ioi_filtered)}/{len(df_ioi)} intervals (≤16 ticks) from entire song',
-                fontsize=11, fontweight='bold', pad=10)
-    ax.grid(True, alpha=0.3, axis='y')
-
-    # Add vertical lines at common rhythmic intervals (in ticks)
-    rhythmic_intervals = {
-        '1/16': 1,
-        '1/8': 2,
-        '3/16': 3,
-        '1/4': 4,
-        '6/16': 6,
-        '2/4': 8,
-        '4/4': 16,
-    }
-
-    for label, value_ticks in rhythmic_intervals.items():
-        if ax.get_xlim()[0] <= value_ticks <= ax.get_xlim()[1]:
-            ax.axvline(x=value_ticks, color='red', linestyle='--',
-                      linewidth=1.5, alpha=0.5)
-            # Add text label above the line
-            ax.text(value_ticks, ax.get_ylim()[1] * 0.95, label,
-                   ha='center', va='top', fontsize=8, color='red',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
-
-    plt.tight_layout()
-
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_full_song_beat_histogram.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_full_song_beat_histogram.png'
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"    Saved: {output_png.name}")
-
-    plt.close()
-
-    output_files = {
-        'full_song_beat_histogram_pdf': str(output_pdf),
-        'full_song_beat_histogram_png': str(output_png)
     }
 
     print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals from full song")

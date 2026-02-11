@@ -952,11 +952,21 @@ def run_complete_pipeline(
                         str(beat_output_dir)
                     )
 
-                    # Create snippet IOI all crosses plot (filtered to snippet time range)
+                    # Create snippet IOI plots (filtered to snippet time range)
                     snippet_info = results.get('snippet_info', {})
                     snippet_start = snippet_info.get('usable_start_s', 0.0)
                     snippet_duration = snippet_info.get('usable_duration_s', 30.0)
+
                     snippet_ioi_crosses_files = beat_histograms.create_snippet_ioi_all_crosses(
+                        str(paths['onsets_file']),
+                        str(paths['corrected_downbeats_file']),
+                        track_id,
+                        str(beat_output_dir),
+                        snippet_start,
+                        snippet_duration
+                    )
+
+                    snippet_ioi_histogram_files = beat_histograms.create_snippet_ioi_histogram(
                         str(paths['onsets_file']),
                         str(paths['corrected_downbeats_file']),
                         track_id,
@@ -1028,16 +1038,13 @@ def run_complete_pipeline(
             full_hist_output_dir = track_root / '5.8_full_histograms'
             full_hist_output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Get BPM from results
-            bpm = results.get('tempo_estimation', {}).get('bpm', None)
-
             try:
-                # Create full song IOI histogram
+                # Create full song IOI histogram (from raw onset times)
                 full_ioi_files = full_histograms.create_full_song_ioi_histogram(
-                    audio_file,
+                    str(paths['onsets_file']),
+                    str(paths['corrected_downbeats_file']),
                     track_id,
-                    str(full_hist_output_dir),
-                    bpm
+                    str(full_hist_output_dir)
                 )
 
                 if verbose:
@@ -1046,22 +1053,6 @@ def run_complete_pipeline(
             except Exception as e:
                 if verbose:
                     print(f"  ! Warning: Could not create full song IOI histogram: {e}")
-
-            try:
-                # Create full song beat histogram
-                full_beat_files = full_histograms.create_full_song_beat_histogram(
-                    audio_file,
-                    track_id,
-                    str(full_hist_output_dir),
-                    bpm
-                )
-
-                if verbose:
-                    print(f"  ✓ Full song beat histogram created")
-
-            except Exception as e:
-                if verbose:
-                    print(f"  ! Warning: Could not create full song beat histogram: {e}")
 
             results['steps_completed'].append('full_histograms')
 

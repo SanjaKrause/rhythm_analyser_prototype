@@ -1028,6 +1028,163 @@ def create_snippet_ioi_all_crosses(
     return output_files
 
 
+def create_snippet_ioi_histogram(
+    onsets_file: str,
+    corrected_downbeats_file: str,
+    track_id: str,
+    output_dir: str,
+    snippet_start: float,
+    snippet_duration: float
+) -> dict:
+    """
+    Create snippet IOI histogram showing distribution of inter-onset intervals.
+
+    Reads onset times from the 4_onsets CSV and filters to only onsets within the
+    specified snippet time range (complete bars). Uses tempo from corrected
+    downbeats file for rhythmic interval reference lines.
+
+    Parameters
+    ----------
+    onsets_file : str
+        Path to the onsets CSV file (4_onsets/{track_id}_onsets.csv)
+    corrected_downbeats_file : str
+        Path to corrected downbeats file (3_corrected/{track_id}_downbeats_corrected.txt)
+        Used to extract avg_kept_corrected tempo from comments
+    track_id : str
+        Track identifier for plot title
+    output_dir : str
+        Output directory for saving plots
+    snippet_start : float
+        Start time of the snippet in seconds (usable_start_s from complete bars)
+    snippet_duration : float
+        Duration of the snippet in seconds (usable_duration_s)
+
+    Returns
+    -------
+    dict
+        Dictionary with paths to saved files
+    """
+    print(f"\n  [Snippet IOI Histogram] Creating IOI histogram for snippet...")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Read onset times from CSV
+    onsets_path = Path(onsets_file)
+    if not onsets_path.exists():
+        print(f"    ⚠️  Onsets file not found: {onsets_file}")
+        return {}
+
+    df_onsets = pd.read_csv(onsets_path)
+    if df_onsets.empty or 'onset_times' not in df_onsets.columns:
+        print(f"    ⚠️  No onset data found in {onsets_file}")
+        return {}
+
+    onset_times = df_onsets['onset_times'].values
+
+    # Filter to snippet time range
+    snippet_end = snippet_start + snippet_duration
+    onset_times_snippet = onset_times[(onset_times >= snippet_start) & (onset_times <= snippet_end)]
+
+    if len(onset_times_snippet) < 2:
+        print(f"    ⚠️  Need at least 2 onsets in snippet to calculate IOI")
+        return {}
+
+    # Calculate IOI as simple differences between consecutive onsets (in seconds)
+    ioi_seconds = np.diff(onset_times_snippet)
+    ioi_ms = ioi_seconds * 1000  # Convert to milliseconds
+
+    # Get tempo from corrected downbeats file comments
+    bpm = 120.0  # Default
+    corrected_path = Path(corrected_downbeats_file)
+    if corrected_path.exists():
+        with open(corrected_path, 'r') as f:
+            for line in f:
+                if line.startswith('# avg_kept_corrected='):
+                    try:
+                        bpm = float(line.split('=')[1].strip())
+                    except ValueError:
+                        pass
+                    break
+
+    # Calculate tick duration for rhythmic interval lines
+    bar_duration_s = 60.0 / bpm * 4  # 4 beats per bar
+    tick_duration_ms = (bar_duration_s / 16) * 1000  # 16th note in ms
+
+    # Filter to reasonable IOI values (up to 1 bar = 16 ticks)
+    max_ioi_ms = 16 * tick_duration_ms
+    ioi_ms_filtered = ioi_ms[ioi_ms <= max_ioi_ms]
+
+    # Create histogram
+    fig, ax = plt.subplots(1, 1, figsize=(16, 6))
+    fig.suptitle(f'Snippet IOI Histogram — {track_id}', fontsize=14, fontweight='bold', y=0.98)
+
+    # Create histogram with automatic binning
+    counts, bins, patches = ax.hist(ioi_ms_filtered, bins=50, color='#3498DB', alpha=0.7,
+                                     edgecolor='black', linewidth=0.5)
+
+    # Formatting
+    ax.set_xlabel('Inter-Onset Interval (ms)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
+    ax.set_title(f'{len(ioi_ms)} total intervals ({len(ioi_ms_filtered)} shown ≤1 bar) — Snippet (complete bars): {snippet_start:.1f}s - {snippet_end:.1f}s — Tempo: {bpm:.1f} BPM',
+                fontsize=11, fontweight='bold', pad=10)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add vertical lines at common rhythmic intervals (in ms)
+    rhythmic_intervals = {
+        '1/16': 1 * tick_duration_ms,
+        '1/8': 2 * tick_duration_ms,
+        '3/16': 3 * tick_duration_ms,
+        '1/4': 4 * tick_duration_ms,
+        '6/16': 6 * tick_duration_ms,
+        '2/4': 8 * tick_duration_ms,
+        '4/4': 16 * tick_duration_ms,
+    }
+
+    for label, value_ms in rhythmic_intervals.items():
+        if ax.get_xlim()[0] <= value_ms <= ax.get_xlim()[1]:
+            ax.axvline(x=value_ms, color='red', linestyle='--',
+                      linewidth=1.5, alpha=0.5, label=label)
+
+    # Add legend for rhythmic interval lines
+    ax.legend(loc='upper right', fontsize=9, title='Rhythmic Intervals')
+
+    plt.tight_layout()
+
+    # Save plot as PDF
+    output_pdf = output_path / f'{track_id}_snippet_ioi_histogram.pdf'
+    plt.savefig(output_pdf, bbox_inches='tight')
+    print(f"    Saved: {output_pdf.name}")
+
+    # Save plot as PNG
+    output_png = output_path / f'{track_id}_snippet_ioi_histogram.png'
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    print(f"    Saved: {output_png.name}")
+
+    plt.close()
+
+    # Save CSV with IOI in milliseconds
+    output_csv = output_path / f'{track_id}_snippet_ioi_data.csv'
+    df_ioi_out = pd.DataFrame({
+        'onset1_time_s': onset_times_snippet[:-1],
+        'onset2_time_s': onset_times_snippet[1:],
+        'ioi_seconds': ioi_seconds,
+        'ioi_ms': ioi_ms
+    })
+    df_ioi_out.to_csv(output_csv, index=False)
+    print(f"    Saved: {output_csv.name}")
+
+    output_files = {
+        'snippet_ioi_histogram_pdf': str(output_pdf),
+        'snippet_ioi_histogram_png': str(output_png),
+        'snippet_ioi_data_csv': str(output_csv)
+    }
+
+    print(f"    ✓ Processed {len(ioi_ms)} inter-onset intervals from snippet ({len(onset_times_snippet)} onsets)")
+
+    return output_files
+
+
 def create_simple_beat_histograms(
     output_dir: str,
     track_id: str,
