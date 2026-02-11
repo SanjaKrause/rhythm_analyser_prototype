@@ -101,6 +101,52 @@ flowchart TD
 
 ---
 
+## Step 3: Tempo Correction (Simple Overview)
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryTextColor':'#000','primaryBorderColor':'#000','lineColor':'#000','clusterBorder':'#000','edgeLabelBackground':'#fff'}}}%%
+flowchart LR
+    Start["Raw<br/>Downbeats"] --> Calc["Calculate<br/>Median Tempo"]
+
+    Calc --> Class["Classify Bars<br/>0.45-0.55×: half<br/>1.8-2.2×: double<br/>else: normal"]
+
+    Class --> Threshold{">50%<br/>>135 BPM?"}
+    Threshold -->|Yes| Rebase["Rebase<br/>median/2<br/>Reclassify"]
+    Threshold -->|No| Skip[Continue]
+
+    Rebase --> Dominant
+    Skip --> Dominant["Determine<br/>Dominant<br/>Pattern"]
+
+    Dominant --> Compare["n_normal<br/>vs<br/>n_factor2"]
+
+    Compare --> Branch{Type?}
+
+    Branch -->|normal| StratN["MERGE double bars<br/>SPLIT half bars"]
+    Branch -->|factor2| StratF["SPLIT/MERGE<br/>normal bars"]
+
+    StratN --> Out["Corrected<br/>Downbeats"]
+    StratF --> Out
+
+    style Start fill:#e8e8e8,stroke:#333,stroke-width:2px
+    style Out fill:#e8e8e8,stroke:#333,stroke-width:2px
+    style Threshold fill:#fff,stroke:#555,stroke-width:1px,stroke-dasharray: 3
+    style Branch fill:#fff,stroke:#555,stroke-width:1px,stroke-dasharray: 3
+    style StratN fill:#f5f5f5,stroke:#333,stroke-width:1px
+    style StratF fill:#f5f5f5,stroke:#333,stroke-width:1px
+```
+
+**Algorithm Properties:**
+- **Factor-of-2 classification**: Bars classified as half (0.45-0.55×), double (1.8-2.2×), or normal relative to median tempo
+- **Adaptive rebasing**: When >50% bars exceed 135 BPM threshold, reference tempo is halved and bars reclassified
+- **Pattern-driven strategy**: Dominant pattern (normal vs factor-of-2) determines merge/split operations
+- **Correction mechanics**:
+  - *Merge*: Double-tempo bar merges with next bar (removes intermediate downbeat)
+  - *Split*: Half-tempo bar splits at midpoint (inserts new downbeat)
+  - *3+5 beat case*: 5-beat bar (1.25×, classified "double") merges with following 3-beat bar (0.75×, "half"), creating 8-beat span that then splits into 2 normal bars
+- **Fully automated**: No manual intervention required
+
+---
+
 ## Detailed Step 3: Downbeat Correction Logic
 
 ```mermaid
@@ -1891,6 +1937,168 @@ ioi_category            : Categorical IOI (4/4, 2/4, 1/4, etc.)
   - Quarter notes averaging 4.12 ticks (slightly rushed)
   - Low variability (tight performance)
   - Deviation label shows `+.12` above bar
+
+---
+
+## Simple IOI Histograms (Full Song)
+
+### Overview
+
+Simple IOI histograms provide a straightforward visualization of inter-onset intervals across the **entire song**, without pattern-based filtering or quantization. These use raw onset times from the `4_onsets` CSV.
+
+### Key Difference from Beat Histograms
+
+| Aspect | Beat Histograms | Simple IOI Histograms |
+|--------|-----------------|----------------------|
+| **Data Source** | FlexStart filtered CSVs (quantized grid) | Raw onsets from `4_onsets/*.csv` |
+| **Scope** | Snippet only (pattern-filtered) | Full song (all onsets) |
+| **Tempo Source** | Passed as parameter | Read from `avg_kept_corrected` in `3_corrected/*.txt` |
+| **Pattern Grouping** | Grouped by L=4, L=2, L=1 | No pattern grouping |
+
+### Functions
+
+1. **`create_simple_ioi_histogram()`**
+   - Creates histogram showing IOI distribution in milliseconds
+   - X-axis: IOI in ms, Y-axis: count
+   - Vertical reference lines at rhythmic intervals (1/16, 1/8, 1/4, etc.)
+   - Output: `{track_id}_simple_ioi_histogram.pdf/png`
+
+2. **`create_simple_ioi_all_crosses()`**
+   - Creates scatter plot with 'x' markers for each IOI
+   - X-axis: IOI in ticks (log2 scale), Y-axis: jittered density
+   - Output: `{track_id}_simple_ioi_all_crosses.pdf/png`
+
+### Data Flow
+
+```
+4_onsets/{track_id}_onsets.csv
+         │
+         ▼
+   pd.read_csv()
+         │
+         ▼
+  onset_times column
+         │
+         ▼
+   np.diff(onset_times)  →  IOI in seconds
+         │
+         ▼
+  Convert to ms or ticks using tempo from:
+  3_corrected/{track_id}_downbeats_corrected.txt
+  (avg_kept_corrected comment)
+```
+
+### Batch Output
+
+- `all_simple_ioi_histograms.pdf` - merged histogram plots
+- `all_simple_ioi_all_crosses.pdf` - merged scatter plots
+
+---
+
+## Snippet IOI Histograms (Complete Bars Only)
+
+### Overview
+
+Snippet IOI histograms analyze only the **usable portion** of the song - the time range containing complete bars as determined by the pattern detection step. This matches the scope used for grid analysis.
+
+### Snippet Time Range
+
+The snippet boundaries come from `snippet_info` in the pattern detection results:
+- `usable_start_s`: Start of first complete bar
+- `usable_end_s`: End of last complete bar
+- `usable_duration_s`: Duration covering only complete bars
+
+This is typically shorter than the requested 30s snippet because partial bars at boundaries are excluded.
+
+### Functions
+
+1. **`create_snippet_ioi_histogram()`**
+   - Histogram of IOI values within snippet time range
+   - Title shows: `Snippet (complete bars): {start}s - {end}s`
+   - Output: `{track_id}_snippet_ioi_histogram.pdf/png`
+
+2. **`create_snippet_ioi_all_crosses()`**
+   - Scatter plot of IOI values within snippet
+   - Same 'x' marker visualization as full song version
+   - Output: `{track_id}_snippet_ioi_all_crosses.pdf/png`
+
+### Filtering Logic
+
+```python
+# Filter onsets to snippet range
+snippet_end = snippet_start + snippet_duration
+onset_times_snippet = onset_times[
+    (onset_times >= snippet_start) &
+    (onset_times <= snippet_end)
+]
+```
+
+### Batch Output
+
+- `all_snippet_ioi_histograms.pdf` - merged histogram plots
+- `all_snippet_ioi_all_crosses.pdf` - merged scatter plots
+
+---
+
+## Full Song IOI Histogram
+
+### Overview
+
+Creates IOI histogram from pre-detected onsets covering the **entire song duration**. Located in the `5.8_full_histograms` folder.
+
+### Key Features
+
+- Reads from `4_onsets/{track_id}_onsets.csv` (all onsets)
+- Gets tempo from `avg_kept_corrected` in corrected downbeats file
+- No pattern filtering or snippet limitation
+- Shows tempo in plot title
+
+### Function
+
+**`create_full_song_ioi_histogram()`** in `utils/full_histograms.py`
+
+### Output
+
+- Individual: `5.8_full_histograms/{track_id}_full_song_ioi_histogram.pdf/png`
+- Batch: `all_full_song_ioi_histograms.pdf`
+
+---
+
+## Beat Histogram Repetition Information
+
+### Overview
+
+Beat histograms (the pattern-based IOI analysis) now display the number of pattern repetitions used in each subplot title.
+
+### Title Format
+
+```
+Pattern Length L=4 (123 intervals) — Repetitions: 1/2
+```
+
+Where:
+- `1/2` means 1 pattern displayed out of 2 total patterns found
+- This comes from the FlexStart filtered CSV metadata
+
+### Metadata Source
+
+Read from FlexStart filtered CSV header comments:
+```
+# patterns_displayed=1
+# patterns_total=2
+# filtering_method=running mean (threshold=0.5)
+```
+
+### Helper Function
+
+**`get_pattern_metadata(grid_output_dir, base_name)`**
+
+Returns dict with `{pattern_length: (displayed, total)}` for L=4, L=2, L=1.
+
+### Affected Functions
+
+- `create_beat_histograms()` - bar chart with IQR error bars
+- `create_beat_histograms_all_onsets()` - scatter plot with 'x' markers
 
 ---
 
