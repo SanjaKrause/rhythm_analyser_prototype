@@ -388,6 +388,46 @@ def merge_plots(output_dir: Path):
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
+    # 15b. Merge simple IOI all crosses plots (PDF files in 5.7_beat_histograms folder)
+    print('\nLooking for simple IOI all crosses plots...')
+    simple_ioi_crosses_pdfs = []
+    for track_dir in track_dirs:
+        simple_ioi_crosses_pdf = track_dir / '5.7_beat_histograms' / f'{track_dir.name}_simple_ioi_all_crosses.pdf'
+        if simple_ioi_crosses_pdf.exists():
+            simple_ioi_crosses_pdfs.append(simple_ioi_crosses_pdf)
+            print(f'  Found simple IOI all crosses: {track_dir.name}')
+
+    if simple_ioi_crosses_pdfs:
+        print(f'\nMerging {len(simple_ioi_crosses_pdfs)} simple IOI all crosses PDFs...')
+        output_pdf = batch_dir / 'all_simple_ioi_all_crosses.pdf'
+        merger = PdfMerger()
+        for pdf in simple_ioi_crosses_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 15c. Merge snippet IOI all crosses plots (PDF files in 5.7_beat_histograms folder)
+    print('\nLooking for snippet IOI all crosses plots...')
+    snippet_ioi_crosses_pdfs = []
+    for track_dir in track_dirs:
+        snippet_ioi_crosses_pdf = track_dir / '5.7_beat_histograms' / f'{track_dir.name}_snippet_ioi_all_crosses.pdf'
+        if snippet_ioi_crosses_pdf.exists():
+            snippet_ioi_crosses_pdfs.append(snippet_ioi_crosses_pdf)
+            print(f'  Found snippet IOI all crosses: {track_dir.name}')
+
+    if snippet_ioi_crosses_pdfs:
+        print(f'\nMerging {len(snippet_ioi_crosses_pdfs)} snippet IOI all crosses PDFs...')
+        output_pdf = batch_dir / 'all_snippet_ioi_all_crosses.pdf'
+        merger = PdfMerger()
+        for pdf in snippet_ioi_crosses_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
     # 16. Merge simple beat histogram plots (PDF files in 5.7_beat_histograms folder)
     print('\nLooking for simple beat histogram plots...')
     simple_beat_pdfs = []

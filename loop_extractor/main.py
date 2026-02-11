@@ -546,11 +546,13 @@ def run_complete_pipeline(
                 snippet = (snippet_offset, snippet_offset + snippet_dur)
             elif snippet_offset_file and Path(snippet_offset_file).exists():
                 snippet_offset = raster.load_snippet_offset(snippet_offset_file, track_id)
-                snippet = (snippet_offset, snippet_offset + 30.0)  # 30s snippet
+                snippet_dur = manual_duration if manual_duration is not None else 30.0
+                snippet = (snippet_offset, snippet_offset + snippet_dur)
             elif config.OVERVIEW_CSV.exists():
                 snippet_offset = raster.load_snippet_offset(str(config.OVERVIEW_CSV), track_id)
                 if snippet_offset > 0:
-                    snippet = (snippet_offset, snippet_offset + 30.0)
+                    snippet_dur = manual_duration if manual_duration is not None else 30.0
+                    snippet = (snippet_offset, snippet_offset + snippet_dur)
 
             # Filter bars to snippet if provided
             # Only include FULL bars: bar_start >= snippet_start AND bar_end <= snippet_end
@@ -641,12 +643,14 @@ def run_complete_pipeline(
                 raise FileNotFoundError(f"Onset file not found (should have been created in Step 4): {onset_file}")
 
             # Create comprehensive CSV
+            snippet_dur = manual_duration if manual_duration is not None else 30.0
             df_comp = raster.create_comprehensive_csv(
                 str(paths['corrected_downbeats_file']),
                 str(onset_file),
                 pattern_lengths,
                 snippet_offset,
-                str(paths['comprehensive_csv'])
+                str(paths['comprehensive_csv']),
+                snippet_duration=snippet_dur
             )
 
             results['comprehensive_csv'] = str(paths['comprehensive_csv'])
@@ -932,14 +936,33 @@ def run_complete_pipeline(
                         snippet_start_time
                     )
 
-                    # Create simple IOI histogram
+                    # Create simple IOI histogram (from raw onset times)
                     simple_ioi_files = beat_histograms.create_simple_ioi_histogram(
-                        str(grid_output_dir),
-                        base_name,
+                        str(paths['onsets_file']),
+                        str(paths['corrected_downbeats_file']),
+                        track_id,
+                        str(beat_output_dir)
+                    )
+
+                    # Create simple IOI all crosses plot (from raw onset times)
+                    simple_ioi_crosses_files = beat_histograms.create_simple_ioi_all_crosses(
+                        str(paths['onsets_file']),
+                        str(paths['corrected_downbeats_file']),
+                        track_id,
+                        str(beat_output_dir)
+                    )
+
+                    # Create snippet IOI all crosses plot (filtered to snippet time range)
+                    snippet_info = results.get('snippet_info', {})
+                    snippet_start = snippet_info.get('usable_start_s', 0.0)
+                    snippet_duration = snippet_info.get('usable_duration_s', 30.0)
+                    snippet_ioi_crosses_files = beat_histograms.create_snippet_ioi_all_crosses(
+                        str(paths['onsets_file']),
+                        str(paths['corrected_downbeats_file']),
                         track_id,
                         str(beat_output_dir),
-                        bpm,
-                        snippet_start_time
+                        snippet_start,
+                        snippet_duration
                     )
 
                     # Create simple beat histograms (from pre_beat_histogram CSVs)
