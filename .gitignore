@@ -61,3 +61,6 @@ AP_2_code/input_wav/*.flac
 # Conda
 *.conda
 *.tar.bz2
+
+# Data folders (large datasets)
+groove-data/

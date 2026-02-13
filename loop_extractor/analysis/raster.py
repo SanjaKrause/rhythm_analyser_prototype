@@ -1194,7 +1194,8 @@ def create_raster_csv(
     output_file: str,
     max_match_frac: float = None,  # Deprecated - uses asymmetric tolerances
     search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
-    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE,
+    snippet_duration: float = SNIPPET_DURATION_S
 ) -> pd.DataFrame:
     """
     Create raster CSV with 6 correction methods.
@@ -1240,7 +1241,7 @@ def create_raster_csv(
     onsets = load_onsets(onset_file)
 
     # Calculate snippet bars
-    first_bar, last_bar = calculate_snippet_bars(downbeats, snippet_offset, SNIPPET_DURATION_S)
+    first_bar, last_bar = calculate_snippet_bars(downbeats, snippet_offset, snippet_duration)
     print(f"  Snippet covers bars {first_bar} to {last_bar}")
 
     # Method 1: Uncorrected
@@ -1953,7 +1954,8 @@ def create_raster_csv(
         snippet_offset,
         flexStart_4bar_ref_bar=flexStart_ref_bar,
         flexStart_2bar_ref_bar=flexStart_2bar_ref_bar,
-        flexStart_1bar_ref_bar=flexStart_1bar_ref_bar
+        flexStart_1bar_ref_bar=flexStart_1bar_ref_bar,
+        snippet_duration=snippet_duration
     )
 
     # Import and run filter
@@ -1982,7 +1984,8 @@ def create_flexstart_patterns_csv(
     snippet_offset: float,
     flexStart_4bar_ref_bar: int = None,
     flexStart_2bar_ref_bar: int = None,
-    flexStart_1bar_ref_bar: int = None
+    flexStart_1bar_ref_bar: int = None,
+    snippet_duration: float = SNIPPET_DURATION_S
 ):
     """
     Create 3 separate CSVs with flexStart pattern data for complete loops.
@@ -2011,7 +2014,7 @@ def create_flexstart_patterns_csv(
     df['bar_number_global'] = df['bar_number'] + first_bar
 
     # Calculate snippet boundaries
-    snippet_end = snippet_offset + SNIPPET_DURATION_S
+    snippet_end = snippet_offset + snippet_duration
 
     # 4-bar pattern flexStart
     if flexStart_4bar_ref_bar is not None:
@@ -2070,7 +2073,7 @@ def create_flexstart_patterns_csv(
 
         # Save to CSV with metadata
         output_file = output_dir / f"{base_name}_4bar_flexStart.csv"
-        snippet_end = snippet_offset + SNIPPET_DURATION_S
+        snippet_end = snippet_offset + snippet_duration
         with open(output_file, 'w') as f:
             f.write(f"# snippet_offset={snippet_offset:.6f}\n")
             f.write(f"# snippet_end={snippet_end:.6f}\n")
@@ -2128,7 +2131,7 @@ def create_flexstart_patterns_csv(
         df_2bar = df_2bar[columns_to_include].rename(columns=rename_mapping)
 
         output_file = output_dir / f"{base_name}_2bar_flexStart.csv"
-        snippet_end = snippet_offset + SNIPPET_DURATION_S
+        snippet_end = snippet_offset + snippet_duration
         with open(output_file, 'w') as f:
             f.write(f"# snippet_offset={snippet_offset:.6f}\n")
             f.write(f"# snippet_end={snippet_end:.6f}\n")
@@ -2180,7 +2183,7 @@ def create_flexstart_patterns_csv(
         df_1bar = df_1bar[columns_to_include].rename(columns=rename_mapping)
 
         output_file = output_dir / f"{base_name}_1bar_flexStart.csv"
-        snippet_end = snippet_offset + SNIPPET_DURATION_S
+        snippet_end = snippet_offset + snippet_duration
         with open(output_file, 'w') as f:
             f.write(f"# snippet_offset={snippet_offset:.6f}\n")
             f.write(f"# snippet_end={snippet_end:.6f}\n")
@@ -2194,7 +2197,8 @@ def create_comprehensive_csv(
     onset_file: str,
     pattern_lengths: Dict[str, int],  # Ignored in new version
     snippet_offset: float,
-    output_file: str
+    output_file: str,
+    snippet_duration: float = SNIPPET_DURATION_S
 ) -> pd.DataFrame:
     """
     Backward compatibility wrapper for create_raster_csv.
@@ -2205,7 +2209,8 @@ def create_comprehensive_csv(
         corrected_downbeats_file,
         onset_file,
         snippet_offset,
-        output_file
+        output_file,
+        snippet_duration=snippet_duration
     )
 
 

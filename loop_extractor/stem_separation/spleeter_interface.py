@@ -258,6 +258,90 @@ def create_5stem_npz(
     return output_npz_path
 
 
+def create_snippet_wav(
+    audio_path: str,
+    output_path: str,
+    start_time: float,
+    duration: float,
+    fade_duration: float = 0.05,
+    sr: int = None
+) -> Path:
+    """
+    Extract a snippet from audio file with fade in/out.
+
+    Parameters
+    ----------
+    audio_path : str
+        Path to input audio file
+    output_path : str
+        Path for output WAV file
+    start_time : float
+        Start time in seconds
+    duration : float
+        Duration in seconds
+    fade_duration : float
+        Fade in/out duration in seconds (default: 50ms)
+    sr : int, optional
+        Sample rate (default: from config, 44100)
+
+    Returns
+    -------
+    Path
+        Path to created snippet WAV file
+    """
+    import soundfile as sf
+
+    if sr is None:
+        sr = config.MEL_SR
+
+    audio_path = Path(audio_path)
+    output_path = Path(output_path)
+
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load the specific portion of audio (stereo if available)
+    y, file_sr = librosa.load(
+        str(audio_path),
+        sr=sr,
+        mono=False,
+        offset=start_time,
+        duration=duration
+    )
+
+    # Handle mono vs stereo
+    if y.ndim == 1:
+        y = y.reshape(1, -1)  # Make it (1, samples) for consistent processing
+
+    # Calculate fade samples
+    fade_samples = int(fade_duration * sr)
+
+    # Apply fade in
+    if fade_samples > 0 and fade_samples < y.shape[1]:
+        fade_in = np.linspace(0, 1, fade_samples)
+        for ch in range(y.shape[0]):
+            y[ch, :fade_samples] *= fade_in
+
+    # Apply fade out
+    if fade_samples > 0 and fade_samples < y.shape[1]:
+        fade_out = np.linspace(1, 0, fade_samples)
+        for ch in range(y.shape[0]):
+            y[ch, -fade_samples:] *= fade_out
+
+    # Transpose for soundfile (samples, channels)
+    if y.shape[0] == 1:
+        y_out = y[0]  # Mono
+    else:
+        y_out = y.T  # Stereo: (samples, channels)
+
+    # Save as WAV
+    sf.write(str(output_path), y_out, sr)
+
+    print(f"  Saved snippet: {output_path.name} ({start_time:.2f}s - {start_time + duration:.2f}s, fade: {fade_duration*1000:.0f}ms)")
+
+    return output_path
+
+
 def process_audio_to_stems_and_npz(
     audio_path: str,
     stems_output_dir: str,

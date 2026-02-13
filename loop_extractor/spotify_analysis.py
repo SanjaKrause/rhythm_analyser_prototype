@@ -1,0 +1,723 @@
+#!/usr/bin/env python3
+"""
+Step 13: Spotify Audio Features Analysis
+
+This module fetches audio features from the Spotify API for a given track.
+Requires Spotify API credentials (client_id and client_secret).
+
+Audio Features retrieved:
+- danceability: How suitable for dancing (0.0-1.0)
+- energy: Perceptual intensity/activity (0.0-1.0)
+- valence: Musical positiveness/happiness (0.0-1.0)
+- tempo: Estimated tempo in BPM
+- loudness: Overall loudness in dB
+- speechiness: Presence of spoken words (0.0-1.0)
+- acousticness: Confidence track is acoustic (0.0-1.0)
+- instrumentalness: Predicts if track has no vocals (0.0-1.0)
+- liveness: Presence of audience (0.0-1.0)
+- key: Pitch class (0=C, 1=C#, ..., 11=B)
+- mode: Modality (0=minor, 1=major)
+- time_signature: Estimated time signature (3-7)
+
+Output folder: 13_spotify/
+
+Reference:
+    Spotify Web API - Audio Features
+    https://developer.spotify.com/documentation/web-api/reference/get-audio-features
+"""
+
+import sys
+import json
+import argparse
+import base64
+import csv
+import urllib.request
+import urllib.parse
+import urllib.error
+from pathlib import Path
+from typing import Dict, Optional, Any, List, Tuple
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+# Import config
+import importlib.util
+_config_path = Path(__file__).parent / "config.py"
+if _config_path.exists():
+    spec = importlib.util.spec_from_file_location("config_module", _config_path)
+    config_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_module)
+    config = config_module.config
+else:
+    config = None
+
+
+# Spotify API endpoints
+SPOTIFY_AUTH_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_SEARCH_URL = "https://api.spotify.com/v1/search"
+SPOTIFY_AUDIO_FEATURES_URL = "https://api.spotify.com/v1/audio-features"
+
+
+# Default paths for local groove-data
+GROOVE_DATA_DIR = Path(__file__).parent.parent / "groove-data"
+SPOTIFY_IDS_CSV = GROOVE_DATA_DIR / "spotify" / "spotify_ids.csv"
+SPOTIFY_AUDIOANALYSIS_DIR = GROOVE_DATA_DIR / "spotify_audioanalysis"
+
+
+def lookup_spotify_id(song_id: int, csv_path: Path = SPOTIFY_IDS_CSV) -> Optional[str]:
+    """
+    Look up Spotify track ID from song_id using the CSV mapping file.
+
+    Parameters
+    ----------
+    song_id : int
+        The song ID to look up (numeric part of track_id like "17" from "17_Panini")
+    csv_path : Path
+        Path to the spotify_ids.csv file
+
+    Returns
+    -------
+    str or None
+        Spotify track ID if found, None otherwise
+    """
+    if not csv_path.exists():
+        return None
+
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter='\t')
+        for row in reader:
+            if len(row) >= 2:
+                try:
+                    if int(row[0]) == int(song_id):
+                        return row[1]  # spotify_id
+                except (ValueError, IndexError):
+                    continue
+    return None
+
+
+def load_sections_from_audioanalysis(
+    spotify_id: str,
+    audioanalysis_dir: Path = SPOTIFY_AUDIOANALYSIS_DIR
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Load sections data from Spotify audio analysis JSON file.
+
+    Parameters
+    ----------
+    spotify_id : str
+        Spotify track ID
+    audioanalysis_dir : Path
+        Directory containing audio analysis JSON files
+
+    Returns
+    -------
+    list or None
+        List of section dictionaries, or None if file not found
+    """
+    json_path = audioanalysis_dir / f"{spotify_id}.json"
+    if not json_path.exists():
+        return None
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    return data.get("sections", [])
+
+
+def plot_sections_timeline(
+    sections: List[Dict[str, Any]],
+    snippet_start: float,
+    snippet_duration: float,
+    output_path: Path,
+    track_name: str = "",
+    song_id: Optional[int] = None,
+    verbose: bool = True
+) -> Optional[Path]:
+    """
+    Create a horizontal bar plot showing song sections within the snippet timerange.
+
+    Parameters
+    ----------
+    sections : list
+        List of section dictionaries with 'start', 'duration', 'loudness', 'tempo', etc.
+    snippet_start : float
+        Start time of the snippet in seconds
+    snippet_duration : float
+        Duration of the snippet in seconds
+    output_path : Path
+        Path to save the plot
+    track_name : str
+        Track name for the title
+    song_id : int, optional
+        Song ID to include in the title
+    verbose : bool
+        Print progress messages
+
+    Returns
+    -------
+    Path or None
+        Path to saved plot, or None if no sections overlap with snippet
+    """
+    snippet_end = snippet_start + snippet_duration
+
+    # Filter sections that overlap with snippet timerange
+    overlapping_sections = []
+    for section in sections:
+        sec_start = section["start"]
+        sec_end = sec_start + section["duration"]
+
+        # Check if section overlaps with snippet
+        if sec_start < snippet_end and sec_end > snippet_start:
+            overlapping_sections.append(section)
+
+    if not overlapping_sections:
+        if verbose:
+            print("  No sections overlap with snippet timerange")
+        return None
+
+    # Create color map based on section index (cycling through colors)
+    colors = plt.cm.Set3(np.linspace(0, 1, 12))  # 12 distinct colors
+
+    fig, ax = plt.subplots(figsize=(14, 4))
+
+    # Plot each section as a horizontal bar
+    y_pos = 0.5
+    bar_height = 0.6
+
+    for i, section in enumerate(overlapping_sections):
+        sec_start = section["start"]
+        sec_end = sec_start + section["duration"]
+
+        # Clip section to snippet bounds for display
+        display_start = max(sec_start, snippet_start)
+        display_end = min(sec_end, snippet_end)
+        display_width = display_end - display_start
+
+        color = colors[i % len(colors)]
+
+        # Draw the section bar
+        rect = mpatches.FancyBboxPatch(
+            (display_start, y_pos - bar_height/2),
+            display_width, bar_height,
+            boxstyle="round,pad=0.02,rounding_size=0.1",
+            facecolor=color,
+            edgecolor='black',
+            linewidth=1.5
+        )
+        ax.add_patch(rect)
+
+        # Add section info as label (if bar is wide enough)
+        if display_width > snippet_duration * 0.08:
+            label_x = display_start + display_width / 2
+            # Section info: tempo and key
+            tempo = section.get("tempo", 0)
+            key_num = section.get("key", -1)
+            mode = section.get("mode", 0)
+
+            key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            key_str = key_names[key_num] if 0 <= key_num < 12 else "?"
+            mode_str = "maj" if mode == 1 else "min"
+
+            label = f"Sec {i+1}\n{tempo:.0f} BPM\n{key_str} {mode_str}"
+            ax.text(label_x, y_pos, label, ha='center', va='center',
+                   fontsize=8, fontweight='bold')
+
+    # Draw snippet boundaries
+    ax.axvline(x=snippet_start, color='green', linestyle='--', linewidth=2, label='Snippet start')
+    ax.axvline(x=snippet_end, color='red', linestyle='--', linewidth=2, label='Snippet end')
+
+    # Add time axis markers for full song context
+    song_duration = sections[-1]["start"] + sections[-1]["duration"] if sections else snippet_end
+
+    # Set axis limits with some padding
+    x_min = max(0, snippet_start - snippet_duration * 0.1)
+    x_max = min(song_duration, snippet_end + snippet_duration * 0.1)
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(0, 1)
+
+    # Labels and formatting
+    ax.set_xlabel('Time (seconds)', fontsize=11)
+    ax.set_yticks([])
+
+    # Build title with optional song_id
+    if song_id is not None and track_name:
+        title = f'Song Sections Timeline - {song_id}: {track_name}'
+    elif song_id is not None:
+        title = f'Song Sections Timeline - {song_id}'
+    elif track_name:
+        title = f'Song Sections Timeline - {track_name}'
+    else:
+        title = 'Song Sections Timeline'
+    ax.set_title(title, fontsize=12, fontweight='bold')
+
+    # Add legend
+    ax.legend(loc='upper right', fontsize=9)
+
+    # Add grid for time reference
+    ax.grid(axis='x', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    if verbose:
+        print(f"  Saved: {output_path.name}")
+
+    return output_path
+
+
+def get_spotify_token(client_id: str, client_secret: str) -> Optional[str]:
+    """
+    Get Spotify API access token using client credentials flow.
+
+    Parameters
+    ----------
+    client_id : str
+        Spotify API client ID
+    client_secret : str
+        Spotify API client secret
+
+    Returns
+    -------
+    str or None
+        Access token if successful, None otherwise
+    """
+    credentials = f"{client_id}:{client_secret}"
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    data = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
+
+    request = urllib.request.Request(SPOTIFY_AUTH_URL, data=data, headers=headers)
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            result = json.loads(response.read().decode())
+            return result.get("access_token")
+    except urllib.error.URLError as e:
+        print(f"  ERROR getting Spotify token: {e}")
+        return None
+
+
+def search_track(token: str, track_name: str, artist: Optional[str] = None) -> Optional[str]:
+    """
+    Search for a track on Spotify and return its ID.
+
+    Parameters
+    ----------
+    token : str
+        Spotify API access token
+    track_name : str
+        Name of the track to search for
+    artist : str, optional
+        Artist name to narrow search
+
+    Returns
+    -------
+    str or None
+        Spotify track ID if found, None otherwise
+    """
+    query = track_name
+    if artist:
+        query = f"track:{track_name} artist:{artist}"
+
+    params = urllib.parse.urlencode({
+        "q": query,
+        "type": "track",
+        "limit": 1
+    })
+
+    url = f"{SPOTIFY_SEARCH_URL}?{params}"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    request = urllib.request.Request(url, headers=headers)
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            result = json.loads(response.read().decode())
+            tracks = result.get("tracks", {}).get("items", [])
+            if tracks:
+                return tracks[0]["id"]
+            return None
+    except urllib.error.URLError as e:
+        print(f"  ERROR searching track: {e}")
+        return None
+
+
+def get_audio_features(token: str, track_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get audio features for a Spotify track.
+
+    Parameters
+    ----------
+    token : str
+        Spotify API access token
+    track_id : str
+        Spotify track ID
+
+    Returns
+    -------
+    dict or None
+        Audio features dictionary if successful, None otherwise
+    """
+    url = f"{SPOTIFY_AUDIO_FEATURES_URL}/{track_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    request = urllib.request.Request(url, headers=headers)
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.URLError as e:
+        print(f"  ERROR getting audio features: {e}")
+        return None
+
+
+def run_spotify_analysis(
+    track_name: str,
+    output_dir: str,
+    track_id: str,
+    artist: Optional[str] = None,
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    spotify_track_id: Optional[str] = None,
+    snippet_start: Optional[float] = None,
+    snippet_duration: Optional[float] = None,
+    verbose: bool = True
+) -> Dict[str, Any]:
+    """
+    Run Spotify audio features analysis and section timeline plotting.
+
+    Parameters
+    ----------
+    track_name : str
+        Name of the track (used for searching if spotify_track_id not provided)
+    output_dir : str
+        Output directory for the track
+    track_id : str
+        Internal track identifier for output files (e.g., "17_Panini - Lil Nas X")
+    artist : str, optional
+        Artist name to help with search
+    client_id : str, optional
+        Spotify API client ID (can also use env var SPOTIFY_CLIENT_ID)
+    client_secret : str, optional
+        Spotify API client secret (can also use env var SPOTIFY_CLIENT_SECRET)
+    spotify_track_id : str, optional
+        Direct Spotify track ID (skips search if provided)
+    snippet_start : float, optional
+        Start time of the snippet in seconds (for section timeline plot)
+    snippet_duration : float, optional
+        Duration of the snippet in seconds (for section timeline plot)
+    verbose : bool
+        Print progress
+
+    Returns
+    -------
+    dict
+        Results dictionary with audio features and output paths
+    """
+    import os
+
+    # Get credentials from params or environment
+    if client_id is None:
+        client_id = os.environ.get("SPOTIFY_CLIENT_ID")
+    if client_secret is None:
+        client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
+
+    # Create output directory
+    output_path = Path(output_dir) / "13_spotify"
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    output_json = output_path / f"{track_id}_spotify_features.json"
+
+    results = {
+        "track_id": track_id,
+        "track_name": track_name,
+        "artist": artist,
+        "spotify_track_id": None,
+        "audio_features": {},
+        "errors": []
+    }
+
+    if verbose:
+        print(f"\n[Step 13: Spotify Analysis] Fetching audio features...")
+        print(f"  Track: {track_name}")
+        if artist:
+            print(f"  Artist: {artist}")
+
+    # Check credentials
+    if not client_id or not client_secret:
+        error_msg = "Spotify credentials not provided. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables."
+        results["errors"].append(error_msg)
+        if verbose:
+            print(f"  ERROR: {error_msg}")
+
+        # Save results even with error
+        with open(output_json, "w") as f:
+            json.dump(results, f, indent=2)
+        results["output_json"] = str(output_json)
+        return results
+
+    # Get access token
+    if verbose:
+        print(f"  Authenticating with Spotify API...")
+
+    token = get_spotify_token(client_id, client_secret)
+    if not token:
+        error_msg = "Failed to get Spotify access token"
+        results["errors"].append(error_msg)
+        with open(output_json, "w") as f:
+            json.dump(results, f, indent=2)
+        results["output_json"] = str(output_json)
+        return results
+
+    # Get track ID (search or use provided)
+    if spotify_track_id:
+        sp_track_id = spotify_track_id
+        if verbose:
+            print(f"  Using provided Spotify track ID: {sp_track_id}")
+    else:
+        if verbose:
+            print(f"  Searching for track...")
+        sp_track_id = search_track(token, track_name, artist)
+
+        if not sp_track_id:
+            error_msg = f"Track not found on Spotify: {track_name}"
+            results["errors"].append(error_msg)
+            if verbose:
+                print(f"  ERROR: {error_msg}")
+            with open(output_json, "w") as f:
+                json.dump(results, f, indent=2)
+            results["output_json"] = str(output_json)
+            return results
+
+        if verbose:
+            print(f"  Found Spotify track ID: {sp_track_id}")
+
+    results["spotify_track_id"] = sp_track_id
+
+    # Get audio features
+    if verbose:
+        print(f"  Fetching audio features...")
+
+    features = get_audio_features(token, sp_track_id)
+
+    if not features:
+        error_msg = "Failed to get audio features"
+        results["errors"].append(error_msg)
+        with open(output_json, "w") as f:
+            json.dump(results, f, indent=2)
+        results["output_json"] = str(output_json)
+        return results
+
+    # Extract relevant features
+    relevant_features = [
+        "danceability", "energy", "valence", "tempo", "loudness",
+        "speechiness", "acousticness", "instrumentalness", "liveness",
+        "key", "mode", "time_signature", "duration_ms"
+    ]
+
+    results["audio_features"] = {
+        key: features.get(key)
+        for key in relevant_features
+        if key in features
+    }
+
+    # Add Spotify URLs
+    results["spotify_uri"] = features.get("uri")
+    results["spotify_url"] = f"https://open.spotify.com/track/{sp_track_id}"
+
+    # Save results
+    with open(output_json, "w") as f:
+        json.dump(results, f, indent=2)
+
+    results["output_json"] = str(output_json)
+
+    if verbose:
+        print(f"  Saved: {output_json.name}")
+        print(f"  Audio features retrieved:")
+        for key, value in results["audio_features"].items():
+            print(f"    {key}: {value}")
+        print(f"  ✓ Spotify analysis completed")
+
+    return results
+
+
+def run_spotify_sections_analysis(
+    output_dir: str,
+    track_id: str,
+    snippet_start: float,
+    snippet_duration: float,
+    track_name: str = "",
+    verbose: bool = True
+) -> Dict[str, Any]:
+    """
+    Run Spotify section timeline analysis using local groove-data files.
+
+    This function looks up the Spotify ID from local CSV and loads
+    sections from local audio analysis JSON files.
+
+    Parameters
+    ----------
+    output_dir : str
+        Output directory for the track
+    track_id : str
+        Internal track identifier (e.g., "17_Panini - Lil Nas X")
+    snippet_start : float
+        Start time of the snippet in seconds
+    snippet_duration : float
+        Duration of the snippet in seconds
+    track_name : str
+        Track name for plot title
+    verbose : bool
+        Print progress messages
+
+    Returns
+    -------
+    dict
+        Results dictionary with sections data and output paths
+    """
+    # Create output directory
+    output_path = Path(output_dir) / "13_spotify"
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    results = {
+        "track_id": track_id,
+        "snippet_start": snippet_start,
+        "snippet_duration": snippet_duration,
+        "sections": [],
+        "errors": []
+    }
+
+    if verbose:
+        print(f"\n[Step 13: Spotify Sections Analysis]")
+        print(f"  Track ID: {track_id}")
+        print(f"  Snippet: {snippet_start:.2f}s - {snippet_start + snippet_duration:.2f}s")
+
+    # Extract numeric song_id from track_id (e.g., "17" from "17_Panini - Lil Nas X")
+    try:
+        song_id = int(track_id.split("_")[0])
+    except (ValueError, IndexError):
+        error_msg = f"Could not extract song_id from track_id: {track_id}"
+        results["errors"].append(error_msg)
+        if verbose:
+            print(f"  ERROR: {error_msg}")
+        return results
+
+    # Look up Spotify ID from local CSV
+    if verbose:
+        print(f"  Looking up Spotify ID for song_id={song_id}...")
+
+    spotify_id = lookup_spotify_id(song_id)
+
+    if not spotify_id:
+        error_msg = f"Spotify ID not found for song_id={song_id}"
+        results["errors"].append(error_msg)
+        if verbose:
+            print(f"  WARNING: {error_msg}")
+        return results
+
+    results["spotify_id"] = spotify_id
+    if verbose:
+        print(f"  Found Spotify ID: {spotify_id}")
+
+    # Load sections from local audio analysis JSON
+    if verbose:
+        print(f"  Loading sections from audio analysis...")
+
+    sections = load_sections_from_audioanalysis(spotify_id)
+
+    if not sections:
+        error_msg = f"Sections not found for spotify_id={spotify_id}"
+        results["errors"].append(error_msg)
+        if verbose:
+            print(f"  WARNING: {error_msg}")
+        return results
+
+    results["sections"] = sections
+    if verbose:
+        print(f"  Found {len(sections)} sections")
+
+    # Plot section timeline
+    output_plot = output_path / f"{track_id}_sections_timeline.png"
+
+    plot_path = plot_sections_timeline(
+        sections=sections,
+        snippet_start=snippet_start,
+        snippet_duration=snippet_duration,
+        output_path=output_plot,
+        track_name=track_name,
+        song_id=song_id,
+        verbose=verbose
+    )
+
+    if plot_path:
+        results["output_plot"] = str(plot_path)
+
+    # Save sections JSON
+    output_json = output_path / f"{track_id}_sections.json"
+    with open(output_json, "w") as f:
+        json.dump(results, f, indent=2)
+    results["output_json"] = str(output_json)
+
+    if verbose:
+        print(f"  Saved: {output_json.name}")
+        print(f"  ✓ Spotify sections analysis completed")
+
+    return results
+
+
+def main():
+    """Command-line interface for Spotify analysis."""
+    parser = argparse.ArgumentParser(
+        description="Step 13: Fetch Spotify audio features for a track",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python spotify_analysis.py "Panini" -o output/ --track-id 17 --artist "Lil Nas X"
+  python spotify_analysis.py "Billie Jean" -o output/ --track-id 42 --artist "Michael Jackson"
+
+Environment variables:
+  SPOTIFY_CLIENT_ID     - Spotify API client ID
+  SPOTIFY_CLIENT_SECRET - Spotify API client secret
+        """
+    )
+
+    parser.add_argument("track_name", help="Name of the track to search")
+    parser.add_argument("-o", "--output-dir", required=True,
+                        help="Output directory for results")
+    parser.add_argument("--track-id", required=True,
+                        help="Internal track identifier")
+    parser.add_argument("--artist", help="Artist name (helps with search accuracy)")
+    parser.add_argument("--spotify-id", help="Direct Spotify track ID (skips search)")
+    parser.add_argument("--client-id", help="Spotify API client ID")
+    parser.add_argument("--client-secret", help="Spotify API client secret")
+    parser.add_argument("-q", "--quiet", action="store_true",
+                        help="Suppress output")
+
+    args = parser.parse_args()
+
+    results = run_spotify_analysis(
+        track_name=args.track_name,
+        output_dir=args.output_dir,
+        track_id=args.track_id,
+        artist=args.artist,
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        spotify_track_id=args.spotify_id,
+        verbose=not args.quiet
+    )
+
+    if not args.quiet:
+        print(f"\nResults saved to: {results.get('output_json', 'N/A')}")
+
+    return 0 if not results["errors"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

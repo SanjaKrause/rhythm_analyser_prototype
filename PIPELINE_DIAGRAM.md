@@ -26,11 +26,12 @@
 17. [Snippet IOI Histograms (Complete Bars Only)](#snippet-ioi-histograms-complete-bars-only)
 18. [Full Song IOI Histogram](#full-song-ioi-histogram)
 19. [Beat Histogram Repetition Information](#beat-histogram-repetition-information)
-20. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-21. [Data Dependencies](#data-dependencies)
-22. [Legend](#legend)
-23. [Notes](#notes)
-24. [TODO](#todo)
+20. [Step 12: Pironio Pulse Clarity Metrics](#step-12-pironio-pulse-clarity-metrics)
+21. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+22. [Data Dependencies](#data-dependencies)
+23. [Legend](#legend)
+24. [Notes](#notes)
+25. [TODO](#todo)
 
 ---
 
@@ -2224,6 +2225,86 @@ graph TD
     style Phases fill:#e1ffe1
     style Outputs fill:#ffffcc
 ```
+
+---
+
+## Step 12: Pironio Pulse Clarity Metrics
+
+Step 12 computes **pulse clarity metrics** using the MAIPC library (Madmom Applied In Pulse Clarity) by Nicolás Pironio. These metrics quantify how clear and strong the rhythmic pulse is in the audio, based on analyzing different components of a deep learning beat tracking model.
+
+**Reference:** Pironio, N., Slezak, D.F., & Miguel, M.A. (2021). "Pulse clarity metrics developed from a deep learning beat tracking model." *Proceedings of the 22nd International Society for Music Information Retrieval Conference (ISMIR)*.
+
+**Input:** `1_stems/full_snippet.wav` (the extracted snippet with fade in/out)
+**Output:** `12_pironio/{track_id}_pironio_metrics.json`
+
+### How It Works
+
+The metrics analyze a beat tracking model consisting of:
+1. **RNN (Recurrent Neural Network)**: Estimates beat probabilities from audio using Bi-directional LSTM cells
+2. **DBN (Dynamic Bayesian Network)**: Determines beat moments from the RNN output via Viterbi decoding
+
+### Metrics Table
+
+| Metric | Description | Higher Value Means | Suggested Interpretation |
+|--------|-------------|-------------------|--------------------------|
+| **peak_average** | Average activation value at detected beat peaks from RNN output | Stronger/clearer beats | > 0.6: High clarity, 0.4-0.6: Moderate, < 0.4: Low clarity |
+| **RNN_entropy** | Entropy of inter-beat intervals from RNN peak detection | More irregular/unpredictable pulse | < 1.0: Very regular, 1.0-2.0: Normal, > 2.0: Irregular timing |
+| **DBN_entropy** | Entropy of inter-beat intervals from DBN output | More variable beat spacing | < 0.5: Very consistent, 0.5-1.5: Normal, > 1.5: Variable spacing |
+| **viterbi_max** | Maximum log-probability in final Viterbi column (normalized) | Model more confident about beat sequence | > -2.0: High confidence, -2.0 to -4.0: Normal, < -4.0: Low confidence |
+| **viterbi_entropy** | Entropy of probability distribution in Viterbi matrix | More ambiguity about correct state | < 8.0: High certainty, 8.0-12.0: Normal, > 12.0: Ambiguous |
+| **neurons_cross_correlation** | Sum of max cross-correlations between RNN neuron pairs | More synchronized neural activations | > 1,500,000: High sync, 500,000-1,500,000: Normal, < 500,000: Low sync |
+| **cell_states_precision** | Average width of peaks in LSTM cell states | Sharper (lower) = more precise beat detection | < 10: Very precise, 10-20: Normal, > 20: Imprecise |
+| **autocorrelation_periodicity** | Max normalized autocorrelation of neuron outputs (40-330 BPM range) | More periodic/regular neural activations | > 0.15: High periodicity, 0.08-0.15: Normal, < 0.08: Low periodicity |
+
+### Metric Categories
+
+**Output-based metrics** (analyze the model's output):
+- `peak_average`, `RNN_entropy`, `DBN_entropy`
+
+**DBN-based metrics** (analyze Viterbi decoding):
+- `viterbi_max`, `viterbi_entropy`
+
+**RNN internal metrics** (analyze LSTM internals - computationally expensive):
+- `neurons_cross_correlation`, `cell_states_precision`, `autocorrelation_periodicity`
+
+### Example Output
+
+```json
+{
+  "metrics": {
+    "viterbi_max": -2.649,
+    "viterbi_entropy": 9.607,
+    "peak_average": 0.530,
+    "RNN_entropy": 1.312,
+    "DBN_entropy": 0.770,
+    "neurons_cross_correlation": 1140673.28,
+    "cell_states_precision": 14.68,
+    "autocorrelation_periodicity": 0.098
+  },
+  "errors": [],
+  "track_id": "17_Panini - Lil Nas X",
+  "model": "downbeat"
+}
+```
+
+### Interpretation Example
+
+For the example above:
+- **peak_average (0.53)**: Moderate beat strength
+- **DBN_entropy (0.77)**: Consistent beat spacing (low entropy = good)
+- **RNN_entropy (1.31)**: Fairly regular timing
+- **viterbi_max (-2.65)**: Good model confidence
+- **viterbi_entropy (9.61)**: Normal certainty level
+- **neurons_cross_correlation (1.14M)**: Moderate internal synchronization
+- **cell_states_precision (14.68)**: Normal peak precision
+- **autocorrelation_periodicity (0.098)**: Lower periodicity, suggesting some rhythmic complexity
+
+### Notes
+
+- Metrics are computed on the **snippet** (typically 30 seconds) rather than the full song
+- The `downbeat` model is used by default (tracks both beats and downbeats)
+- Runs via subprocess in `new_beatnet_env` (requires madmom)
+- Slow metrics (RNN internals) add ~30-60 seconds of processing time
 
 ---
 

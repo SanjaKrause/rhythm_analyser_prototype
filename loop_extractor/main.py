@@ -7,6 +7,7 @@ Complete pipeline for music microtiming analysis and loop extraction:
 2. Beat detection (Beat-Transformer via subprocess)
 3. Downbeat correction
 3.5. Tempo plots (8-panel comparison: uncorrected vs corrected, + bar tempo CSV)
+3.6. Full snippet WAV extraction (with fade in/out)
 4. Onset detection (librosa, from drum stem)
 4.5. Pattern length detection (drum/mel/pitch methods with circular convolution)
 5. Raster/grid calculations
@@ -15,6 +16,8 @@ Complete pipeline for music microtiming analysis and loop extraction:
 8. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
 9. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
 11. Drum transcription (DrumTranscriber CNN - 6 drum classes)
+12. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
+13. Spotify audio features (danceability, energy, valence, tempo, etc.)
 
 Environment: loop_extractor_main
 Subprocess: new_beatnet_env (for beat detection only)
@@ -64,6 +67,8 @@ from stem_separation import spleeter_interface
 from beat_detection import transformer
 from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots
 from utils import audio_export, raster_plots, midi_export, microtiming_plots, drumtranscriber_interface
+import main_pironio
+import spotify_analysis
 
 
 def run_complete_pipeline(
@@ -320,6 +325,43 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 3.5 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+        # Don't raise - continue with pipeline
+
+    # ========================================================================
+    # STEP 3.6: CREATE FULL SNIPPET WAV
+    # ========================================================================
+    try:
+        snippet_wav_path = paths['stems_dir'] / 'full_snippet.wav'
+        snippet_offset_val = results['time_range'].get('actual_start', 30.0)
+        snippet_dur_val = results['time_range'].get('actual_duration', 30.0)
+
+        if skip_existing and snippet_wav_path.exists():
+            if verbose:
+                print("\n[3.6/7] Full snippet WAV - SKIPPED (exists)")
+            results['steps_completed'].append('snippet_wav_skipped')
+        else:
+            if verbose:
+                print("\n[3.6/7] Creating full snippet WAV...")
+
+            snippet_wav = spleeter_interface.create_snippet_wav(
+                str(audio_file),
+                str(snippet_wav_path),
+                start_time=snippet_offset_val,
+                duration=snippet_dur_val,
+                fade_duration=0.05  # 50ms fade in/out
+            )
+
+            results['snippet_wav'] = str(snippet_wav)
+            results['steps_completed'].append('snippet_wav')
+
+            if verbose:
+                print(f"  ✓ Full snippet created")
+
+    except Exception as e:
+        error_msg = f"Step 3.6 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
@@ -1160,7 +1202,8 @@ def run_complete_pipeline(
                         snippet_offset=snippet_offset,
                         snippet_duration=snippet_dur,
                         groove_pulse_csv=groove_pulse_csv_str,
-                        export_format=export_format
+                        export_format=export_format,
+                        track_id=track_id
                     )
 
                     results['steps_completed'].append('audio_examples')
@@ -1456,6 +1499,120 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 10 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 12: PIRONIO PULSE CLARITY METRICS
+    # ========================================================================
+    try:
+        pironio_json = paths['pironio_dir'] / f'{track_id}_pironio_metrics.json'
+        snippet_wav_path = paths['stems_dir'] / 'full_snippet.wav'
+
+        if skip_existing and pironio_json.exists():
+            if verbose:
+                print("\n[Step 12] Pironio pulse clarity - SKIPPED (exists)")
+            results['steps_completed'].append('pironio_skipped')
+        elif not snippet_wav_path.exists():
+            if verbose:
+                print("\n[Step 12] Pironio pulse clarity - SKIPPED (no snippet WAV)")
+            results['steps_completed'].append('pironio_no_snippet')
+        else:
+            if verbose:
+                print("\n[Step 12] Computing Pironio pulse clarity metrics...")
+
+            pironio_results = main_pironio.run_pironio_analysis(
+                audio_file=str(snippet_wav_path),
+                output_dir=str(Path(output_dir) / track_id),
+                track_id=track_id,
+                downbeat_model=True,
+                compute_slow_metrics=True,  # All 8 metrics
+                verbose=verbose
+            )
+
+            results['pironio'] = pironio_results.get('metrics', {})
+            results['pironio_json'] = pironio_results.get('output_json')
+            results['steps_completed'].append('pironio')
+
+            if verbose:
+                num_metrics = len(pironio_results.get('metrics', {}))
+                print(f"  ✓ Computed {num_metrics} pulse clarity metrics")
+
+    except Exception as e:
+        error_msg = f"Step 12 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 13: SPOTIFY AUDIO FEATURES
+    # ========================================================================
+    try:
+        spotify_json = paths['spotify_dir'] / f'{track_id}_spotify_features.json'
+
+        if skip_existing and spotify_json.exists():
+            if verbose:
+                print("\n[Step 13] Spotify analysis - SKIPPED (exists)")
+            results['steps_completed'].append('spotify_skipped')
+        else:
+            # Extract track name and artist from track_id if possible
+            # Expected format: "17_Panini - Lil Nas X" -> track="Panini", artist="Lil Nas X"
+            track_name_parsed = track_id
+            artist_parsed = None
+
+            if " - " in track_id:
+                parts = track_id.split(" - ", 1)
+                # Remove leading number if present (e.g., "17_Panini" -> "Panini")
+                track_part = parts[0]
+                if "_" in track_part:
+                    track_name_parsed = track_part.split("_", 1)[1]
+                else:
+                    track_name_parsed = track_part
+                artist_parsed = parts[1] if len(parts) > 1 else None
+
+            if verbose:
+                print(f"\n[Step 13] Spotify audio features analysis...")
+
+            spotify_results = spotify_analysis.run_spotify_analysis(
+                track_name=track_name_parsed,
+                output_dir=str(Path(output_dir) / track_id),
+                track_id=track_id,
+                artist=artist_parsed,
+                verbose=verbose
+            )
+
+            results['spotify'] = spotify_results.get('audio_features', {})
+            results['spotify_json'] = spotify_results.get('output_json')
+
+            if spotify_results.get('errors'):
+                results['steps_completed'].append('spotify_with_errors')
+            else:
+                results['steps_completed'].append('spotify')
+
+            # Run sections analysis using local groove-data
+            snippet_start_s = results['time_range'].get('actual_start', 30.0)
+            snippet_dur_s = results['time_range'].get('actual_duration', 30.0)
+
+            sections_results = spotify_analysis.run_spotify_sections_analysis(
+                output_dir=str(Path(output_dir) / track_id),
+                track_id=track_id,
+                snippet_start=snippet_start_s,
+                snippet_duration=snippet_dur_s,
+                track_name=f"{track_name_parsed} - {artist_parsed}" if artist_parsed else track_name_parsed,
+                verbose=verbose
+            )
+
+            results['spotify_sections'] = sections_results.get('sections', [])
+            results['spotify_sections_plot'] = sections_results.get('output_plot')
+
+            if sections_results.get('errors'):
+                results['steps_completed'].append('spotify_sections_with_errors')
+            else:
+                results['steps_completed'].append('spotify_sections')
+
+    except Exception as e:
+        error_msg = f"Step 13 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")

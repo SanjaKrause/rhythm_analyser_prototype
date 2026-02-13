@@ -368,7 +368,8 @@ def create_audio_examples(
     snippet_duration: float = 30.0,
     methods: Optional[List[str]] = None,
     groove_pulse_csv: Optional[str] = None,
-    export_format: str = 'wav'
+    export_format: str = 'wav',
+    track_id: Optional[str] = None
 ):
     """
     Create audio examples with click tracks for different correction methods.
@@ -394,6 +395,8 @@ def create_audio_examples(
         Path to groove pulse filtered CSV for creating groove pulse click tracks
     export_format : str
         Export format: 'wav' or 'mp3' (default: 'wav')
+    track_id : str, optional
+        Track ID for plot title (e.g., "17_Panini - Lil Nas X")
 
     Examples
     --------
@@ -786,6 +789,10 @@ def create_audio_examples(
 
                 # Only show x-label on bottom subplot
                 axes[-1].set_xlabel('Time (seconds)', fontsize=10)
+
+                # Add overall title with track_id if provided
+                if track_id:
+                    fig.suptitle(f'Groove Pulse Click Times - {track_id}', fontsize=12, fontweight='bold', y=1.02)
 
                 plt.tight_layout()
 

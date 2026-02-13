@@ -215,6 +215,12 @@ class Config:
 
             # Step 11: Drum transcription
             'drumtranscriber_dir': track_dir / '11_drumtranscriber',
+
+            # Step 12: Pironio pulse clarity
+            'pironio_dir': track_dir / '12_pironio',
+
+            # Step 13: Spotify analysis
+            'spotify_dir': track_dir / '13_spotify',
         }
 
     @classmethod

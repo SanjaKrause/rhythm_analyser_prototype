@@ -15,6 +15,7 @@ Merges:
 - All groove pulse click tracks into all_groove_pulse_click_tracks.pdf
 - All rhythm patterns into all_rhythm_patterns.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
+- All Spotify sections timelines into all_spotify_sections.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -256,14 +257,20 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 10. Merge groove pulse click track plots (PNG files in 5_grid folder)
+    # 10. Merge groove pulse click track plots (PNG files in 7_audio_examples or 5_grid folder)
     print('\nLooking for groove pulse click track plots...')
     groove_click_pngs = []
     for track_dir in track_dirs:
-        groove_click_png = track_dir / '5_grid' / 'groove_pulse_click_times.png'
+        # Check 7_audio_examples first (newer location), then 5_grid (legacy)
+        groove_click_png = track_dir / '7_audio_examples' / 'groove_pulse_click_times.png'
         if groove_click_png.exists():
             groove_click_pngs.append(groove_click_png)
             print(f'  Found groove pulse click track: {track_dir.name}')
+        else:
+            groove_click_png = track_dir / '5_grid' / 'groove_pulse_click_times.png'
+            if groove_click_png.exists():
+                groove_click_pngs.append(groove_click_png)
+                print(f'  Found groove pulse click track (legacy): {track_dir.name}')
 
     if groove_click_pngs:
         print(f'\nConverting and merging {len(groove_click_pngs)} groove pulse click track PNGs...')
@@ -483,6 +490,30 @@ def merge_plots(output_dir: Path):
         merger = PdfMerger()
         for pdf in full_ioi_pdfs:
             merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 18. Merge Spotify sections timeline plots (PNG files in 13_spotify folder)
+    print('\nLooking for Spotify sections timeline plots...')
+    spotify_sections_pngs = []
+    for track_dir in track_dirs:
+        spotify_sections_png = track_dir / '13_spotify' / f'{track_dir.name}_sections_timeline.png'
+        if spotify_sections_png.exists():
+            spotify_sections_pngs.append(spotify_sections_png)
+            print(f'  Found Spotify sections timeline: {track_dir.name}')
+
+    if spotify_sections_pngs:
+        print(f'\nConverting and merging {len(spotify_sections_pngs)} Spotify sections timeline PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(spotify_sections_pngs):
+            temp_pdf = temp_dir / f'spotify_sections_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_spotify_sections.pdf'
         merger.write(str(output_pdf))
         merger.close()
 
