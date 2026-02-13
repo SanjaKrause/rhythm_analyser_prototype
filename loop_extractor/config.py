@@ -221,6 +221,9 @@ class Config:
 
             # Step 13: Spotify analysis
             'spotify_dir': track_dir / '13_spotify',
+
+            # Step 14: Yodfat rhythmic complexity
+            'yodfat_dir': track_dir / '14_yodfat',
         }
 
     @classmethod

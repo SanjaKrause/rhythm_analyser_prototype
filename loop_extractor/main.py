@@ -69,6 +69,7 @@ from analysis import correct_bars, raster, rms_grid_histograms, onset_detection,
 from utils import audio_export, raster_plots, midi_export, microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
+import yodfat_analysis
 
 
 def run_complete_pipeline(
@@ -1571,24 +1572,26 @@ def run_complete_pipeline(
                     track_name_parsed = track_part
                 artist_parsed = parts[1] if len(parts) > 1 else None
 
-            if verbose:
-                print(f"\n[Step 13] Spotify audio features analysis...")
-
-            spotify_results = spotify_analysis.run_spotify_analysis(
-                track_name=track_name_parsed,
-                output_dir=str(Path(output_dir) / track_id),
-                track_id=track_id,
-                artist=artist_parsed,
-                verbose=verbose
-            )
-
-            results['spotify'] = spotify_results.get('audio_features', {})
-            results['spotify_json'] = spotify_results.get('output_json')
-
-            if spotify_results.get('errors'):
-                results['steps_completed'].append('spotify_with_errors')
-            else:
-                results['steps_completed'].append('spotify')
+            # Skip Spotify API audio features (requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET)
+            # Uncomment below if you have credentials set up:
+            # if verbose:
+            #     print(f"\n[Step 13] Spotify audio features analysis...")
+            #
+            # spotify_results = spotify_analysis.run_spotify_analysis(
+            #     track_name=track_name_parsed,
+            #     output_dir=str(Path(output_dir) / track_id),
+            #     track_id=track_id,
+            #     artist=artist_parsed,
+            #     verbose=verbose
+            # )
+            #
+            # results['spotify'] = spotify_results.get('audio_features', {})
+            # results['spotify_json'] = spotify_results.get('output_json')
+            #
+            # if spotify_results.get('errors'):
+            #     results['steps_completed'].append('spotify_with_errors')
+            # else:
+            #     results['steps_completed'].append('spotify')
 
             # Run sections analysis using local groove-data
             snippet_start_s = results['time_range'].get('actual_start', 30.0)
@@ -1613,6 +1616,48 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 13 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 14: YODFAT RHYTHMIC COMPLEXITY ANALYSIS
+    # ========================================================================
+    # Uses full_snippet.wav (same as Step 12 Pironio)
+    # Calculates onset cross-correlation at quarter/half/full bar segments
+    # High CC = low rhythmic complexity (more repetitive)
+    # Low CC = high rhythmic complexity (more varied)
+    # ========================================================================
+    try:
+        if not daw_ready:
+            # Check for full_snippet.wav (created in Step 3.6)
+            snippet_wav = paths['stems_dir'] / 'full_snippet.wav'
+
+            if snippet_wav.exists():
+                if verbose:
+                    print(f"\n[Step 14] Yodfat rhythmic complexity analysis...")
+
+                yodfat_results = yodfat_analysis.run_yodfat_analysis(
+                    audio_file=str(snippet_wav),
+                    output_dir=str(Path(output_dir) / track_id),
+                    track_id=track_id,
+                    verbose=verbose
+                )
+
+                results['yodfat'] = yodfat_results.get('metrics', {})
+                results['yodfat_json'] = yodfat_results.get('output_json')
+
+                if yodfat_results.get('errors'):
+                    results['steps_completed'].append('yodfat_with_errors')
+                else:
+                    results['steps_completed'].append('yodfat')
+            else:
+                if verbose:
+                    print(f"\n[Step 14] Skipping Yodfat analysis - full_snippet.wav not found")
+                results['errors'].append("Step 14 skipped: full_snippet.wav not found")
+
+    except Exception as e:
+        error_msg = f"Step 14 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")

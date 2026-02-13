@@ -27,11 +27,13 @@
 18. [Full Song IOI Histogram](#full-song-ioi-histogram)
 19. [Beat Histogram Repetition Information](#beat-histogram-repetition-information)
 20. [Step 12: Pironio Pulse Clarity Metrics](#step-12-pironio-pulse-clarity-metrics)
-21. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-22. [Data Dependencies](#data-dependencies)
-23. [Legend](#legend)
-24. [Notes](#notes)
-25. [TODO](#todo)
+21. [Step 13: Spotify Sections Analysis](#step-13-spotify-sections-analysis)
+22. [Step 14: Yodfat Rhythmic Complexity](#step-14-yodfat-rhythmic-complexity)
+23. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+24. [Data Dependencies](#data-dependencies)
+25. [Legend](#legend)
+26. [Notes](#notes)
+27. [TODO](#todo)
 
 ---
 
@@ -2234,6 +2236,8 @@ Step 12 computes **pulse clarity metrics** using the MAIPC library (Madmom Appli
 
 **Reference:** Pironio, N., Slezak, D.F., & Miguel, M.A. (2021). "Pulse clarity metrics developed from a deep learning beat tracking model." *Proceedings of the 22nd International Society for Music Information Retrieval Conference (ISMIR)*.
 
+**Code Source:** https://github.com/acoustic-analytics/maipc
+
 **Input:** `1_stems/full_snippet.wav` (the extracted snippet with fade in/out)
 **Output:** `12_pironio/{track_id}_pironio_metrics.json`
 
@@ -2305,6 +2309,156 @@ For the example above:
 - The `downbeat` model is used by default (tracks both beats and downbeats)
 - Runs via subprocess in `new_beatnet_env` (requires madmom)
 - Slow metrics (RNN internals) add ~30-60 seconds of processing time
+
+---
+
+## Step 13: Spotify Sections Analysis
+
+Step 13 visualizes **song sections** (intro, verse, chorus, bridge, etc.) from Spotify's audio analysis data, showing which sections fall within the analyzed snippet timerange.
+
+**Data Source:** Local `groove-data/` folder containing:
+- `groove-data/spotify/spotify_ids.csv` - Maps song_id to Spotify track ID
+- `groove-data/spotify_audioanalysis/{spotify_id}.json` - Contains sections data from Spotify API
+
+**Output:**
+- `13_spotify/{track_id}_sections_timeline.png` - Visual timeline plot
+- `13_spotify/{track_id}_sections.json` - Sections data for the snippet
+
+### How It Works
+
+1. **Lookup Spotify ID**: Extract numeric song_id from track_id (e.g., "17" from "17_Panini - Lil Nas X") and look up the corresponding Spotify track ID in the CSV mapping file.
+
+2. **Load Sections**: Read the pre-downloaded audio analysis JSON containing sections with timing, tempo, key, and loudness information.
+
+3. **Filter & Plot**: Create a horizontal bar timeline showing only sections that overlap with the snippet timerange (green/red dashed lines mark snippet boundaries).
+
+### Section Data Fields
+
+Each section from Spotify contains:
+
+| Field | Description |
+|-------|-------------|
+| `start` | Start time in seconds |
+| `duration` | Duration in seconds |
+| `confidence` | Spotify's confidence in the section boundary |
+| `tempo` | Estimated tempo for this section |
+| `key` | Musical key (0=C, 1=C#, ..., 11=B) |
+| `mode` | 1=Major, 0=Minor |
+| `loudness` | Average loudness in dB |
+| `time_signature` | Time signature (typically 4) |
+
+### Example Visualization
+
+The timeline plot shows:
+- Colored horizontal bars for each section within the snippet
+- Section labels with tempo and key (e.g., "Sec 1, 154 BPM, G# maj")
+- Green dashed line: Snippet start
+- Red dashed line: Snippet end
+- Track ID in the plot title
+
+### Notes
+
+- Sections are color-coded using the Set3 colormap (12 distinct colors)
+- Only sections overlapping with the snippet are shown
+- Section bars are clipped to the snippet boundaries for accurate representation
+- Requires pre-downloaded Spotify audio analysis data in `groove-data/`
+
+---
+
+## Step 14: Yodfat Rhythmic Complexity
+
+Step 14 computes **rhythmic complexity metrics** using onset strength cross-correlation, based on research by Adam Yodfat (Hebrew University of Jerusalem).
+
+**Reference:** Yodfat, A. (2020). "A Thousand Songs and a Song: Five Decades of Mizrahit and Rock Songs in Israel - Musical Analysis." PhD Dissertation, Hebrew University of Jerusalem.
+
+**Code Source:** https://github.com/arnavlavan/Rhythmic-Complexity-from-Audio
+
+**Input:** `1_stems/full_snippet.wav` (same as Step 12)
+**Output:** `14_yodfat/{track_id}_yodfat_metrics.json`
+
+### How It Works
+
+1. **HPSS Separation**: Separate audio into harmonic and percussive components using librosa's Harmonic-Percussive Source Separation.
+
+2. **Beat Tracking**: Detect beats from the percussive signal.
+
+3. **Onset Envelope**: Extract the onset strength envelope from the percussive signal.
+
+4. **Cross-Correlation Analysis**: For each segment length (1, 2, 4 beats), compare each segment to its following same-length segment using normalized cross-correlation. The maximum correlation value indicates how similar consecutive segments are.
+
+5. **Aggregate Statistics**: Calculate mean, standard deviation, and lag statistics for each segment length.
+
+### Interpretation
+
+**Key insight:** High cross-correlation = Low rhythmic complexity (more repetitive patterns)
+
+| Cross-Correlation | Rhythmic Complexity | Interpretation |
+|-------------------|---------------------|----------------|
+| > 0.7 | Very Low | Highly repetitive, predictable rhythm |
+| 0.5 - 0.7 | Low | Regular, consistent patterns |
+| 0.3 - 0.5 | Moderate | Some variation in rhythm |
+| 0.1 - 0.3 | High | Varied, unpredictable patterns |
+| < 0.1 | Very High | Extremely complex, non-repetitive |
+
+### Metrics Table
+
+15 metrics are computed across 3 segment lengths:
+
+| Segment | Metrics | Description |
+|---------|---------|-------------|
+| **Quarter bar** (1 beat) | `onscc_quart_avg`, `_std`, `_lag_avg`, `_lag_med`, `_lag_std` | Beat-level repetition |
+| **Half bar** (2 beats) | `onscc_half_avg`, `_std`, `_lag_avg`, `_lag_med`, `_lag_std` | Half-measure repetition |
+| **Full bar** (4 beats) | `onscc_bar_avg`, `_std`, `_lag_avg`, `_lag_med`, `_lag_std` | Full-measure repetition |
+
+**Metric suffixes:**
+- `_avg`: Mean cross-correlation value
+- `_std`: Standard deviation of cross-correlation
+- `_lag_avg`: Mean lag to maximum correlation
+- `_lag_med`: Median lag
+- `_lag_std`: Standard deviation of lag
+
+### Example Output
+
+```json
+{
+  "track_id": "17_Panini - Lil Nas X",
+  "metrics": {
+    "tempo": 153.6,
+    "duration": 30.0,
+    "n_beats": 77,
+    "onscc_quart_avg": 0.4523,
+    "onscc_quart_std": 0.1876,
+    "onscc_half_avg": 0.5134,
+    "onscc_half_std": 0.1543,
+    "onscc_bar_avg": 0.5891,
+    "onscc_bar_std": 0.1234
+  }
+}
+```
+
+### Interpretation Example
+
+For the example above:
+- **Quarter bar (0.45)**: Moderate beat-level variation
+- **Half bar (0.51)**: Slightly more repetitive at half-measure level
+- **Full bar (0.59)**: Most repetitive at the measure level (typical for pop music)
+
+This pattern (increasing correlation with longer segments) is common - individual beats vary more than full measures, which tend to follow consistent rhythmic patterns.
+
+### Comparison with Step 12 (Pironio)
+
+| Aspect | Pironio (Step 12) | Yodfat (Step 14) |
+|--------|-------------------|------------------|
+| **Measures** | Pulse clarity (how clear is the beat?) | Rhythmic complexity (how varied is the rhythm?) |
+| **Method** | Deep learning model internals | Signal cross-correlation |
+| **Focus** | Beat detection confidence | Pattern repetition |
+| **High values mean** | Clear, strong pulse | Repetitive, predictable rhythm |
+
+### Notes
+
+- Uses librosa for all audio processing (runs in main environment, no subprocess needed)
+- Computation time: ~10-30 seconds depending on snippet length
+- Works best with percussive music; may be less informative for ambient/drone music
 
 ---
 
