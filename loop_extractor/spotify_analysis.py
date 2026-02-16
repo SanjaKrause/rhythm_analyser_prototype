@@ -710,15 +710,38 @@ def run_spotify_sections_analysis(
     results["output_csv"] = str(output_csv)
 
     # Compute onsets per pattern per section using flexStart data
-    # Look for the 2-bar flexStart CSV in the 5_grid folder
+    # Process both 2-bar and 4-bar patterns
     grid_dir = Path(output_dir) / "5_grid"
-    flexstart_csv = grid_dir / f"{track_id}_comprehensive_phases_2bar_flexStart.csv"
 
-    if flexstart_csv.exists():
-        if verbose:
-            print(f"  Computing onsets per pattern per section...")
+    for pattern_len in [2, 4]:
+        flexstart_csv = grid_dir / f"{track_id}_comprehensive_phases_{pattern_len}bar_flexStart.csv"
+
+        if flexstart_csv.exists():
+            if verbose:
+                print(f"  Computing onsets per {pattern_len}-bar pattern...")
+
+            # Create the onsets per pattern bar plot
+            onsets_plot = plot_onsets_per_pattern(
+                flexstart_csv=flexstart_csv,
+                sections=sections,
+                snippet_start=snippet_start,
+                snippet_duration=snippet_duration,
+                output_path=output_path,
+                track_id=track_id,
+                pattern_length=pattern_len,
+                verbose=verbose
+            )
+            if onsets_plot:
+                results[f"output_onsets_plot_{pattern_len}bar"] = str(onsets_plot)
+        else:
+            if verbose:
+                print(f"  Skipping {pattern_len}-bar onsets per pattern (flexStart CSV not found)")
+
+    # Also compute onsets per pattern per section (2-bar only for backward compatibility)
+    flexstart_csv_2bar = grid_dir / f"{track_id}_comprehensive_phases_2bar_flexStart.csv"
+    if flexstart_csv_2bar.exists():
         onsets_csv = compute_onsets_per_pattern_per_section(
-            flexstart_csv=flexstart_csv,
+            flexstart_csv=flexstart_csv_2bar,
             sections=sections,
             snippet_start=snippet_start,
             snippet_duration=snippet_duration,
@@ -729,23 +752,6 @@ def run_spotify_sections_analysis(
         )
         if onsets_csv:
             results["output_onsets_csv"] = str(onsets_csv)
-
-        # Also create the onsets per pattern bar plot
-        onsets_plot = plot_onsets_per_pattern(
-            flexstart_csv=flexstart_csv,
-            sections=sections,
-            snippet_start=snippet_start,
-            snippet_duration=snippet_duration,
-            output_path=output_path,
-            track_id=track_id,
-            pattern_length=2,
-            verbose=verbose
-        )
-        if onsets_plot:
-            results["output_onsets_plot"] = str(onsets_plot)
-    else:
-        if verbose:
-            print(f"  Skipping onsets per pattern (flexStart CSV not found)")
 
     if verbose:
         print(f"  Saved: {output_json.name}")
@@ -1029,7 +1035,9 @@ def plot_onsets_per_pattern(
     filter_metadata = parse_filtered_csv_metadata(filtered_csv)
 
     # Read flexStart CSV, skip comment lines
+    # CSV columns: bar_number, bar_number_global, tick_16th, onset_time, phase, grid_time, ...
     bars_data = []
+    bar_grid_starts = {}  # bar_num -> grid_time at tick_16th=0
     with open(flexstart_csv, 'r', encoding='utf-8') as f:
         for line in f:
             if line.startswith('#'):
@@ -1037,11 +1045,16 @@ def plot_onsets_per_pattern(
             if line.startswith('bar_number'):
                 continue
             parts = line.strip().split(',')
-            if len(parts) >= 4:
+            if len(parts) >= 6:
                 try:
                     bar_num = int(parts[0])
+                    tick_16th = int(parts[2])
                     onset_time = float(parts[3]) if parts[3] else None
+                    grid_time = float(parts[5]) if parts[5] else None
                     bars_data.append((bar_num, onset_time))
+                    # Store grid_time at tick_16th=0 for pattern start time
+                    if tick_16th == 0 and grid_time is not None:
+                        bar_grid_starts[bar_num] = grid_time
                 except (ValueError, IndexError):
                     continue
 
@@ -1069,24 +1082,17 @@ def plot_onsets_per_pattern(
             continue
 
         onset_count = sum(len(bar_onsets[b]) for b in pattern_bars)
-        all_times = []
-        for b in pattern_bars:
-            all_times.extend(bar_onsets[b])
 
-        if all_times:
-            start_time = min(all_times)
-            center_time = np.mean(all_times)
-        else:
-            start_time = None
-            center_time = None
+        # Use grid_time at tick 0 of first bar for pattern start time
+        first_bar = pattern_bars[0]
+        grid_start_time = bar_grid_starts.get(first_bar)
 
         patterns.append({
             'pattern_num': (i // pattern_length) + 1,
             'bars': pattern_bars,
             'onset_count': onset_count,
-            'start_time': start_time,
-            'center_time': center_time,
-            'relative_time': (start_time - snippet_start) if start_time else None
+            'grid_start_time': grid_start_time,
+            'relative_time': (grid_start_time - snippet_start) if grid_start_time else None
         })
 
     if not patterns:
@@ -1100,10 +1106,12 @@ def plot_onsets_per_pattern(
     # Data for plotting
     pattern_nums = [p['pattern_num'] for p in patterns]
     onset_counts = [p['onset_count'] for p in patterns]
-    relative_times = [p['relative_time'] for p in patterns if p['relative_time'] is not None]
 
-    # Bar plot
-    bars = ax1.bar(pattern_nums, onset_counts, color='steelblue', edgecolor='black', alpha=0.8)
+    # Bar plot - align='edge' makes bar left edge at x position
+    # Use narrower bars so they don't overlap
+    bar_width = 0.95
+    bars = ax1.bar(pattern_nums, onset_counts, width=bar_width, align='edge',
+                   color='steelblue', edgecolor='black', alpha=0.8)
 
     # Add onset count labels on bars
     for bar, count in zip(bars, onset_counts):
@@ -1114,26 +1122,27 @@ def plot_onsets_per_pattern(
                     textcoords="offset points",
                     ha='center', va='bottom', fontsize=8)
 
-    # Primary x-axis (pattern number)
+    # Primary x-axis (pattern number) - ticks at left edge of bars
     ax1.set_xlabel('Pattern Number', fontsize=11)
     ax1.set_ylabel('Number of Onsets', fontsize=11)
     ax1.set_xticks(pattern_nums)
+    ax1.set_xlim(0.5, len(patterns) + 1.5)
 
-    # Secondary x-axis (relative time)
+    # Secondary x-axis (relative time) - labels at left edge of each bar
     ax2 = ax1.twiny()
     ax2.set_xlim(ax1.get_xlim())
 
-    # Create time labels for each pattern
+    # Create time labels for each pattern at left edge (same x as pattern number)
     time_ticks = []
     time_labels = []
     for p in patterns:
         if p['relative_time'] is not None:
-            time_ticks.append(p['pattern_num'])
+            time_ticks.append(p['pattern_num'])  # Left edge of bar
             time_labels.append(f"{p['relative_time']:.1f}s")
 
     ax2.set_xticks(time_ticks)
     ax2.set_xticklabels(time_labels, fontsize=8)
-    ax2.set_xlabel('Relative Time (from snippet start)', fontsize=10)
+    ax2.set_xlabel('Relative Time (pattern start)', fontsize=10)
 
     # Add section boundaries as vertical lines
     section_colors = plt.cm.Set1(np.linspace(0, 1, 9))
@@ -1151,6 +1160,7 @@ def plot_onsets_per_pattern(
 
         # Find which pattern this section start falls into
         pattern_pos = None
+        found_interpolation = False
         for p in patterns:
             if p['relative_time'] is not None:
                 if p['relative_time'] <= sec_relative_start:
@@ -1164,11 +1174,24 @@ def plot_onsets_per_pattern(
                             if t_range > 0:
                                 frac = (sec_relative_start - p['relative_time']) / t_range
                                 pattern_pos = p['pattern_num'] + frac
+                                found_interpolation = True
                             break
 
         # If section starts before all patterns, place line at start
         if pattern_pos is None and patterns and sec_relative_start < patterns[0].get('relative_time', float('inf')):
             pattern_pos = 0.5  # Place before first pattern
+            found_interpolation = True
+
+        # Check if section is beyond the last pattern (no valid interpolation found)
+        last_pattern = patterns[-1] if patterns else None
+        if last_pattern and last_pattern['relative_time'] is not None:
+            if sec_relative_start > last_pattern['relative_time'] and not found_interpolation:
+                # Section is beyond pattern data - add to legend only, don't draw line
+                color = section_colors[idx % len(section_colors)]
+                legend_handles.append(
+                    mpatches.Patch(color=color, label=f'Section {idx+1} ({sec_relative_start:.1f}s) [beyond data]')
+                )
+                continue
 
         # Only draw section line if it starts within the snippet and we found a position
         if sec_start >= snippet_start and sec_start < snippet_end and pattern_pos is not None:
@@ -1224,7 +1247,7 @@ def plot_onsets_per_pattern(
     plt.tight_layout()
 
     # Save plot
-    output_png = output_path / f"{track_id}_onsets_per_pattern.png"
+    output_png = output_path / f"{track_id}_onsets_per_pattern_{pattern_length}bar.png"
     plt.savefig(output_png, dpi=150, bbox_inches='tight')
     plt.close()
 

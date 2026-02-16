@@ -16,7 +16,8 @@ Merges:
 - All rhythm patterns into all_rhythm_patterns.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
 - All Spotify sections timelines into all_spotify_sections.pdf
-- All onsets per pattern plots into all_onsets_per_pattern.pdf
+- All onsets per 2-bar pattern plots into all_onsets_per_pattern_2bar.pdf
+- All onsets per 4-bar pattern plots into all_onsets_per_pattern_4bar.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -521,28 +522,30 @@ def merge_plots(output_dir: Path):
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # 19. Merge onsets per pattern plots (PNG files in 13_spotify folder)
-    print('\nLooking for onsets per pattern plots...')
-    onsets_per_pattern_pngs = []
-    for track_dir in track_dirs:
-        onsets_png = track_dir / '13_spotify' / f'{track_dir.name}_onsets_per_pattern.png'
-        if onsets_png.exists():
-            onsets_per_pattern_pngs.append(onsets_png)
-            print(f'  Found onsets per pattern: {track_dir.name}')
+    # Process both 2-bar and 4-bar patterns
+    for pattern_len in [2, 4]:
+        print(f'\nLooking for onsets per {pattern_len}-bar pattern plots...')
+        onsets_per_pattern_pngs = []
+        for track_dir in track_dirs:
+            onsets_png = track_dir / '13_spotify' / f'{track_dir.name}_onsets_per_pattern_{pattern_len}bar.png'
+            if onsets_png.exists():
+                onsets_per_pattern_pngs.append(onsets_png)
+                print(f'  Found onsets per {pattern_len}-bar pattern: {track_dir.name}')
 
-    if onsets_per_pattern_pngs:
-        print(f'\nConverting and merging {len(onsets_per_pattern_pngs)} onsets per pattern PNGs...')
+        if onsets_per_pattern_pngs:
+            print(f'\nConverting and merging {len(onsets_per_pattern_pngs)} onsets per {pattern_len}-bar pattern PNGs...')
 
-        merger = PdfMerger()
-        for i, png in enumerate(onsets_per_pattern_pngs):
-            temp_pdf = temp_dir / f'onsets_per_pattern_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
+            merger = PdfMerger()
+            for i, png in enumerate(onsets_per_pattern_pngs):
+                temp_pdf = temp_dir / f'onsets_per_pattern_{pattern_len}bar_{i}.pdf'
+                png_to_pdf(png, temp_pdf)
+                merger.append(str(temp_pdf))
 
-        output_pdf = batch_dir / 'all_onsets_per_pattern.pdf'
-        merger.write(str(output_pdf))
-        merger.close()
+            output_pdf = batch_dir / f'all_onsets_per_pattern_{pattern_len}bar.pdf'
+            merger.write(str(output_pdf))
+            merger.close()
 
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+            print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # Clean up temporary files at the end
     if temp_dir.exists():
