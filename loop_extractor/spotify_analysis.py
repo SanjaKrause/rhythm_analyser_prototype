@@ -935,6 +935,47 @@ def compute_onsets_per_pattern_per_section(
     return output_csv
 
 
+def parse_filtered_csv_metadata(filtered_csv: Path) -> Dict[str, Any]:
+    """
+    Parse metadata from the header comments of a filtered flexStart CSV.
+
+    Parameters
+    ----------
+    filtered_csv : Path
+        Path to the _flexStart_filtered.csv file
+
+    Returns
+    -------
+    dict
+        Dictionary with parsed metadata (lower_bound, upper_bound, median, etc.)
+    """
+    metadata = {}
+
+    if not filtered_csv.exists():
+        return metadata
+
+    with open(filtered_csv, 'r', encoding='utf-8') as f:
+        for line in f:
+            if not line.startswith('#'):
+                break
+            # Parse comment line: # key=value
+            line = line.strip()[2:]  # Remove '# '
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                # Try to convert to numeric
+                try:
+                    if '.' in value:
+                        metadata[key] = float(value)
+                    else:
+                        metadata[key] = int(value)
+                except ValueError:
+                    metadata[key] = value
+
+    return metadata
+
+
 def plot_onsets_per_pattern(
     flexstart_csv: Path,
     sections: List[Dict[str, Any]],
@@ -950,6 +991,7 @@ def plot_onsets_per_pattern(
 
     Primary x-axis shows pattern number, secondary x-axis shows relative time.
     Section boundaries are indicated with vertical lines.
+    Horizontal lines show Tukey outlier thresholds and median (if Tukey method was used).
 
     Parameters
     ----------
@@ -981,6 +1023,10 @@ def plot_onsets_per_pattern(
         return None
 
     snippet_end = snippet_start + snippet_duration
+
+    # Try to find the filtered CSV to get Tukey threshold values
+    filtered_csv = Path(str(flexstart_csv).replace('_flexStart.csv', '_flexStart_filtered.csv'))
+    filter_metadata = parse_filtered_csv_metadata(filtered_csv)
 
     # Read flexStart CSV, skip comment lines
     bars_data = []
@@ -1133,12 +1179,45 @@ def plot_onsets_per_pattern(
                 mpatches.Patch(color=color, label=f'Section {idx+1} ({sec_relative_start:.1f}s)')
             )
 
-    # Add legend for sections if any
+    # Add horizontal lines for Tukey thresholds (if available)
+    filtering_method = filter_metadata.get('filtering_method', '')
+    if 'Tukey' in str(filtering_method):
+        lower_bound = filter_metadata.get('lower_bound')
+        upper_bound = filter_metadata.get('upper_bound')
+        median_val = filter_metadata.get('median')
+
+        if lower_bound is not None:
+            ax1.axhline(y=lower_bound, color='red', linestyle=':', linewidth=1.5, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color='red', label=f'Lower bound ({lower_bound:.1f})')
+            )
+        if upper_bound is not None:
+            ax1.axhline(y=upper_bound, color='red', linestyle=':', linewidth=1.5, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color='red', label=f'Upper bound ({upper_bound:.1f})')
+            )
+        if median_val is not None:
+            ax1.axhline(y=median_val, color='green', linestyle='-', linewidth=1.5, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color='green', label=f'Median ({median_val:.1f})')
+            )
+
+    # Add legend for sections and thresholds if any
     if legend_handles:
         ax1.legend(handles=legend_handles, loc='upper right', fontsize=9)
 
-    # Title
-    ax1.set_title(f'Onsets per {pattern_length}-Bar Pattern\n{track_id}', fontsize=12, fontweight='bold')
+    # Title - add q1/q3 info if Tukey method was used, or note if running mean
+    title = f'Onsets per {pattern_length}-Bar Pattern\n{track_id}'
+    filtering_method = str(filter_metadata.get('filtering_method', ''))
+    if 'Tukey' in filtering_method:
+        q1 = filter_metadata.get('q1')
+        q3 = filter_metadata.get('q3')
+        if q1 is not None and q3 is not None:
+            title += f'\nQ1={q1:.1f}, Q3={q3:.1f}'
+    elif 'running mean' in filtering_method:
+        no_of_rep_th = filter_metadata.get('no_of_repetitions_TH', 2)
+        title += f'\nTukey not used, repetitions ≤ {no_of_rep_th}'
+    ax1.set_title(title, fontsize=12, fontweight='bold')
 
     ax1.grid(axis='y', alpha=0.3)
 

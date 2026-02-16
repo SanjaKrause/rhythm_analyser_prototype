@@ -1174,6 +1174,7 @@ IQR_MULTIPLIER_TUKEY = 1.5      # Standard outlier detection
 # iqr=2.75
 # lower_bound=41.62
 # upper_bound=52.62
+# median=47.50
 # removed_pattern_indices=6
 ```
 

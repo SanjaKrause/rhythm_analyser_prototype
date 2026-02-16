@@ -116,8 +116,9 @@ def filter_loops_by_onset_count_tukey(
         # ALL loops treated equally (no special treatment of loop 0)
         onset_counts_array = np.array(list(loop_onset_counts.values()))
 
-        # Calculate Tukey bounds
+        # Calculate Tukey bounds and median
         q1 = np.percentile(onset_counts_array, 25)
+        median_onsets = np.median(onset_counts_array)
         q3 = np.percentile(onset_counts_array, 75)
         iqr = q3 - q1
         lower_bound = q1 - (iqr_multiplier * iqr)
@@ -208,6 +209,7 @@ def filter_loops_by_onset_count_tukey(
             f.write(f"# iqr={iqr:.2f}\n")
             f.write(f"# lower_bound={lower_bound:.2f}\n")
             f.write(f"# upper_bound={upper_bound:.2f}\n")
+            f.write(f"# median={median_onsets:.2f}\n")
         f.write(f"# removed_pattern_indices={','.join(map(str, removed_indices))}\n")
         # Write the CSV content
         df_filtered.to_csv(f, index=False)
