@@ -206,6 +206,18 @@ If you use this tool in your research, please cite the following papers:
 - Paper: https://archives.ismir.net/ismir2022/latebreaking/000003.pdf
 - GitHub: https://github.com/groupmm/libf0
 
+### SongFormer (Music Structure Analysis)
+```bibtex
+@inproceedings{liu2024songformer,
+  title={SongFormer: A Time-Frequency Transformer for Music Structure Segmentation},
+  author={Liu, Zhenyu and others},
+  booktitle={Proceedings of the International Society for Music Information Retrieval Conference (ISMIR)},
+  year={2024}
+}
+```
+- GitHub: https://github.com/ASLP-lab/SongFormer/
+- State-of-the-art music structure analysis (~70% boundary detection at 0.5s tolerance)
+
 ### Microtiming Analysis
 ```bibtex
 @article{ainsworth2025microtiming,
