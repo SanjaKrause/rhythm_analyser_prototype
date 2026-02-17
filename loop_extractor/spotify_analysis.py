@@ -733,6 +733,23 @@ def run_spotify_sections_analysis(
             )
             if onsets_plot:
                 results[f"output_onsets_plot_{pattern_len}bar"] = str(onsets_plot)
+
+            # Create the onsets per bar plot (individual bars, not grouped by pattern)
+            if verbose:
+                print(f"  Computing onsets per bar (using {pattern_len}-bar grid)...")
+
+            onsets_per_bar_plot = plot_onsets_per_bar(
+                flexstart_csv=flexstart_csv,
+                sections=sections,
+                snippet_start=snippet_start,
+                snippet_duration=snippet_duration,
+                output_path=output_path,
+                track_id=track_id,
+                pattern_length=pattern_len,
+                verbose=verbose
+            )
+            if onsets_per_bar_plot:
+                results[f"output_onsets_per_bar_plot_{pattern_len}bar"] = str(onsets_per_bar_plot)
         else:
             if verbose:
                 print(f"  Skipping {pattern_len}-bar onsets per pattern (flexStart CSV not found)")
@@ -1248,6 +1265,288 @@ def plot_onsets_per_pattern(
 
     # Save plot
     output_png = output_path / f"{track_id}_onsets_per_pattern_{pattern_length}bar.png"
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    if verbose:
+        print(f"  Saved: {output_png.name}")
+
+    return output_png
+
+
+def plot_onsets_per_bar(
+    flexstart_csv: Path,
+    sections: List[Dict[str, Any]],
+    snippet_start: float,
+    snippet_duration: float,
+    output_path: Path,
+    track_id: str,
+    pattern_length: int = 2,
+    verbose: bool = True
+) -> Optional[Path]:
+    """
+    Create a bar plot showing number of onsets per individual bar.
+
+    Unlike plot_onsets_per_pattern which groups bars into patterns,
+    this shows each bar individually. Useful for comparing bar-level
+    onset density.
+
+    Primary x-axis shows bar number (within pattern context), secondary x-axis shows relative time.
+    Section boundaries are indicated with vertical lines.
+    Horizontal lines show Tukey outlier thresholds and median (if Tukey method was used).
+
+    Parameters
+    ----------
+    flexstart_csv : Path
+        Path to the comprehensive_phases_Lbar_flexStart.csv file
+    sections : list
+        List of section dictionaries with 'start' and 'duration' keys
+    snippet_start : float
+        Start time of the snippet in seconds (absolute)
+    snippet_duration : float
+        Duration of the snippet in seconds
+    output_path : Path
+        Output directory for the plot
+    track_id : str
+        Track identifier for filename
+    pattern_length : int
+        Pattern length context (L value, for labeling/context, default 2)
+    verbose : bool
+        Print progress messages
+
+    Returns
+    -------
+    Path or None
+        Path to output PNG, or None if failed
+    """
+    if not flexstart_csv.exists():
+        if verbose:
+            print(f"  WARNING: flexStart CSV not found: {flexstart_csv}")
+        return None
+
+    snippet_end = snippet_start + snippet_duration
+
+    # Try to find the filtered CSV to get Tukey threshold values
+    filtered_csv = Path(str(flexstart_csv).replace('_flexStart.csv', '_flexStart_filtered.csv'))
+    filter_metadata = parse_filtered_csv_metadata(filtered_csv)
+
+    # Read flexStart CSV, skip comment lines
+    # CSV columns: bar_number, bar_number_global, tick_16th, onset_time, phase, grid_time, ...
+    bars_data = []
+    bar_grid_starts = {}  # bar_num -> grid_time at tick_16th=0
+    with open(flexstart_csv, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            if line.startswith('bar_number'):
+                continue
+            parts = line.strip().split(',')
+            if len(parts) >= 6:
+                try:
+                    bar_num = int(parts[0])
+                    tick_16th = int(parts[2])
+                    onset_time = float(parts[3]) if parts[3] else None
+                    grid_time = float(parts[5]) if parts[5] else None
+                    bars_data.append((bar_num, onset_time))
+                    # Store grid_time at tick_16th=0 for bar start time
+                    if tick_16th == 0 and grid_time is not None:
+                        bar_grid_starts[bar_num] = grid_time
+                except (ValueError, IndexError):
+                    continue
+
+    if not bars_data:
+        if verbose:
+            print("  WARNING: No data found in flexStart CSV")
+        return None
+
+    # Group by bar number and collect onset times
+    bar_onsets = {}
+    for bar_num, onset_time in bars_data:
+        if bar_num not in bar_onsets:
+            bar_onsets[bar_num] = []
+        if onset_time is not None:
+            bar_onsets[bar_num].append(onset_time)
+
+    # Get unique bar numbers sorted
+    unique_bars = sorted(bar_onsets.keys())
+
+    # Only include complete patterns (groups of L bars)
+    # Truncate to complete patterns
+    num_complete_bars = (len(unique_bars) // pattern_length) * pattern_length
+    unique_bars = unique_bars[:num_complete_bars]
+
+    if not unique_bars:
+        if verbose:
+            print("  WARNING: No complete bars found")
+        return None
+
+    # Build bar data
+    bar_data = []
+    for bar_num in unique_bars:
+        onset_count = len(bar_onsets[bar_num])
+        grid_start_time = bar_grid_starts.get(bar_num)
+        bar_data.append({
+            'bar_num': bar_num,
+            'onset_count': onset_count,
+            'grid_start_time': grid_start_time,
+            'relative_time': (grid_start_time - snippet_start) if grid_start_time else None
+        })
+
+    if not bar_data:
+        if verbose:
+            print("  WARNING: No bar data found")
+        return None
+
+    # Create the plot
+    fig, ax1 = plt.subplots(figsize=(14, 5))
+
+    # Data for plotting - use sequential x positions (1, 2, 3, ...)
+    x_positions = list(range(1, len(bar_data) + 1))
+    onset_counts = [b['onset_count'] for b in bar_data]
+
+    # Bar plot - align='edge' makes bar left edge at x position
+    bar_width = 0.95
+    bars = ax1.bar(x_positions, onset_counts, width=bar_width, align='edge',
+                   color='steelblue', edgecolor='black', alpha=0.8)
+
+    # Add onset count labels on bars
+    for bar, count in zip(bars, onset_counts):
+        height = bar.get_height()
+        ax1.annotate(f'{count}',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha='center', va='bottom', fontsize=7)
+
+    # Primary x-axis (bar number within pattern context)
+    ax1.set_xlabel(f'Bar Number (within {pattern_length}-bar pattern grid)', fontsize=11)
+    ax1.set_ylabel('Number of Onsets', fontsize=11)
+    ax1.set_xticks(x_positions)
+    ax1.set_xticklabels([str(b['bar_num']) for b in bar_data], fontsize=8)
+    ax1.set_xlim(0.5, len(bar_data) + 1.5)
+
+    # Secondary x-axis (relative time) - labels at left edge of each bar
+    ax2 = ax1.twiny()
+    ax2.set_xlim(ax1.get_xlim())
+
+    # Create time labels for each bar at left edge
+    time_ticks = []
+    time_labels = []
+    for i, b in enumerate(bar_data):
+        if b['relative_time'] is not None:
+            time_ticks.append(i + 1)  # Left edge of bar
+            time_labels.append(f"{b['relative_time']:.1f}s")
+
+    ax2.set_xticks(time_ticks)
+    ax2.set_xticklabels(time_labels, fontsize=6, rotation=45, ha='left')
+    ax2.set_xlabel('Relative Time (bar start)', fontsize=10)
+
+    # Add section boundaries as vertical lines
+    section_colors = plt.cm.Set1(np.linspace(0, 1, 9))
+    legend_handles = []
+
+    for idx, section in enumerate(sections):
+        sec_start = section['start']
+        sec_end = sec_start + section['duration']
+
+        # Check if section overlaps with snippet
+        if not (sec_start < snippet_end and sec_end > snippet_start):
+            continue
+
+        sec_relative_start = sec_start - snippet_start
+
+        # Find which bar position this section start falls into
+        bar_pos = None
+        found_interpolation = False
+        for i, b in enumerate(bar_data):
+            if b['relative_time'] is not None:
+                if b['relative_time'] <= sec_relative_start:
+                    # Interpolate position between bars
+                    bar_pos = i + 1  # x position
+                    # Find next bar for interpolation
+                    if i + 1 < len(bar_data) and bar_data[i + 1]['relative_time'] is not None:
+                        t_range = bar_data[i + 1]['relative_time'] - b['relative_time']
+                        if t_range > 0:
+                            frac = (sec_relative_start - b['relative_time']) / t_range
+                            bar_pos = (i + 1) + frac
+                            found_interpolation = True
+
+        # If section starts before all bars, place line at start
+        if bar_pos is None and bar_data and sec_relative_start < bar_data[0].get('relative_time', float('inf')):
+            bar_pos = 0.5  # Place before first bar
+            found_interpolation = True
+
+        # Check if section is beyond the last bar (no valid interpolation found)
+        last_bar = bar_data[-1] if bar_data else None
+        if last_bar and last_bar['relative_time'] is not None:
+            if sec_relative_start > last_bar['relative_time'] and not found_interpolation:
+                # Section is beyond bar data - add to legend only, don't draw line
+                color = section_colors[idx % len(section_colors)]
+                legend_handles.append(
+                    mpatches.Patch(color=color, label=f'Section {idx+1} ({sec_relative_start:.1f}s) [beyond data]')
+                )
+                continue
+
+        # Only draw section line if it starts within the snippet and we found a position
+        if sec_start >= snippet_start and sec_start < snippet_end and bar_pos is not None:
+            color = section_colors[idx % len(section_colors)]
+            ax1.axvline(x=bar_pos, color=color, linestyle='--',
+                        linewidth=2, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color=color, label=f'Section {idx+1} ({sec_relative_start:.1f}s)')
+            )
+
+    # Add horizontal lines for Tukey thresholds (if available)
+    # Note: Thresholds are computed per pattern, so divide by pattern_length for per-bar estimate
+    filtering_method = filter_metadata.get('filtering_method', '')
+    if 'Tukey' in str(filtering_method):
+        lower_bound = filter_metadata.get('lower_bound')
+        upper_bound = filter_metadata.get('upper_bound')
+        median_val = filter_metadata.get('median')
+
+        # Convert per-pattern thresholds to per-bar estimates
+        if lower_bound is not None:
+            per_bar_lower = lower_bound / pattern_length
+            ax1.axhline(y=per_bar_lower, color='red', linestyle=':', linewidth=1.5, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color='red', label=f'Lower bound ({per_bar_lower:.1f}/bar)')
+            )
+        if upper_bound is not None:
+            per_bar_upper = upper_bound / pattern_length
+            ax1.axhline(y=per_bar_upper, color='red', linestyle=':', linewidth=1.5, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color='red', label=f'Upper bound ({per_bar_upper:.1f}/bar)')
+            )
+        if median_val is not None:
+            per_bar_median = median_val / pattern_length
+            ax1.axhline(y=per_bar_median, color='green', linestyle='-', linewidth=1.5, alpha=0.8)
+            legend_handles.append(
+                mpatches.Patch(color='green', label=f'Median ({per_bar_median:.1f}/bar)')
+            )
+
+    # Add legend for sections and thresholds if any
+    if legend_handles:
+        ax1.legend(handles=legend_handles, loc='upper right', fontsize=8)
+
+    # Title
+    title = f'Onsets per Bar (using {pattern_length}-bar grid)\n{track_id}'
+    filtering_method = str(filter_metadata.get('filtering_method', ''))
+    if 'Tukey' in filtering_method:
+        q1 = filter_metadata.get('q1')
+        q3 = filter_metadata.get('q3')
+        if q1 is not None and q3 is not None:
+            title += f'\nQ1={q1:.1f}, Q3={q3:.1f} (per pattern)'
+    elif 'running mean' in filtering_method:
+        no_of_rep_th = filter_metadata.get('no_of_repetitions_TH', 2)
+        title += f'\nTukey not used, repetitions ≤ {no_of_rep_th}'
+    ax1.set_title(title, fontsize=12, fontweight='bold')
+
+    ax1.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+
+    # Save plot
+    output_png = output_path / f"{track_id}_onsets_per_bar_{pattern_length}bar.png"
     plt.savefig(output_png, dpi=150, bbox_inches='tight')
     plt.close()
 
