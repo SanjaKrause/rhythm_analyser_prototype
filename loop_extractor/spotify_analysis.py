@@ -1176,17 +1176,16 @@ def plot_onsets_per_pattern(
         sec_relative_start = sec_start - snippet_start
 
         # Find which pattern this section start falls into
+        # Only set pattern_pos if we can interpolate between two patterns
         pattern_pos = None
         found_interpolation = False
         for p in patterns:
             if p['relative_time'] is not None:
                 if p['relative_time'] <= sec_relative_start:
-                    # Interpolate position between patterns
-                    pattern_pos = p['pattern_num']
                     # Find next pattern for interpolation
                     for p2 in patterns:
                         if p2['pattern_num'] == p['pattern_num'] + 1 and p2['relative_time'] is not None:
-                            # Linear interpolation
+                            # Linear interpolation between patterns
                             t_range = p2['relative_time'] - p['relative_time']
                             if t_range > 0:
                                 frac = (sec_relative_start - p['relative_time']) / t_range
@@ -1456,13 +1455,12 @@ def plot_onsets_per_bar(
         sec_relative_start = sec_start - snippet_start
 
         # Find which bar position this section start falls into
+        # Only set bar_pos if we can interpolate between two bars
         bar_pos = None
         found_interpolation = False
         for i, b in enumerate(bar_data):
             if b['relative_time'] is not None:
                 if b['relative_time'] <= sec_relative_start:
-                    # Interpolate position between bars
-                    bar_pos = i + 1  # x position
                     # Find next bar for interpolation
                     if i + 1 < len(bar_data) and bar_data[i + 1]['relative_time'] is not None:
                         t_range = bar_data[i + 1]['relative_time'] - b['relative_time']
