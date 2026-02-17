@@ -16,6 +16,7 @@ Merges:
 - All rhythm patterns into all_rhythm_patterns.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
 - All Spotify sections timelines into all_spotify_sections.pdf
+- All SongFormer sections timelines into all_songformer_sections.pdf
 - All onsets per 2-bar pattern plots into all_onsets_per_pattern_2bar.pdf
 - All onsets per 4-bar pattern plots into all_onsets_per_pattern_4bar.pdf
 - All onsets per bar (2-bar grid) plots into all_onsets_per_bar_2bar.pdf
@@ -574,6 +575,54 @@ def merge_plots(output_dir: Path):
             merger.close()
 
             print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 21. Merge SongFormer snippet sections plots (PNG files in 2.5_songformer_sections folder)
+    print('\nLooking for SongFormer snippet sections plots...')
+    sf_sections_pngs = []
+    for track_dir in track_dirs:
+        sf_png = track_dir / '2.5_songformer_sections' / f'{track_dir.name}_SF_snippet_sections.png'
+        if sf_png.exists():
+            sf_sections_pngs.append(sf_png)
+            print(f'  Found SongFormer sections: {track_dir.name}')
+
+    if sf_sections_pngs:
+        print(f'\nConverting and merging {len(sf_sections_pngs)} SongFormer sections PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(sf_sections_pngs):
+            temp_pdf = temp_dir / f'sf_sections_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_songformer_sections.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 22. Merge SongFormer song sections plots (PNG files in 2.5_songformer_sections folder)
+    print('\nLooking for SongFormer song sections plots...')
+    sf_song_pngs = []
+    for track_dir in track_dirs:
+        sf_png = track_dir / '2.5_songformer_sections' / f'{track_dir.name}_SF_song_sections.png'
+        if sf_png.exists():
+            sf_song_pngs.append(sf_png)
+            print(f'  Found SongFormer song sections: {track_dir.name}')
+
+    if sf_song_pngs:
+        print(f'\nConverting and merging {len(sf_song_pngs)} SongFormer song sections PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(sf_song_pngs):
+            temp_pdf = temp_dir / f'sf_song_sections_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_songformer_song_sections.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # Clean up temporary files at the end
     if temp_dir.exists():

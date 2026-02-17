@@ -27,13 +27,14 @@
 18. [Full Song IOI Histogram](#full-song-ioi-histogram)
 19. [Beat Histogram Repetition Information](#beat-histogram-repetition-information)
 20. [Step 12: Pironio Pulse Clarity Metrics](#step-12-pironio-pulse-clarity-metrics)
-21. [Step 13: Spotify Sections Analysis](#step-13-spotify-sections-analysis)
-22. [Step 14: Yodfat Rhythmic Complexity](#step-14-yodfat-rhythmic-complexity)
-23. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-24. [Data Dependencies](#data-dependencies)
-25. [Legend](#legend)
-26. [Notes](#notes)
-27. [TODO](#todo)
+21. [Step 2.5: SongFormer Music Structure Analysis](#step-25-songformer-music-structure-analysis)
+22. [Step 13: Spotify Sections Analysis](#step-13-spotify-sections-analysis)
+23. [Step 14: Yodfat Rhythmic Complexity](#step-14-yodfat-rhythmic-complexity)
+24. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+25. [Data Dependencies](#data-dependencies)
+26. [Legend](#legend)
+27. [Notes](#notes)
+28. [TODO](#todo)
 
 ---
 
@@ -2313,17 +2314,82 @@ For the example above:
 
 ---
 
+## Step 2.5: SongFormer Music Structure Analysis
+
+Step 2.5 runs **SongFormer**, a state-of-the-art music structure segmentation model, to detect section boundaries and labels (intro, verse, chorus, bridge, etc.) with ~70% boundary detection accuracy at 0.5s tolerance.
+
+**Reference:** Wang et al. (2024). "SongFormer: A Dual-Scale Transformer for Music Structure Analysis"
+
+**Model Architecture:** Dual-scale SSL representations (30s local + 420s global context) from MuQ and MusicFM models, processed through a 4-layer transformer with separate boundary and function prediction heads.
+
+**Input:** Full song audio file (from `1_stems/` or original)
+**Output:** `2.5_songformer_sections/`
+
+### Output Files
+
+| File | Description |
+|------|-------------|
+| `{track_id}_songformer_sections.json` | Full sections data with start, end, duration, label |
+| `{track_id}_songformer_msa.txt` | MSA format text file (start_time label per line) |
+| `{track_id}_SF_snippet_sections.png` | Snippet-zoomed timeline with dual x-axes (absolute + relative time) |
+| `{track_id}_SF_song_sections.png` | Full song timeline with snippet boundaries marked |
+| `{track_id}_SF_section_changes.csv` | CSV of sections that START within the snippet |
+
+### Section Labels
+
+SongFormer outputs these functional labels:
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `intro` | Pale green | Song introduction |
+| `verse` | Sky blue | Main verse sections |
+| `chorus` | Light pink | Chorus/hook sections |
+| `pre-chorus` | Powder blue | Build-up to chorus |
+| `bridge` | Plum | Bridge/breakdown sections |
+| `inst` | Khaki | Instrumental sections |
+| `outro` | Light gray | Song ending |
+| `silence` | White | Silence/gaps |
+
+### Visualization Details
+
+**SF_snippet_sections.png** (Snippet View):
+- Zoomed to snippet timerange only
+- Dual x-axes: bottom = absolute time, top = relative time (0-30s)
+- Sections clipped to snippet boundaries
+- Color-coded by section type with legend
+
+**SF_song_sections.png** (Full Song View):
+- Shows ALL sections for the entire song
+- Red dashed lines mark snippet start/end boundaries
+- Red shaded region highlights the analyzed snippet
+- Useful for context: where does the snippet fall in the song structure?
+
+### Notes
+
+- Runs on CPU (MPS doesn't support ComplexFloat for FFT/spectrograms)
+- Processing time: ~2-3 minutes per song on Apple Silicon
+- Filters out spurious sections beyond audio duration (model pads to 420s)
+- Section changes CSV only includes sections that START within snippet (not those that merely overlap)
+
+---
+
 ## Step 13: Spotify Sections Analysis
 
-Step 13 visualizes **song sections** (intro, verse, chorus, bridge, etc.) from Spotify's audio analysis data, showing which sections fall within the analyzed snippet timerange.
+Step 13 visualizes **song sections** (intro, verse, chorus, bridge, etc.) from Spotify's audio analysis data, showing which sections fall within the analyzed snippet timerange. It also generates plots for SongFormer sections if Step 2.5 has been run.
 
 **Data Source:** Local `groove-data/` folder containing:
 - `groove-data/spotify/spotify_ids.csv` - Maps song_id to Spotify track ID
 - `groove-data/spotify_audioanalysis/{spotify_id}.json` - Contains sections data from Spotify API
 
-**Output:**
+**Output (Spotify):**
 - `13_spotify/{track_id}_sections_timeline.png` - Visual timeline plot
 - `13_spotify/{track_id}_sections.json` - Sections data for the snippet
+- `13_spotify/{track_id}_section_changes.csv` - Sections that START within snippet (filtered)
+
+**Output (SongFormer):** If Step 2.5 was run, these plots are generated in `2.5_songformer_sections/`:
+- `{track_id}_SF_snippet_sections.png` - Snippet-zoomed timeline (dual x-axes)
+- `{track_id}_SF_song_sections.png` - Full song timeline with snippet marked
+- `{track_id}_SF_section_changes.csv` - Sections that START within snippet
 
 ### How It Works
 
@@ -2363,6 +2429,17 @@ The timeline plot shows:
 - Only sections overlapping with the snippet are shown
 - Section bars are clipped to the snippet boundaries for accurate representation
 - Requires pre-downloaded Spotify audio analysis data in `groove-data/`
+
+### SongFormer vs Spotify Comparison
+
+| Feature | Spotify | SongFormer |
+|---------|---------|------------|
+| **Accuracy** | ~60% boundary F1 | ~70% boundary F1 (0.5s tolerance) |
+| **Labels** | None (only tempo/key) | Functional (intro, verse, chorus, etc.) |
+| **Data Source** | Pre-downloaded JSON | Computed from audio |
+| **Speed** | Instant (cached) | ~2-3 min per song |
+| **Snippet Plot** | `sections_timeline.png` | `SF_snippet_sections.png` |
+| **Full Song Plot** | N/A | `SF_song_sections.png` |
 
 ---
 

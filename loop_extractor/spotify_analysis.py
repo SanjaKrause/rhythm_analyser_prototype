@@ -267,6 +267,288 @@ def plot_sections_timeline(
     return output_path
 
 
+def plot_songformer_snippet_sections(
+    sections: List[Dict[str, Any]],
+    snippet_start: float,
+    snippet_duration: float,
+    output_path: Path,
+    track_name: str = "",
+    song_id: Optional[int] = None,
+    verbose: bool = True
+) -> Optional[Path]:
+    """
+    Create a horizontal bar plot showing SongFormer sections within the snippet timerange.
+
+    Similar to plot_sections_timeline but for SongFormer output which uses
+    section labels (intro, verse, chorus, etc.) instead of Spotify's tempo/key info.
+
+    Parameters
+    ----------
+    sections : list
+        List of section dictionaries with 'start', 'duration', 'label' keys
+    snippet_start : float
+        Start time of the snippet in seconds
+    snippet_duration : float
+        Duration of the snippet in seconds
+    output_path : Path
+        Path to save the plot
+    track_name : str
+        Track name for the title
+    song_id : int, optional
+        Song ID to include in the title
+    verbose : bool
+        Print progress messages
+
+    Returns
+    -------
+    Path or None
+        Path to saved plot, or None if no sections overlap with snippet
+    """
+    snippet_end = snippet_start + snippet_duration
+
+    # Filter sections that overlap with snippet timerange
+    overlapping_sections = []
+    for section in sections:
+        sec_start = section["start"]
+        sec_end = sec_start + section["duration"]
+
+        # Check if section overlaps with snippet
+        if sec_start < snippet_end and sec_end > snippet_start:
+            overlapping_sections.append(section)
+
+    if not overlapping_sections:
+        if verbose:
+            print("  No SongFormer sections overlap with snippet timerange")
+        return None
+
+    # Color map for section labels
+    label_colors = {
+        'intro': '#98FB98',      # pale green
+        'verse': '#87CEEB',      # sky blue
+        'chorus': '#FFB6C1',     # light pink
+        'bridge': '#DDA0DD',     # plum
+        'inst': '#F0E68C',       # khaki
+        'outro': '#D3D3D3',      # light gray
+        'silence': '#FFFFFF',    # white
+        'pre-chorus': '#B0E0E6', # powder blue
+    }
+    default_color = '#E6E6FA'    # lavender for unknown labels
+
+    fig, ax = plt.subplots(figsize=(14, 4))
+
+    # Plot each section as a horizontal bar
+    y_pos = 0.5
+    bar_height = 0.6
+
+    for i, section in enumerate(overlapping_sections):
+        sec_start = section["start"]
+        sec_end = sec_start + section["duration"]
+        label = section.get("label", "unknown")
+
+        # Clip section to snippet bounds for display
+        display_start = max(sec_start, snippet_start)
+        display_end = min(sec_end, snippet_end)
+        display_width = display_end - display_start
+
+        color = label_colors.get(label, default_color)
+
+        # Draw the section bar
+        rect = mpatches.FancyBboxPatch(
+            (display_start, y_pos - bar_height/2),
+            display_width, bar_height,
+            boxstyle="round,pad=0.02,rounding_size=0.1",
+            facecolor=color,
+            edgecolor='black',
+            linewidth=1.5
+        )
+        ax.add_patch(rect)
+
+        # Add section label (if bar is wide enough)
+        if display_width > snippet_duration * 0.05:
+            label_x = display_start + display_width / 2
+            ax.text(label_x, y_pos, label.upper(), ha='center', va='center',
+                   fontsize=9, fontweight='bold')
+
+    # Set axis limits to snippet bounds only
+    ax.set_xlim(snippet_start, snippet_end)
+    ax.set_ylim(0, 1)
+
+    # Labels and formatting - primary x-axis shows absolute time
+    ax.set_xlabel('Absolute Time (seconds)', fontsize=11)
+    ax.set_yticks([])
+
+    # Add secondary x-axis for relative time
+    ax2 = ax.twiny()
+    ax2.set_xlim(0, snippet_duration)
+    ax2.set_xlabel('Relative Time (seconds)', fontsize=11)
+
+    # Build title with optional song_id
+    if song_id is not None and track_name:
+        title = f'SongFormer Snippet Sections - {song_id}: {track_name}'
+    elif song_id is not None:
+        title = f'SongFormer Snippet Sections - {song_id}'
+    elif track_name:
+        title = f'SongFormer Snippet Sections - {track_name}'
+    else:
+        title = 'SongFormer Snippet Sections'
+    ax.set_title(title, fontsize=12, fontweight='bold', pad=25)
+
+    # Add legend for section types (only those present in data)
+    present_labels = set(s.get("label", "unknown") for s in overlapping_sections)
+    legend_patches = [mpatches.Patch(color=label_colors.get(l, default_color), label=l.capitalize())
+                      for l in present_labels if l in label_colors]
+    if legend_patches:
+        ax.legend(handles=legend_patches, loc='upper right', fontsize=8, ncol=2)
+
+    # Add grid for time reference
+    ax.grid(axis='x', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    if verbose:
+        print(f"  Saved: {output_path.name}")
+
+    return output_path
+
+
+def plot_songformer_song_sections(
+    sections: List[Dict[str, Any]],
+    song_duration: float,
+    snippet_start: float,
+    snippet_duration: float,
+    output_path: Path,
+    track_name: str = "",
+    song_id: Optional[int] = None,
+    verbose: bool = True
+) -> Optional[Path]:
+    """
+    Create a horizontal bar plot showing ALL SongFormer sections for the full song,
+    with snippet boundaries marked.
+
+    Parameters
+    ----------
+    sections : list
+        List of section dictionaries with 'start', 'duration', 'label' keys
+    song_duration : float
+        Total duration of the song in seconds
+    snippet_start : float
+        Start time of the snippet in seconds (for marking boundaries)
+    snippet_duration : float
+        Duration of the snippet in seconds (for marking boundaries)
+    output_path : Path
+        Path to save the plot
+    track_name : str
+        Track name for the title
+    song_id : int, optional
+        Song ID to include in the title
+    verbose : bool
+        Print progress messages
+
+    Returns
+    -------
+    Path or None
+        Path to saved plot, or None if no sections
+    """
+    if not sections:
+        if verbose:
+            print("  No SongFormer sections to plot")
+        return None
+
+    snippet_end = snippet_start + snippet_duration
+
+    # Color map for section labels
+    label_colors = {
+        'intro': '#98FB98',      # pale green
+        'verse': '#87CEEB',      # sky blue
+        'chorus': '#FFB6C1',     # light pink
+        'bridge': '#DDA0DD',     # plum
+        'inst': '#F0E68C',       # khaki
+        'outro': '#D3D3D3',      # light gray
+        'silence': '#FFFFFF',    # white
+        'pre-chorus': '#B0E0E6', # powder blue
+    }
+    default_color = '#E6E6FA'    # lavender for unknown labels
+
+    fig, ax = plt.subplots(figsize=(14, 4))
+
+    # Plot each section as a horizontal bar
+    y_pos = 0.5
+    bar_height = 0.6
+
+    for i, section in enumerate(sections):
+        sec_start = section["start"]
+        sec_duration = section["duration"]
+        label = section.get("label", "unknown")
+
+        color = label_colors.get(label, default_color)
+
+        # Draw the section bar
+        rect = mpatches.FancyBboxPatch(
+            (sec_start, y_pos - bar_height/2),
+            sec_duration, bar_height,
+            boxstyle="round,pad=0.02,rounding_size=0.1",
+            facecolor=color,
+            edgecolor='black',
+            linewidth=1.5
+        )
+        ax.add_patch(rect)
+
+        # Add section label (if bar is wide enough)
+        if sec_duration > song_duration * 0.03:
+            label_x = sec_start + sec_duration / 2
+            ax.text(label_x, y_pos, label.upper(), ha='center', va='center',
+                   fontsize=8, fontweight='bold')
+
+    # Add snippet boundary lines
+    ax.axvline(x=snippet_start, color='red', linestyle='--', linewidth=2, alpha=0.8)
+    ax.axvline(x=snippet_end, color='red', linestyle='--', linewidth=2, alpha=0.8)
+
+    # Add shaded region for snippet
+    ax.axvspan(snippet_start, snippet_end, alpha=0.15, color='red')
+
+    # Set axis limits to full song
+    ax.set_xlim(0, song_duration)
+    ax.set_ylim(0, 1)
+
+    # Labels and formatting
+    ax.set_xlabel('Time (seconds)', fontsize=11)
+    ax.set_yticks([])
+
+    # Build title with optional song_id
+    if song_id is not None and track_name:
+        title = f'SongFormer Song Sections - {song_id}: {track_name}'
+    elif song_id is not None:
+        title = f'SongFormer Song Sections - {song_id}'
+    elif track_name:
+        title = f'SongFormer Song Sections - {track_name}'
+    else:
+        title = 'SongFormer Song Sections'
+    ax.set_title(title, fontsize=12, fontweight='bold')
+
+    # Add legend for section types (only those present in data) + snippet marker
+    present_labels = set(s.get("label", "unknown") for s in sections)
+    legend_patches = [mpatches.Patch(color=label_colors.get(l, default_color), label=l.capitalize())
+                      for l in present_labels if l in label_colors]
+    # Add snippet boundary to legend
+    legend_patches.append(mpatches.Patch(color='red', alpha=0.3, label=f'Snippet ({snippet_start:.1f}s - {snippet_end:.1f}s)'))
+    if legend_patches:
+        ax.legend(handles=legend_patches, loc='upper right', fontsize=8, ncol=2)
+
+    # Add grid for time reference
+    ax.grid(axis='x', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    if verbose:
+        print(f"  Saved: {output_path.name}")
+
+    return output_path
+
+
 def get_spotify_token(client_id: str, client_secret: str) -> Optional[str]:
     """
     Get Spotify API access token using client credentials flow.
@@ -769,6 +1051,67 @@ def run_spotify_sections_analysis(
         )
         if onsets_csv:
             results["output_onsets_csv"] = str(onsets_csv)
+
+    # Plot SongFormer sections if available
+    songformer_dir = Path(output_dir) / "2.5_songformer_sections"
+    songformer_json = songformer_dir / f"{track_id}_songformer_sections.json"
+
+    if songformer_json.exists():
+        if verbose:
+            print(f"  Creating SongFormer sections plots...")
+
+        with open(songformer_json, 'r') as f:
+            sf_data = json.load(f)
+            sf_sections = sf_data.get("sections", [])
+            song_duration = sf_data.get("duration", 0)
+
+        if sf_sections:
+            # 1. Snippet sections plot (zoomed to snippet timerange)
+            sf_snippet_plot = songformer_dir / f"{track_id}_SF_snippet_sections.png"
+            sf_snippet_path = plot_songformer_snippet_sections(
+                sections=sf_sections,
+                snippet_start=snippet_start,
+                snippet_duration=snippet_duration,
+                output_path=sf_snippet_plot,
+                track_name=track_name,
+                song_id=song_id,
+                verbose=verbose
+            )
+            if sf_snippet_path:
+                results["output_songformer_snippet_plot"] = str(sf_snippet_path)
+
+            # 2. Full song sections plot (with snippet boundaries marked)
+            sf_song_plot = songformer_dir / f"{track_id}_SF_song_sections.png"
+            sf_song_path = plot_songformer_song_sections(
+                sections=sf_sections,
+                song_duration=song_duration,
+                snippet_start=snippet_start,
+                snippet_duration=snippet_duration,
+                output_path=sf_song_plot,
+                track_name=track_name,
+                song_id=song_id,
+                verbose=verbose
+            )
+            if sf_song_path:
+                results["output_songformer_song_plot"] = str(sf_song_path)
+
+            # Create snippet-filtered section changes CSV (sections that START within snippet)
+            snippet_end = snippet_start + snippet_duration
+            sf_changes_csv = songformer_dir / f"{track_id}_SF_section_changes.csv"
+            with open(sf_changes_csv, 'w') as f:
+                f.write("section_num,start_absolute_s,start_relative_s,duration_s,label\n")
+                for i, section in enumerate(sf_sections):
+                    sec_start = section["start"]
+                    # Only include sections that START within the snippet (not before it)
+                    if sec_start >= snippet_start and sec_start < snippet_end:
+                        relative_start = sec_start - snippet_start
+                        f.write(f"{i},{sec_start:.3f},{relative_start:.3f},{section['duration']:.3f},{section['label']}\n")
+            results["output_songformer_changes_csv"] = str(sf_changes_csv)
+            if verbose:
+                print(f"  Saved: {sf_changes_csv.name}")
+    else:
+        if verbose:
+            print(f"  Skipping SongFormer plots (no data at {songformer_json})")
 
     if verbose:
         print(f"  Saved: {output_json.name}")

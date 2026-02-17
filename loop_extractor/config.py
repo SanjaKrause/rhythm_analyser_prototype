@@ -185,6 +185,9 @@ class Config:
             # Step 2: Beat detection
             'beats_file': track_dir / '2_beats' / f'{track_name}_output.txt',
 
+            # Step 2.5: SongFormer music structure analysis
+            'songformer_dir': track_dir / '2.5_songformer_sections',
+
             # Step 3: Corrected downbeats
             'corrected_downbeats_file': track_dir / '3_corrected' / f'{track_name}_downbeats_corrected.txt',
             'corrected_summary_csv': track_dir / '3_corrected' / f'{track_name}_downbeat_tempos.csv',

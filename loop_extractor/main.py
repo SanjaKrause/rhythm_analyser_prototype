@@ -5,6 +5,7 @@ Loop Extractor Pipeline - Main Orchestrator
 Complete pipeline for music microtiming analysis and loop extraction:
 1. Stem separation (Spleeter)
 2. Beat detection (Beat-Transformer via subprocess)
+2.5. SongFormer music structure analysis (sections, boundaries - SOTA 70% accuracy)
 3. Downbeat correction
 3.5. Tempo plots (8-panel comparison: uncorrected vs corrected, + bar tempo CSV)
 3.6. Full snippet WAV extraction (with fade in/out)
@@ -70,6 +71,7 @@ from utils import audio_export, raster_plots, midi_export, microtiming_plots, dr
 import main_pironio
 import spotify_analysis
 import yodfat_analysis
+import songformer_analysis
 
 
 def run_complete_pipeline(
@@ -151,6 +153,7 @@ def run_complete_pipeline(
             'auto_detect': manual_start is None
         },
         'steps_completed': [],
+        'warnings': [],
         'errors': []
     }
 
@@ -216,6 +219,45 @@ def run_complete_pipeline(
         if verbose:
             print(f"  ✗ ERROR: {e}")
         raise
+
+    # ========================================================================
+    # STEP 2.5: SONGFORMER MUSIC STRUCTURE ANALYSIS
+    # ========================================================================
+    try:
+        songformer_json = paths['songformer_dir'] / f'{track_id}_songformer_sections.json'
+        if skip_existing and songformer_json.exists():
+            if verbose:
+                print("\n[2.5/7] SongFormer structure analysis - SKIPPED (exists)")
+            results['steps_completed'].append('songformer_skipped')
+        else:
+            if verbose:
+                print("\n[2.5/7] SongFormer music structure analysis...")
+
+            songformer_results = songformer_analysis.run_songformer(
+                audio_path=Path(audio_file),
+                output_dir=paths['songformer_dir'],
+                track_id=track_id,
+                verbose=verbose
+            )
+
+            if songformer_results.get('errors'):
+                results['warnings'].append(f"SongFormer: {songformer_results['errors']}")
+                if verbose:
+                    print(f"  ⚠ Warning: {songformer_results['errors']}")
+            else:
+                results['songformer_sections'] = songformer_results.get('sections', [])
+                results['songformer_boundaries'] = songformer_results.get('boundaries', [])
+                results['steps_completed'].append('songformer')
+                if verbose:
+                    num_sections = len(songformer_results.get('sections', []))
+                    print(f"  ✓ SongFormer completed: {num_sections} sections detected")
+
+    except Exception as e:
+        error_msg = f"Step 2.5 failed: {e}"
+        results['warnings'].append(error_msg)
+        if verbose:
+            print(f"  ⚠ WARNING: {e} (continuing without SongFormer)")
+        # Don't raise - SongFormer is optional, continue with pipeline
 
     # ========================================================================
     # STEP 3: CORRECT DOWNBEATS
