@@ -5,20 +5,27 @@ Loop Extractor Pipeline - Main Orchestrator
 Complete pipeline for music microtiming analysis and loop extraction:
 1. Stem separation (Spleeter)
 2. Beat detection (Beat-Transformer via subprocess)
-2.5. SongFormer music structure analysis (sections, boundaries - SOTA 70% accuracy)
 3. Downbeat correction
 3.5. Tempo plots (8-panel comparison: uncorrected vs corrected, + bar tempo CSV)
-3.6. Full snippet WAV extraction (with fade in/out)
-4. Onset detection (librosa, from drum stem)
-4.5. Pattern length detection (drum/mel/pitch methods with circular convolution)
-5. Raster/grid calculations
-6. RMS histogram analysis
-7. Audio example generation
-8. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
-9. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
-11. Drum transcription (DrumTranscriber CNN - 6 drum classes)
-12. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
-13. Spotify audio features (danceability, energy, valence, tempo, etc.)
+4. SongFormer music structure analysis (sections, boundaries - SOTA 70% accuracy)
+4.5. Full snippet WAV extraction (with fade in/out)
+5. Onset detection (librosa, from drum stem)
+5.1. Drum transcription (DrumTranscriber CNN - optional, for drumtranscriber onset mode)
+5.2. Filter close onsets (for drumtranscriber mode)
+5.5. Pattern length detection (drum/mel/pitch methods with circular convolution)
+6. Raster/grid calculations
+6.5. Raster plots
+6.6. Microtiming plots
+6.7. Rhythm histograms
+6.8. Full song histograms
+7. RMS histogram analysis
+8. Audio example generation
+9. LEPA data export
+10. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
+11. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
+13. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
+14. Spotify audio features (danceability, energy, valence, tempo, etc.)
+15. Yodfat rhythmic complexity analysis
 
 Environment: loop_extractor_main
 Subprocess: new_beatnet_env (for beat detection only)
@@ -36,11 +43,11 @@ Required Pretrained Models:
        - Installation: pip install libf0
        - No separate model files needed
 
-    4. DrumTranscriber model (optional, for Step 11)
+    4. DrumTranscriber model (optional, for Step 5.1)
        - Location: drumtranscriber/model/drum_transcriber.h5
        - Download from: https://drive.google.com/file/d/1w2fIHeyr-st3sbk1PYrtGOYW6YAD1fsi/view
        - Repository: https://github.com/yoshi-man/DrumTranscriber
-       - Note: Pipeline will skip Step 11 if model is not available
+       - Note: Pipeline will skip Step 5.1 if model is not available
 
 Usage:
     python main.py --audio track.wav --track-id 123 --output-dir output/
@@ -221,55 +228,16 @@ def run_complete_pipeline(
         raise
 
     # ========================================================================
-    # STEP 2.5: SONGFORMER MUSIC STRUCTURE ANALYSIS
-    # ========================================================================
-    try:
-        songformer_json = paths['songformer_dir'] / f'{track_id}_songformer_sections.json'
-        if skip_existing and songformer_json.exists():
-            if verbose:
-                print("\n[2.5/7] SongFormer structure analysis - SKIPPED (exists)")
-            results['steps_completed'].append('songformer_skipped')
-        else:
-            if verbose:
-                print("\n[2.5/7] SongFormer music structure analysis...")
-
-            songformer_results = songformer_analysis.run_songformer(
-                audio_path=Path(audio_file),
-                output_dir=paths['songformer_dir'],
-                track_id=track_id,
-                verbose=verbose
-            )
-
-            if songformer_results.get('errors'):
-                results['warnings'].append(f"SongFormer: {songformer_results['errors']}")
-                if verbose:
-                    print(f"  ⚠ Warning: {songformer_results['errors']}")
-            else:
-                results['songformer_sections'] = songformer_results.get('sections', [])
-                results['songformer_boundaries'] = songformer_results.get('boundaries', [])
-                results['steps_completed'].append('songformer')
-                if verbose:
-                    num_sections = len(songformer_results.get('sections', []))
-                    print(f"  ✓ SongFormer completed: {num_sections} sections detected")
-
-    except Exception as e:
-        error_msg = f"Step 2.5 failed: {e}"
-        results['warnings'].append(error_msg)
-        if verbose:
-            print(f"  ⚠ WARNING: {e} (continuing without SongFormer)")
-        # Don't raise - SongFormer is optional, continue with pipeline
-
-    # ========================================================================
     # STEP 3: CORRECT DOWNBEATS
     # ========================================================================
     try:
         if skip_existing and paths['corrected_downbeats_file'].exists():
             if verbose:
-                print("\n[3/7] Downbeat correction - SKIPPED (exists)")
+                print("\n[3] Downbeat correction - SKIPPED (exists)")
             results['steps_completed'].append('correct_bars_skipped')
         else:
             if verbose:
-                print("\n[3/7] Downbeat correction...")
+                print("\n[3] Downbeat correction...")
 
             stats = correct_bars.correct_downbeats(
                 str(paths['beats_file']),
@@ -296,15 +264,15 @@ def run_complete_pipeline(
     try:
         if skip_existing and paths['tempo_plots_pdf'].exists() and paths['tempo_csv'].exists():
             if verbose:
-                print("\n[3.5/7] Tempo plots - SKIPPED (exists)")
+                print("\n[3.5] Tempo plots - SKIPPED (exists)")
             results['steps_completed'].append('tempo_plots_skipped')
         else:
             if daw_ready:
                 if verbose:
-                    print("\n[3.5/7] Generating tempo CSV (plots skipped in DAW mode)...")
+                    print("\n[3.5] Generating tempo CSV (plots skipped in DAW mode)...")
             else:
                 if verbose:
-                    print("\n[3.5/7] Generating tempo plots...")
+                    print("\n[3.5] Generating tempo plots...")
 
             # Load snippet offset
             if manual_start is not None:
@@ -374,7 +342,78 @@ def run_complete_pipeline(
         # Don't raise - continue with pipeline
 
     # ========================================================================
-    # STEP 3.6: CREATE FULL SNIPPET WAV
+    # STEP 4: SONGFORMER MUSIC STRUCTURE ANALYSIS
+    # ========================================================================
+    try:
+        snippet_offset_val = results['time_range'].get('actual_start', 30.0)
+        snippet_dur_val = results['time_range'].get('actual_duration', 30.0)
+        songformer_json = paths['songformer_dir'] / f'{track_id}_songformer_sections.json'
+
+        if skip_existing and songformer_json.exists():
+            if verbose:
+                print("\n[4] SongFormer structure analysis - SKIPPED (exists)")
+            results['steps_completed'].append('songformer_skipped')
+
+            # Still create plots if they don't exist
+            sf_snippet_plot = paths['songformer_dir'] / f'{track_id}_SF_snippet_sections.png'
+            if not daw_ready and not sf_snippet_plot.exists():
+                if verbose:
+                    print("  Creating SongFormer plots...")
+                sf_plot_results = songformer_analysis.create_songformer_plots(
+                    songformer_json_path=songformer_json,
+                    output_dir=paths['songformer_dir'],
+                    track_id=track_id,
+                    snippet_start=snippet_offset_val,
+                    snippet_duration=snippet_dur_val,
+                    track_name=track_id,
+                    verbose=verbose
+                )
+                results['songformer_plots'] = sf_plot_results
+        else:
+            if verbose:
+                print("\n[4] SongFormer music structure analysis...")
+
+            songformer_results = songformer_analysis.run_songformer(
+                audio_path=Path(audio_file),
+                output_dir=paths['songformer_dir'],
+                track_id=track_id,
+                verbose=verbose
+            )
+
+            if songformer_results.get('errors'):
+                results['warnings'].append(f"SongFormer: {songformer_results['errors']}")
+                if verbose:
+                    print(f"  ⚠ Warning: {songformer_results['errors']}")
+            else:
+                results['songformer_sections'] = songformer_results.get('sections', [])
+                results['songformer_boundaries'] = songformer_results.get('boundaries', [])
+                results['steps_completed'].append('songformer')
+                if verbose:
+                    num_sections = len(songformer_results.get('sections', []))
+                    print(f"  ✓ SongFormer completed: {num_sections} sections detected")
+
+                # Create plots
+                if not daw_ready:
+                    sf_plot_results = songformer_analysis.create_songformer_plots(
+                        songformer_json_path=songformer_json,
+                        output_dir=paths['songformer_dir'],
+                        track_id=track_id,
+                        snippet_start=snippet_offset_val,
+                        snippet_duration=snippet_dur_val,
+                        track_name=track_id,
+                        verbose=verbose
+                    )
+                    results['songformer_plots'] = sf_plot_results
+
+    except Exception as e:
+        error_msg = f"Step 4 failed: {e}"
+        results['warnings'].append(error_msg)
+        if verbose:
+            print(f"  ⚠ WARNING: {e} (continuing without SongFormer)")
+        # Don't raise - SongFormer is optional, continue with pipeline
+
+    # ========================================================================
+    # STEP 4.5: CREATE FULL SNIPPET WAV
     # ========================================================================
     try:
         snippet_wav_path = paths['stems_dir'] / 'full_snippet.wav'
@@ -383,11 +422,11 @@ def run_complete_pipeline(
 
         if skip_existing and snippet_wav_path.exists():
             if verbose:
-                print("\n[3.6/7] Full snippet WAV - SKIPPED (exists)")
+                print("\n[4.5] Full snippet WAV - SKIPPED (exists)")
             results['steps_completed'].append('snippet_wav_skipped')
         else:
             if verbose:
-                print("\n[3.6/7] Creating full snippet WAV...")
+                print("\n[4.5] Creating full snippet WAV...")
 
             snippet_wav = spleeter_interface.create_snippet_wav(
                 str(audio_file),
@@ -404,14 +443,14 @@ def run_complete_pipeline(
                 print(f"  ✓ Full snippet created")
 
     except Exception as e:
-        error_msg = f"Step 3.6 failed: {e}"
+        error_msg = f"Step 4.5 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue with pipeline
 
     # ========================================================================
-    # STEP 4: ONSET DETECTION
+    # STEP 5: ONSET DETECTION
     # ========================================================================
     try:
         # Determine onset file path
@@ -420,11 +459,11 @@ def run_complete_pipeline(
 
         if skip_existing and Path(onset_file).exists():
             if verbose:
-                print("\n[4/7] Onset detection - SKIPPED (exists)")
+                print("\n[5] Onset detection - SKIPPED (exists)")
             results['steps_completed'].append('onset_detection_skipped')
         else:
             if verbose:
-                print("\n[4/7] Onset detection from drum stem...")
+                print("\n[5] Onset detection from drum stem...")
 
             # Detect onsets from drum stem (created in Step 1)
             drum_stem = paths['stems_dir'] / 'drums.wav'
@@ -452,14 +491,14 @@ def run_complete_pipeline(
                 print(f"  ✓ Saved to: {onset_file_path}")
 
     except Exception as e:
-        error_msg = f"Step 4 failed: {e}"
+        error_msg = f"Step 5 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         raise
 
     # ========================================================================
-    # STEP 4.1: DRUM TRANSCRIPTION (if using drumtranscriber onset mode)
+    # STEP 5.1: DRUM TRANSCRIPTION (if using drumtranscriber onset mode)
     # ========================================================================
     # Run DrumTranscriber before pattern detection so we can use CNN-detected onsets
     try:
@@ -467,14 +506,14 @@ def run_complete_pipeline(
         if onset_mode == 'drumtranscriber':
             if not drumtranscriber_interface.DRUMTRANSCRIBER_AVAILABLE:
                 if verbose:
-                    print("\n[4.1/7] Drum transcription - SKIPPED (DrumTranscriber not available)")
-                    print("         Falling back to librosa onsets from Step 4")
+                    print("\n[5.1] Drum transcription - SKIPPED (DrumTranscriber not available)")
+                    print("      Falling back to librosa onsets from Step 5")
                 results['steps_completed'].append('drumtranscriber_unavailable')
             elif daw_ready:
                 # Skip in DAW mode (not essential for loop creation)
                 if verbose:
-                    print("\n[4.1/7] Drum transcription - SKIPPED (DAW mode)")
-                    print("         Using librosa onsets from Step 4")
+                    print("\n[5.1] Drum transcription - SKIPPED (DAW mode)")
+                    print("      Using librosa onsets from Step 5")
                 results['steps_completed'].append('drumtranscriber_skipped_daw')
             else:
                 # Check if already exists
@@ -483,15 +522,15 @@ def run_complete_pipeline(
 
                 if skip_existing and transcription_csv.exists() and drumtranscriber_onsets_csv.exists():
                     if verbose:
-                        print("\n[4.1/7] Drum transcription - SKIPPED (exists)")
+                        print("\n[5.1] Drum transcription - SKIPPED (exists)")
                     results['steps_completed'].append('drumtranscriber_skipped')
                     # Override onset_file with existing drumtranscriber onsets
                     onset_file = str(drumtranscriber_onsets_csv)
                     if verbose:
-                        print(f"         Using DrumTranscriber onsets: {onset_file}")
+                        print(f"      Using DrumTranscriber onsets: {onset_file}")
                 else:
                     if verbose:
-                        print("\n[4.1/7] Drum transcription...")
+                        print("\n[5.1] Drum transcription...")
 
                     # Transcribe the drum stem (not the full mix)
                     drum_stem_path = paths['stems_dir'] / 'drums.wav'
@@ -520,24 +559,24 @@ def run_complete_pipeline(
         else:
             # Using librosa onset mode (default)
             if verbose:
-                print(f"\n[4.1/7] Onset mode: librosa (using onsets from Step 4)")
+                print(f"\n[5.1] Onset mode: librosa (using onsets from Step 5)")
 
     except Exception as e:
-        error_msg = f"Step 4.1 (DrumTranscriber) failed: {e} - falling back to librosa onsets"
+        error_msg = f"Step 5.1 (DrumTranscriber) failed: {e} - falling back to librosa onsets"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ⚠ WARNING: {e}")
-            print(f"  Falling back to librosa onsets from Step 4")
+            print(f"  Falling back to librosa onsets from Step 5")
 
     # ========================================================================
-    # STEP 4.2: FILTER CLOSE ONSETS (if using drumtranscriber mode)
+    # STEP 5.2: FILTER CLOSE ONSETS (if using drumtranscriber mode)
     # ========================================================================
     try:
         if onset_mode == 'drumtranscriber' and onset_file:
             # Check if tempo CSV exists (created in Step 3.5)
             if paths['tempo_csv'].exists():
                 if verbose:
-                    print(f"\n[4.2/7] Filtering close onsets...")
+                    print(f"\n[5.2] Filtering close onsets...")
 
                 # Create filtered onset file path
                 onset_file_path = Path(onset_file)
@@ -567,24 +606,24 @@ def run_complete_pipeline(
                         print(f"  ✓ Filtered onsets saved: {filtered_onset_file.name}")
             else:
                 if verbose:
-                    print(f"\n[4.2/7] Onset filtering - SKIPPED (no tempo CSV yet)")
+                    print(f"\n[5.2] Onset filtering - SKIPPED (no tempo CSV yet)")
         else:
             if verbose and onset_mode == 'drumtranscriber':
-                print(f"\n[4.2/7] Onset filtering - SKIPPED (no onsets to filter)")
+                print(f"\n[5.2] Onset filtering - SKIPPED (no onsets to filter)")
 
     except Exception as e:
-        error_msg = f"Step 4.2 (Onset filtering) failed: {e} - using unfiltered onsets"
+        error_msg = f"Step 5.2 (Onset filtering) failed: {e} - using unfiltered onsets"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ⚠ WARNING: {e}")
             print(f"  Using unfiltered onsets")
 
     # ========================================================================
-    # STEP 4.5: PATTERN LENGTH DETECTION
+    # STEP 5.5: PATTERN LENGTH DETECTION
     # ========================================================================
     try:
         if verbose:
-            print("\n[4.5/7] Pattern length detection...")
+            print("\n[5.5] Pattern length detection...")
 
         # Load pattern lengths from file if provided
         if pattern_file and Path(pattern_file).exists():
@@ -652,7 +691,7 @@ def run_complete_pipeline(
                 bar_starts_snippet = bar_starts
                 bar_ends_snippet = bar_ends
 
-            # Onset file should exist from Step 4
+            # Onset file should exist from Step 5
             if onset_file is None:
                 onset_file = paths['onsets_file']
 
@@ -685,23 +724,23 @@ def run_complete_pipeline(
     except Exception as e:
         # Fall back to defaults if pattern detection fails
         pattern_lengths = {'drum': 4, 'mel': 4, 'pitch': 4, 'lepa': 4, 'aicc': 4}
-        error_msg = f"Step 4.5 failed: {e} - using defaults {pattern_lengths}"
+        error_msg = f"Step 5.5 failed: {e} - using defaults {pattern_lengths}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ⚠ WARNING: {e}")
             print(f"  Using default pattern lengths: {pattern_lengths}")
 
     # ========================================================================
-    # STEP 5: RASTER/GRID CALCULATIONS
+    # STEP 6: RASTER/GRID CALCULATIONS
     # ========================================================================
     try:
         if skip_existing and paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[5/7] Grid calculations - SKIPPED (exists)")
+                print("\n[6] Grid calculations - SKIPPED (exists)")
             results['steps_completed'].append('raster_skipped')
         else:
             if verbose:
-                print("\n[5/7] Raster/grid calculations...")
+                print("\n[6] Raster/grid calculations...")
                 print(f"    Using pattern lengths: {pattern_lengths}")
 
             # Load snippet offset
@@ -720,12 +759,12 @@ def run_complete_pipeline(
                 if verbose:
                     print(f"    Using default snippet offset: {snippet_offset}s")
 
-            # Onset file should exist from Step 4
+            # Onset file should exist from Step 5
             if onset_file is None:
                 onset_file = paths['onsets_file']
 
             if not Path(onset_file).exists():
-                raise FileNotFoundError(f"Onset file not found (should have been created in Step 4): {onset_file}")
+                raise FileNotFoundError(f"Onset file not found (should have been created in Step 5): {onset_file}")
 
             # Create comprehensive CSV
             snippet_dur = manual_duration if manual_duration is not None else 30.0
@@ -746,23 +785,23 @@ def run_complete_pipeline(
                 print(f"  ✓ Comprehensive CSV created")
 
     except Exception as e:
-        error_msg = f"Step 5 failed: {e}"
+        error_msg = f"Step 6 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to RMS if we have the CSV from before
 
     # ========================================================================
-    # STEP 5.5: RASTER PLOTS
+    # STEP 6.5: RASTER PLOTS
     # ========================================================================
     try:
         if daw_ready:
             if verbose:
-                print("\n[5.5/7] Raster plots - SKIPPED (DAW ready mode)")
+                print("\n[6.5] Raster plots - SKIPPED (DAW ready mode)")
             results['steps_completed'].append('raster_plots_skipped_daw')
         elif not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[5.5/7] Raster plots - SKIPPED (no comprehensive CSV)")
+                print("\n[6.5] Raster plots - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('raster_plots_skipped')
         else:
             # Check if raster plots already exist
@@ -771,11 +810,11 @@ def run_complete_pipeline(
 
             if skip_existing and raster_files_exist:
                 if verbose:
-                    print("\n[5.5/7] Raster plots - SKIPPED (exists)")
+                    print("\n[6.5] Raster plots - SKIPPED (exists)")
                 results['steps_completed'].append('raster_plots_skipped')
             else:
                 if verbose:
-                    print("\n[5.5/7] Generating raster plots...")
+                    print("\n[6.5] Generating raster plots...")
 
                 raster_plots.create_all_plots(
                     str(paths['comprehensive_csv']),
@@ -789,23 +828,23 @@ def run_complete_pipeline(
                     print(f"  ✓ Raster plots created")
 
     except Exception as e:
-        error_msg = f"Step 5.5 failed: {e}"
+        error_msg = f"Step 6.5 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to microtiming plots
 
     # ========================================================================
-    # STEP 5.6: MICROTIMING PLOTS
+    # STEP 6.6: MICROTIMING PLOTS
     # ========================================================================
     try:
         if daw_ready:
             if verbose:
-                print("\n[5.6/7] Microtiming plots - SKIPPED (DAW ready mode)")
+                print("\n[6.6] Microtiming plots - SKIPPED (DAW ready mode)")
             results['steps_completed'].append('microtiming_plots_skipped_daw')
         elif not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[5.6/7] Microtiming plots - SKIPPED (no comprehensive CSV)")
+                print("\n[6.6] Microtiming plots - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('microtiming_plots_skipped')
         else:
             # Check if microtiming plots already exist
@@ -814,11 +853,11 @@ def run_complete_pipeline(
 
             if skip_existing and microtiming_files_exist:
                 if verbose:
-                    print("\n[5.6/7] Microtiming plots - SKIPPED (exists)")
+                    print("\n[6.6] Microtiming plots - SKIPPED (exists)")
                 results['steps_completed'].append('microtiming_plots_skipped')
             else:
                 if verbose:
-                    print("\n[5.6/7] Generating microtiming deviation plots...")
+                    print("\n[6.6] Generating microtiming deviation plots...")
 
                 # Get snippet info from pattern detection results
                 snippet_info = results.get('snippet_info')
@@ -837,25 +876,25 @@ def run_complete_pipeline(
                     print(f"  ✓ Microtiming plots created")
 
     except Exception as e:
-        error_msg = f"Step 5.6 failed: {e}"
+        error_msg = f"Step 6.6 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to rhythm histograms
 
     # ========================================================================
-    # STEP 5.7: RHYTHM HISTOGRAMS
+    # STEP 6.7: RHYTHM HISTOGRAMS
     # ========================================================================
     try:
         from utils import rhythm_histograms
 
         if daw_ready:
             if verbose:
-                print("\n[5.7/7] Rhythm histograms - SKIPPED (DAW ready mode)")
+                print("\n[6.7] Rhythm histograms - SKIPPED (DAW ready mode)")
             results['steps_completed'].append('rhythm_histograms_skipped_daw')
         elif not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[5.7/7] Rhythm histograms - SKIPPED (no comprehensive CSV)")
+                print("\n[6.7] Rhythm histograms - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('rhythm_histograms_skipped')
         else:
             # Define rhythm output directory based on the track directory
@@ -867,11 +906,11 @@ def run_complete_pipeline(
 
             if skip_existing and rhythm_files_exist:
                 if verbose:
-                    print("\n[5.7/7] Rhythm histograms - SKIPPED (exists)")
+                    print("\n[6.7] Rhythm histograms - SKIPPED (exists)")
                 results['steps_completed'].append('rhythm_histograms_skipped')
             else:
                 if verbose:
-                    print("\n[5.7/7] Generating rhythm histograms...")
+                    print("\n[6.7] Generating rhythm histograms...")
 
                 rhythm_files = rhythm_histograms.create_rhythm_histograms(
                     str(paths['comprehensive_csv']),
@@ -1093,18 +1132,18 @@ def run_complete_pipeline(
                         print(f"  ! Warning: Could not calculate aggregate rhythm statistics: {e}")
 
     except Exception as e:
-        error_msg = f"Step 5.7 failed: {e}"
+        error_msg = f"Step 6.7 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to full histograms
 
     # ========================================================================
-    # STEP 5.8: FULL SONG HISTOGRAMS
+    # STEP 6.8: FULL SONG HISTOGRAMS
     # ========================================================================
     try:
         if verbose:
-            print("\n[5.8/7] Creating full song histograms...")
+            print("\n[6.8] Creating full song histograms...")
 
         if daw_ready:
             if verbose:
@@ -1142,31 +1181,31 @@ def run_complete_pipeline(
             results['steps_completed'].append('full_histograms')
 
     except Exception as e:
-        error_msg = f"Step 5.8 failed: {e}"
+        error_msg = f"Step 6.8 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to RMS analysis
 
     # ========================================================================
-    # STEP 6: RMS ANALYSIS
+    # STEP 7: RMS ANALYSIS
     # ========================================================================
     try:
         if daw_ready:
             if verbose:
-                print("\n[6/7] RMS analysis - SKIPPED (DAW ready mode)")
+                print("\n[7] RMS analysis - SKIPPED (DAW ready mode)")
             results['steps_completed'].append('rms_skipped_daw')
         elif not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[6/7] RMS analysis - SKIPPED (no comprehensive CSV)")
+                print("\n[7] RMS analysis - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('rms_skipped')
         elif skip_existing and paths['rms_summary'].exists():
             if verbose:
-                print("\n[6/7] RMS analysis - SKIPPED (exists)")
+                print("\n[7] RMS analysis - SKIPPED (exists)")
             results['steps_completed'].append('rms_analysis_skipped')
         else:
             if verbose:
-                print("\n[6/7] RMS histogram analysis...")
+                print("\n[7] RMS histogram analysis...")
 
             rms_values = rms_grid_histograms.calculate_rms_from_csv(
                 str(paths['comprehensive_csv'])
@@ -1193,19 +1232,19 @@ def run_complete_pipeline(
                     print(f"  ⚠️  RMS calculation returned no values")
 
     except Exception as e:
-        error_msg = f"Step 6 failed: {e}"
+        error_msg = f"Step 7 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 7: AUDIO EXAMPLES
+    # STEP 8: AUDIO EXAMPLES
     # ========================================================================
     if create_audio_examples:
         try:
             if not paths['comprehensive_csv'].exists():
                 if verbose:
-                    print("\n[7/7] Audio examples - SKIPPED (no comprehensive CSV)")
+                    print("\n[8] Audio examples - SKIPPED (no comprehensive CSV)")
                 results['steps_completed'].append('audio_examples_skipped')
             else:
                 # Check if audio examples already exist
@@ -1216,11 +1255,11 @@ def run_complete_pipeline(
 
                 if skip_existing and audio_files_exist:
                     if verbose:
-                        print("\n[7/7] Audio examples - SKIPPED (exists)")
+                        print("\n[8] Audio examples - SKIPPED (exists)")
                     results['steps_completed'].append('audio_examples_skipped')
                 else:
                     if verbose:
-                        print("\n[7/7] Audio examples...")
+                        print("\n[8] Audio examples...")
 
                     # Load snippet offset again
                     if manual_start is not None:
@@ -1255,22 +1294,22 @@ def run_complete_pipeline(
                         print(f"  ✓ Audio examples created")
 
         except Exception as e:
-            error_msg = f"Step 7 failed: {e}"
+            error_msg = f"Step 8 failed: {e}"
             results['errors'].append(error_msg)
             if verbose:
                 print(f"  ✗ ERROR: {e}")
     else:
         if verbose:
-            print("\n[7/7] Audio examples - SKIPPED (disabled)")
+            print("\n[8] Audio examples - SKIPPED (disabled)")
         results['steps_completed'].append('audio_examples_disabled')
 
     # ========================================================================
-    # STEP 8: LEPA DATA EXPORT
+    # STEP 9: LEPA DATA EXPORT
     # ========================================================================
     try:
         if not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[8/8] LEPA export - SKIPPED (no comprehensive CSV)")
+                print("\n[9] LEPA export - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('lepa_export_skipped')
         else:
             # Define LEPA output directory
@@ -1281,11 +1320,11 @@ def run_complete_pipeline(
 
             if skip_existing and lepa_file_exists:
                 if verbose:
-                    print("\n[8/8] LEPA export - SKIPPED (exists)")
+                    print("\n[9] LEPA export - SKIPPED (exists)")
                 results['steps_completed'].append('lepa_export_skipped')
             else:
                 if verbose:
-                    print("\n[8/8] Exporting LEPA bar duration data...")
+                    print("\n[9] Exporting LEPA bar duration data...")
 
                 from utils import lepa_export
 
@@ -1307,18 +1346,18 @@ def run_complete_pipeline(
                         print(f"  ✓ LEPA data exported")
 
     except Exception as e:
-        error_msg = f"Step 8 failed: {e}"
+        error_msg = f"Step 9 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 9: MIDI EXPORT
+    # STEP 10: MIDI EXPORT
     # ========================================================================
     try:
         if not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[9/9] MIDI export - SKIPPED (no comprehensive CSV)")
+                print("\n[10] MIDI export - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('midi_export_skipped')
         else:
             # Check if MIDI files already exist
@@ -1330,11 +1369,11 @@ def run_complete_pipeline(
 
             if skip_existing and midi_files_exist:
                 if verbose:
-                    print("\n[8/8] MIDI export - SKIPPED (exists)")
+                    print("\n[10] MIDI export - SKIPPED (exists)")
                 results['steps_completed'].append('midi_export_skipped')
             else:
                 if verbose:
-                    print("\n[8/8] MIDI export...")
+                    print("\n[10] MIDI export...")
 
                 # Load snippet offset
                 if snippet_offset_file and Path(snippet_offset_file).exists():
@@ -1350,7 +1389,7 @@ def run_complete_pipeline(
                 if daw_ready:
                     # DAW mode: drum method onset + bass pitch, directly in midi_dir
                     if verbose:
-                        print("\n  [8] MIDI export (drum method + bass pitch)...")
+                        print("\n  [10] MIDI export (drum method + bass pitch)...")
                     midi_files_onset = midi_export.comprehensive_csv_to_onset_midi(
                         str(paths['comprehensive_csv']),
                         str(paths['tempo_csv']),
@@ -1384,7 +1423,7 @@ def run_complete_pipeline(
                     base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
 
                     if verbose:
-                        print("\n  [8a] Onset-based MIDI (drum hits + FlexStart grid)...")
+                        print("\n  [10a] Onset-based MIDI (drum hits + FlexStart grid)...")
                     midi_files_onset = midi_export.comprehensive_csv_to_onset_midi(
                         str(paths['comprehensive_csv']),
                         str(paths['tempo_csv']),
@@ -1398,7 +1437,7 @@ def run_complete_pipeline(
 
                     # Export bass pitch MIDI files (F0 converted to MIDI notes)
                     if verbose:
-                        print("\n  [8b] Bass pitch MIDI (all methods + FlexStart)...")
+                        print("\n  [10b] Bass pitch MIDI (all methods + FlexStart)...")
                     f0_csv_path = paths['stems_dir'] / 'bass_f0.csv'
                     if f0_csv_path.exists():
                         midi_files_pitch = midi_export.comprehensive_csv_to_pitch_midi(
@@ -1443,18 +1482,18 @@ def run_complete_pipeline(
                         print(f"  ⚠️  No MIDI files created")
 
     except Exception as e:
-        error_msg = f"Step 9 failed: {e}"
+        error_msg = f"Step 10 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 10: STEM LOOP EXPORT
+    # STEP 11: STEM LOOP EXPORT
     # ========================================================================
     try:
         if not paths['comprehensive_csv'].exists():
             if verbose:
-                print("\n[10/10] Stem loop export - SKIPPED (no comprehensive CSV)")
+                print("\n[11] Stem loop export - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('loops_skipped')
         else:
             # Check if loop files already exist (check for any method subdirectory)
@@ -1466,11 +1505,11 @@ def run_complete_pipeline(
 
             if skip_existing and loops_exist:
                 if verbose:
-                    print("\n[10/10] Stem loop export - SKIPPED (exists)")
+                    print("\n[11] Stem loop export - SKIPPED (exists)")
                 results['steps_completed'].append('loops_skipped')
             else:
                 if verbose:
-                    print("\n[10/10] Stem loop export...")
+                    print("\n[11] Stem loop export...")
 
                 # Load snippet offset
                 if snippet_offset_file and Path(snippet_offset_file).exists():
@@ -1541,13 +1580,13 @@ def run_complete_pipeline(
                         print(f"  ⚠️  No loop files created")
 
     except Exception as e:
-        error_msg = f"Step 10 failed: {e}"
+        error_msg = f"Step 11 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 12: PIRONIO PULSE CLARITY METRICS
+    # STEP 13: PIRONIO PULSE CLARITY METRICS
     # ========================================================================
     try:
         pironio_json = paths['pironio_dir'] / f'{track_id}_pironio_metrics.json'
@@ -1555,15 +1594,15 @@ def run_complete_pipeline(
 
         if skip_existing and pironio_json.exists():
             if verbose:
-                print("\n[Step 12] Pironio pulse clarity - SKIPPED (exists)")
+                print("\n[13] Pironio pulse clarity - SKIPPED (exists)")
             results['steps_completed'].append('pironio_skipped')
         elif not snippet_wav_path.exists():
             if verbose:
-                print("\n[Step 12] Pironio pulse clarity - SKIPPED (no snippet WAV)")
+                print("\n[13] Pironio pulse clarity - SKIPPED (no snippet WAV)")
             results['steps_completed'].append('pironio_no_snippet')
         else:
             if verbose:
-                print("\n[Step 12] Computing Pironio pulse clarity metrics...")
+                print("\n[13] Computing Pironio pulse clarity metrics...")
 
             pironio_results = main_pironio.run_pironio_analysis(
                 audio_file=str(snippet_wav_path),
@@ -1583,20 +1622,20 @@ def run_complete_pipeline(
                 print(f"  ✓ Computed {num_metrics} pulse clarity metrics")
 
     except Exception as e:
-        error_msg = f"Step 12 failed: {e}"
+        error_msg = f"Step 13 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 13: SPOTIFY AUDIO FEATURES
+    # STEP 14: SPOTIFY AUDIO FEATURES
     # ========================================================================
     try:
         spotify_json = paths['spotify_dir'] / f'{track_id}_spotify_features.json'
 
         if skip_existing and spotify_json.exists():
             if verbose:
-                print("\n[Step 13] Spotify analysis - SKIPPED (exists)")
+                print("\n[14] Spotify analysis - SKIPPED (exists)")
             results['steps_completed'].append('spotify_skipped')
         else:
             # Extract track name and artist from track_id if possible
@@ -1657,13 +1696,13 @@ def run_complete_pipeline(
                 results['steps_completed'].append('spotify_sections')
 
     except Exception as e:
-        error_msg = f"Step 13 failed: {e}"
+        error_msg = f"Step 14 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 14: YODFAT RHYTHMIC COMPLEXITY ANALYSIS
+    # STEP 15: YODFAT RHYTHMIC COMPLEXITY ANALYSIS
     # ========================================================================
     # Uses full_snippet.wav (same as Step 12 Pironio)
     # Calculates onset cross-correlation at quarter/half/full bar segments
@@ -1677,7 +1716,7 @@ def run_complete_pipeline(
 
             if snippet_wav.exists():
                 if verbose:
-                    print(f"\n[Step 14] Yodfat rhythmic complexity analysis...")
+                    print(f"\n[15] Yodfat rhythmic complexity analysis...")
 
                 yodfat_results = yodfat_analysis.run_yodfat_analysis(
                     audio_file=str(snippet_wav),
@@ -1695,11 +1734,11 @@ def run_complete_pipeline(
                     results['steps_completed'].append('yodfat')
             else:
                 if verbose:
-                    print(f"\n[Step 14] Skipping Yodfat analysis - full_snippet.wav not found")
-                results['errors'].append("Step 14 skipped: full_snippet.wav not found")
+                    print(f"\n[15] Skipping Yodfat analysis - full_snippet.wav not found")
+                results['errors'].append("Step 15 skipped: full_snippet.wav not found")
 
     except Exception as e:
-        error_msg = f"Step 14 failed: {e}"
+        error_msg = f"Step 15 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
@@ -1765,7 +1804,7 @@ Environment:
                        help='Process all audio files in --audio-dir')
     parser.add_argument('--onset-file', help='Path to onsets CSV file')
     parser.add_argument('--onset-mode', choices=['librosa', 'drumtranscriber'], default='librosa',
-                       help='Onset detection method: librosa (Step 4) or drumtranscriber (Step 11, requires DrumTranscriber)')
+                       help='Onset detection method: librosa (Step 5) or drumtranscriber (Step 5.1, requires DrumTranscriber)')
     parser.add_argument('--onset-threshold-drumtranscriber', type=float, default=0.5,
                        help='Minimum onset interval as fraction of 1/16th note (default: 0.5 = 1/32nd note). Only used with --onset-mode drumtranscriber')
     parser.add_argument('--loop-start-offset-ms', type=float, default=0.0,
