@@ -1,23 +1,24 @@
 """
-Section-anchored raster plot generation.
+Simplified raster plot generation for visualizing microtiming phases.
 
-This module creates raster plots for section-anchored onset CSVs,
-with one subplot per CSV file found in the anchoring directory.
+This module creates scatter plots showing onset phases across bars,
+comparing 4 correction methods:
+1. Uncorrected
+2. Per-snippet correction
+3. 4-bar loop correction
+4. 4-bar pattern flexStart correction
 
-Standalone module - no raster.py dependency.
-
-Output folder: 6.1_anchoring
+Environment: AEinBOX_13_3 (matplotlib, numpy, pandas)
 """
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Optional, List
 import sys
-import re
 
-# Import config from parent directory
+# Import config
 _parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(_parent_dir))
 
@@ -48,84 +49,59 @@ def make_bar_colors(n_bars: int) -> List[str]:
     return [base_colors[i % len(base_colors)] for i in range(n_bars)]
 
 
-def parse_csv_metadata(csv_path: str) -> Dict[str, str]:
-    """
-    Parse metadata from CSV header comments.
-
-    Parameters
-    ----------
-    csv_path : str
-        Path to anchoring CSV file
-
-    Returns
-    -------
-    Dict[str, str]
-        Dictionary of metadata key-value pairs
-    """
-    metadata = {}
-    with open(csv_path, 'r') as f:
-        for line in f:
-            if line.startswith('#'):
-                # Parse "# key=value" format
-                match = re.match(r'#\s*(\w+)=(.+)', line.strip())
-                if match:
-                    metadata[match.group(1)] = match.group(2)
-            else:
-                break
-    return metadata
-
-
 def plot_raster_single(
     ax: plt.Axes,
     df: pd.DataFrame,
+    phase_column: str,
     title: str,
     track_id: str,
+    rms_ms: Optional[float] = None,
     show_grid_at_32nds: bool = True,
-    ref_onsets: Optional[pd.DataFrame] = None
+    ref_onsets: Optional[pd.DataFrame] = None,
+    method_name: Optional[str] = None
 ) -> plt.Axes:
     """
     Plot a single raster subplot showing onset phases across bars.
-
-    Uses 'phase' column from anchoring CSV.
 
     Parameters
     ----------
     ax : plt.Axes
         Matplotlib axes to plot on
     df : pd.DataFrame
-        Anchoring CSV data with columns:
-        - bar_number: bar index (pattern-relative)
+        Raster CSV data with columns:
+        - bar_number: bar index (snippet-relative)
         - tick_16th: tick position (0-15)
-        - phase: phase values (0 to 1)
+        - phase_* : phase values (0 to 1)
         - onset_time: onset time in seconds
+    phase_column : str
+        Name of phase column to plot (e.g., 'phase_uncorrected')
     title : str
         Plot title
     track_id : str
         Track identifier
+    rms_ms : float, optional
+        RMS deviation in milliseconds (shown in title)
     show_grid_at_32nds : bool
         Show vertical grid lines at 32nd notes
     ref_onsets : pd.DataFrame, optional
-        Reference onsets DataFrame with columns:
-        - bar_number: bar index (snippet-relative)
-        - ref_ms: offset in milliseconds
-        - ref_phase: where onset was (as phase of bar)
-        - grid_phase: where grid position is (0.0 for tick 0)
-        - bar_duration: duration of the bar
+        Reference onsets DataFrame for drawing red/pink circles
+    method_name : str, optional
+        Method name to filter reference onsets
 
     Returns
     -------
     plt.Axes
         The axes with the plot
     """
-    # Check if required columns exist
-    if 'phase' not in df.columns or 'onset_time' not in df.columns:
-        ax.text(0.5, 0.5, 'Required columns not found',
+    # Check if phase column exists
+    if phase_column not in df.columns:
+        ax.text(0.5, 0.5, f'Column {phase_column} not found',
                 ha='center', va='center', transform=ax.transAxes)
         ax.set_title(title)
         return ax
 
-    # Filter valid data - only rows where onset_time exists (actual onsets, not empty grid rows)
-    plot_data = df[['bar_number', 'phase', 'onset_time']].dropna()
+    # Filter valid data - only rows where phase exists
+    plot_data = df[['bar_number', phase_column]].dropna()
 
     if len(plot_data) == 0:
         ax.text(0.5, 0.5, 'No data available',
@@ -140,19 +116,26 @@ def plot_raster_single(
     colors = make_bar_colors(n_bars)
 
     # Plot onsets for each bar with "x" markers
-    # Use phase which shows where the onset is relative to the corrected grid
     for bar_idx in range(n_bars):
         bar_data = plot_data[plot_data['bar_number'] == bar_idx]
         if len(bar_data) > 0:
-            phases = bar_data['phase'].values
+            phases = bar_data[phase_column].values
             color = colors[bar_idx % len(colors)]
 
             ax.scatter(phases, np.full(len(phases), bar_idx),
                        marker="x", s=18, linewidths=1, color=color)
 
     # Draw reference onset circles if provided
-    if ref_onsets is not None and len(ref_onsets) > 0:
-        for _, ref in ref_onsets.iterrows():
+    if ref_onsets is not None and method_name is not None:
+        # Filter references for this method
+        method_refs = ref_onsets[ref_onsets['method'] == method_name]
+
+        # Debug output
+        print(f"    Method '{method_name}': found {len(method_refs)} references")
+
+        steps_per_bar = 16  # TODO: make configurable
+
+        for _, ref in method_refs.iterrows():
             bar_idx = int(ref['bar_number'])
             ref_ms = ref['ref_ms']
             ref_phase = ref['ref_phase']
@@ -160,24 +143,28 @@ def plot_raster_single(
             bar_duration = ref.get('bar_duration', None)
 
             if 0 <= bar_idx < n_bars:
-                # Section anchoring paradigm:
-                # After correction, the reference onset IS at grid position (tick 0 = phase 0.0)
-                # The grid was shifted by ref_ms to align with the onset
+                # Determine if this is a "new" method (different coordinate system)
+                is_new_method = 'new_per_snippet' in method_name or 'new_4bar' in method_name
 
-                # Red circle: Where the reference onset IS after correction (at tick 0 = 0.0)
-                red_phase_corrected = grid_phase  # 0.0 for tick 0
+                if is_new_method and bar_duration is not None and bar_duration > 0:
+                    # NEW METHOD PARADIGM:
+                    # ref_phase = where onset actually is (in uncorrected grid)
+                    # grid_phase = where 1/16 position is in uncorrected grid (should be 0.0 for tick 0)
+                    # After correction: grid shifts by ref_ms so that grid_phase aligns with onset
 
-                # Pink circle: Where tick 0 WAS before correction (in corrected coordinates)
-                # The grid moved by ref_phase, so original tick 0 was at -ref_phase
-                pink_phase_corrected = -ref_phase if ref_phase is not None and np.isfinite(ref_phase) else None
+                    ref_s = ref_ms / 1000.0
 
-                # Draw red circle at corrected position
-                ax.scatter([red_phase_corrected], [bar_idx],
-                           s=90, facecolors='none', edgecolors='red',
-                           linewidths=1.5, marker='o', zorder=10)
+                    # Red circle: Where the onset IS after correction (should be at 0ms = at tick 0)
+                    # The target tick is 0, which in display coordinates is 0.0
+                    red_phase_corrected = 0.0
 
-                # Draw pink circle at original position
-                if pink_phase_corrected is not None and np.isfinite(pink_phase_corrected):
+                    # Pink circle: Where tick 0 WAS before correction (in corrected coordinates)
+                    pink_phase_corrected = grid_phase - (ref_s / bar_duration)
+
+                    ax.scatter([red_phase_corrected], [bar_idx],
+                               s=90, facecolors='none', edgecolors='red',
+                               linewidths=1.5, marker='o', zorder=10)
+
                     ax.scatter([pink_phase_corrected], [bar_idx],
                                s=60, facecolors='none', edgecolors='pink',
                                linewidths=1.2, marker='o', zorder=9, alpha=0.7)
@@ -189,6 +176,30 @@ def plot_raster_single(
                                 fontsize=6, va='center', ha='left', color='red',
                                 bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
                                           edgecolor='red', alpha=0.8, linewidth=0.5))
+                else:
+                    # OLD METHOD PARADIGM (per_snippet and 4bar_loop):
+                    # ref_phase = where onset actually is
+                    # grid_phase = where grid position should be (should be 0.0 for tick 0)
+                    # After correction: grid moves to meet onset, so they align
+
+                    # Red circle at grid position (where reference IS after correction at tick 0)
+                    ax.scatter([grid_phase], [bar_idx],
+                               s=90, facecolors='none', edgecolors='red',
+                               linewidths=1.5, marker='o', zorder=10)
+
+                    # Pink circle at uncorrected position (where reference WAS before correction)
+                    if ref_phase is not None and np.isfinite(ref_phase):
+                        ax.scatter([ref_phase], [bar_idx],
+                                   s=60, facecolors='none', edgecolors='pink',
+                                   linewidths=1.2, marker='o', zorder=9, alpha=0.7)
+
+                        # Add text label with offset time
+                        if ref_ms is not None and np.isfinite(ref_ms):
+                            label_x = max(ref_phase, grid_phase) + 0.02
+                            ax.text(label_x, bar_idx, f'{ref_ms:.1f}ms',
+                                    fontsize=6, va='center', ha='left', color='red',
+                                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                              edgecolor='red', alpha=0.8, linewidth=0.5))
 
     # Set axis limits - start at -1/32 (half tick before first tick), extend to 17/16 to show offsets beyond bar end
     ax.set_xlim(-1.0/32.0, 17.0/16.0)
@@ -215,95 +226,116 @@ def plot_raster_single(
     ax.set_xlabel("bar phase", fontsize=10)
     ax.set_ylabel("bar index (snippet)", fontsize=10)
 
-    ax.set_title(f"Onset raster — Track {track_id} — {title}", fontsize=10, fontweight='bold')
+    # Title with RMS if provided
+    if rms_ms is not None:
+        full_title = f"{title} | RMS: {rms_ms:.2f} ms"
+    else:
+        full_title = title
+
+    ax.set_title(f"Onset raster — Track {track_id} — {full_title}", fontsize=10, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
 
     return ax
 
 
-def create_anchoring_raster_plots(
-    anchoring_dir: str,
+def create_raster_plot(
+    csv_file: str,
     output_file: str,
     track_id: str
-) -> str:
+):
     """
-    Create raster plots for all anchoring CSVs in a directory.
+    Create 6-panel raster plot comparing all correction methods.
 
-    One subplot per CSV file found.
+    Panels:
+    1. Uncorrected
+    2. Per-snippet correction
+    3. 4-bar loop correction
+    4. 4-bar pattern flexStart correction
+    5. 2-bar pattern flexStart correction
+    6. 1-bar pattern flexStart correction
 
     Parameters
     ----------
-    anchoring_dir : str
-        Path to 6.1_anchoring directory containing CSV files
+    csv_file : str
+        Path to raster CSV file
     output_file : str
-        Output PDF/PNG file path
+        Output PNG/PDF file path
     track_id : str
         Track identifier
 
-    Returns
-    -------
-    str
-        Path to output file
+    Examples
+    --------
+    >>> create_raster_plot(
+    ...     'track_raster.csv',
+    ...     'track_raster_plot.png',
+    ...     'track_123'
+    ... )
     """
-    anchoring_path = Path(anchoring_dir)
+    # Load data
+    df = pd.read_csv(csv_file)
 
-    # Find all anchoring CSV files
-    csv_files = sorted(anchoring_path.glob('SecNo*_anchored_onsets.csv'))
+    # Load reference onsets if available
+    ref_onsets = None
+    csv_path = Path(csv_file)
+    ref_file = csv_path.parent / f"{csv_path.stem}_reference_onsets.csv"
+    if ref_file.exists():
+        ref_onsets = pd.read_csv(ref_file)
+        print(f"  Loaded {len(ref_onsets)} reference onsets")
 
-    if not csv_files:
-        print(f"  ! No anchoring CSV files found in {anchoring_dir}")
-        return None
+    # Determine number of bars for figure height
+    n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 10
+    fig_height = max(8, min(20, 0.15 * n_bars))
 
-    print(f"  Found {len(csv_files)} anchoring CSV files")
+    # Create figure with 6 subplots
+    fig = plt.figure(figsize=(12, fig_height * 3))
+    gs = fig.add_gridspec(6, 1, height_ratios=[1, 1, 1, 1, 1, 1], hspace=0.3)
+    axes = [fig.add_subplot(gs[i]) for i in range(6)]
 
-    # Determine figure size based on number of plots
-    n_plots = len(csv_files)
+    # Plot 1: Uncorrected (no reference circles)
+    plot_raster_single(
+        axes[0], df, 'phase_uncorrected',
+        'Uncorrected', track_id
+    )
 
-    # Calculate figure height - each subplot needs space
-    # Estimate max bars across all files for consistent sizing
-    max_bars = 0
-    csv_data = []
-    for csv_file in csv_files:
-        df = pd.read_csv(csv_file, comment='#')
-        metadata = parse_csv_metadata(str(csv_file))
-        n_bars = int(df['bar_number'].max()) + 1 if 'bar_number' in df.columns else 1
-        max_bars = max(max_bars, n_bars)
-        csv_data.append((csv_file, df, metadata, n_bars))
+    # Plot 2: Per-snippet correction
+    plot_raster_single(
+        axes[1], df, 'phase_per_snippet',
+        'Per-snippet correction', track_id,
+        ref_onsets=ref_onsets, method_name='per_snippet'
+    )
 
-    fig_height_per_plot = max(3, min(8, 0.3 * max_bars))
-    fig_height = fig_height_per_plot * n_plots
+    # Plot 3: 4-bar pattern correction
+    plot_raster_single(
+        axes[2], df, 'phase_4bar_loop',
+        '4-Bar Pattern correction', track_id,
+        ref_onsets=ref_onsets, method_name='4bar_loop'
+    )
 
-    # Create figure with n subplots
-    fig = plt.figure(figsize=(12, fig_height))
-    gs = fig.add_gridspec(n_plots, 1, height_ratios=[1] * n_plots, hspace=0.4)
-    axes = [fig.add_subplot(gs[i]) for i in range(n_plots)]
+    # Plot 4: 4-bar pattern flexStart correction
+    plot_raster_single(
+        axes[3], df, 'phase_4bar_pattern_flexStart',
+        '4-bar pattern flexStart correction', track_id,
+        ref_onsets=ref_onsets, method_name='4bar_pattern_flexStart'
+    )
 
-    # Plot each CSV
-    for idx, (csv_file, df, metadata, n_bars) in enumerate(csv_data):
-        # Build title from metadata
-        section_label = metadata.get('section_label', 'unknown')
-        pattern_len = metadata.get('pattern_length', '?')
-        complete_patterns = metadata.get('complete_patterns', '?')
-        ratio_in_snippet = metadata.get('ratio_in_snippet', '?')
-        anchor_bar = metadata.get('anchor_bar_global', '?')
+    # Plot 5: 2-bar pattern flexStart correction
+    plot_raster_single(
+        axes[4], df, 'phase_2bar_pattern_flexStart',
+        '2-bar pattern flexStart correction', track_id,
+        ref_onsets=ref_onsets, method_name='2bar_pattern_flexStart'
+    )
 
-        title = f"Section: {section_label} | L={pattern_len} | {complete_patterns} patterns | anchor bar={anchor_bar} | ratio={ratio_in_snippet}"
-
-        # Load reference onsets if available
-        ref_onsets = None
-        ref_file = csv_file.parent / csv_file.name.replace('_anchored_onsets.csv', '_reference_onsets.csv')
-        if ref_file.exists():
-            ref_onsets = pd.read_csv(ref_file)
-            print(f"    Loaded {len(ref_onsets)} reference onsets for {csv_file.name}")
-
-        plot_raster_single(
-            axes[idx], df, title, track_id, ref_onsets=ref_onsets
-        )
+    # Plot 6: 1-bar pattern flexStart correction
+    plot_raster_single(
+        axes[5], df, 'phase_1bar_pattern_flexStart',
+        '1-bar pattern flexStart correction', track_id,
+        ref_onsets=ref_onsets, method_name='1bar_pattern_flexStart'
+    )
 
     # Overall title
-    fig.suptitle(f"Track {track_id} — Section-Anchored Raster Plots",
+    fig.suptitle(f"Track {track_id} — Raster Plots — All Correction Methods",
                 fontsize=13, fontweight="bold")
-    plt.subplots_adjust(top=0.97, bottom=0.03, hspace=0.4)
+    plt.subplots_adjust(top=0.97, bottom=0.05, hspace=0.3)
 
     # Save
     output_path = Path(output_file)
@@ -311,46 +343,61 @@ def create_anchoring_raster_plots(
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
 
-    print(f"  ✓ Anchoring raster plots saved to {output_file}")
-    return str(output_file)
+    print(f"  ✓ Raster plot saved to {output_file}")
 
 
-def run_anchoring_plots(
-    anchoring_dir: str,
+def create_all_plots(
+    csv_file: str,
+    output_dir: str,
     track_id: str,
-    output_file: str = None
-) -> str:
+    rms_summary_file: Optional[str] = None
+):
     """
-    Main function to create anchoring raster plots.
+    Create all raster plots for a track (backward compatibility wrapper).
+
+    This function creates a single simplified raster plot with 6 methods.
+    The rms_summary_file parameter is ignored in the new simplified version.
 
     Parameters
     ----------
-    anchoring_dir : str
-        Path to 6.1_anchoring directory
+    csv_file : str
+        Path to raster CSV file
+    output_dir : str
+        Output directory for plots
     track_id : str
         Track identifier
-    output_file : str, optional
-        Output file path. If None, saves to anchoring_dir/anchoring_raster.pdf
+    rms_summary_file : str, optional
+        Ignored (kept for backward compatibility)
 
-    Returns
-    -------
-    str
-        Path to output file
+    Examples
+    --------
+    >>> create_all_plots(
+    ...     'output/track/5_grid/track_comprehensive_phases.csv',
+    ...     'output/track/5_grid/',
+    ...     'track'
+    ... )
     """
-    if output_file is None:
-        output_file = str(Path(anchoring_dir) / f'{track_id}_anchoring_raster.pdf')
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    return create_anchoring_raster_plots(anchoring_dir, output_file, track_id)
+    print(f"\nCreating raster plots...")
+
+    # Create single raster plot with 3 methods
+    output_file = output_dir / f"{track_id}_raster.png"
+    create_raster_plot(csv_file, str(output_file), track_id)
+
+    print(f"  ✓ Raster plot created in {output_dir}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python plots_anchoring.py <anchoring_dir> <track_id> [output_file]")
-        print("Example: python plots_anchoring.py /path/to/6.1_anchoring track_123")
+    import sys
+
+    if len(sys.argv) < 4:
+        print("Usage: python raster_plots.py <csv_file> <output_file> <track_id>")
         sys.exit(1)
 
-    anchoring_dir = sys.argv[1]
-    track_id = sys.argv[2]
-    output_file = sys.argv[3] if len(sys.argv) > 3 else None
+    csv_file = sys.argv[1]
+    output_file = sys.argv[2]
+    track_id = sys.argv[3]
 
-    run_anchoring_plots(anchoring_dir, track_id, output_file)
+    create_raster_plot(csv_file, output_file, track_id)
