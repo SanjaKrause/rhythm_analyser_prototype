@@ -580,7 +580,7 @@ def merge_plots(output_dir: Path):
     print('\nLooking for SongFormer snippet sections plots...')
     sf_sections_pngs = []
     for track_dir in track_dirs:
-        sf_png = track_dir / '2.5_songformer_sections' / f'{track_dir.name}_SF_snippet_sections.png'
+        sf_png = track_dir / '2.5_songformer_sections' / 'SF_snippet_sections.png'
         if sf_png.exists():
             sf_sections_pngs.append(sf_png)
             print(f'  Found SongFormer sections: {track_dir.name}')
@@ -604,7 +604,7 @@ def merge_plots(output_dir: Path):
     print('\nLooking for SongFormer song sections plots...')
     sf_song_pngs = []
     for track_dir in track_dirs:
-        sf_png = track_dir / '2.5_songformer_sections' / f'{track_dir.name}_SF_song_sections.png'
+        sf_png = track_dir / '2.5_songformer_sections' / 'SF_song_sections.png'
         if sf_png.exists():
             sf_song_pngs.append(sf_png)
             print(f'  Found SongFormer song sections: {track_dir.name}')

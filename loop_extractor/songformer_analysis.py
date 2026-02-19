@@ -345,14 +345,14 @@ def run_songformer(
 
         # Save outputs
         # 1. MSA TXT format
-        msa_txt_path = output_dir / f"{track_id}_songformer_sections.txt"
+        msa_txt_path = output_dir / "SF_sections.txt"
         with open(msa_txt_path, 'w') as f:
             for time, label in msa_output:
                 f.write(f"{time:.2f} {label}\n")
         results["output_msa_txt"] = str(msa_txt_path)
 
         # 2. JSON format
-        json_path = output_dir / f"{track_id}_songformer_sections.json"
+        json_path = output_dir / "SF_sections.json"
         with open(json_path, 'w') as f:
             json.dump({
                 "track_id": track_id,
@@ -366,7 +366,7 @@ def run_songformer(
         results["output_json"] = str(json_path)
 
         # 3. CSV format (compatible with Spotify section_changes.csv)
-        csv_path = output_dir / f"{track_id}_songformer_section_changes.csv"
+        csv_path = output_dir / "SF_all_sections.csv"
         with open(csv_path, 'w') as f:
             f.write("section_num,start_s,duration_s,label\n")
             for i, section in enumerate(sections):
@@ -738,7 +738,7 @@ def create_songformer_plots(
     output_dir = Path(output_dir)
 
     # 1. Snippet sections plot (zoomed to snippet timerange)
-    sf_snippet_plot = output_dir / f"{track_id}_SF_snippet_sections.png"
+    sf_snippet_plot = output_dir / "SF_snippet_sections.png"
     sf_snippet_path = plot_songformer_snippet_sections(
         sections=sf_sections,
         snippet_start=snippet_start,
@@ -752,7 +752,7 @@ def create_songformer_plots(
         results["output_songformer_snippet_plot"] = str(sf_snippet_path)
 
     # 2. Full song sections plot (with snippet boundaries marked)
-    sf_song_plot = output_dir / f"{track_id}_SF_song_sections.png"
+    sf_song_plot = output_dir / "SF_song_sections.png"
     sf_song_path = plot_songformer_song_sections(
         sections=sf_sections,
         song_duration=song_duration,
@@ -768,7 +768,7 @@ def create_songformer_plots(
 
     # 3. Create snippet-filtered section changes CSV (sections that START within snippet)
     snippet_end = snippet_start + snippet_duration
-    sf_changes_csv = output_dir / f"{track_id}_SF_section_changes.csv"
+    sf_changes_csv = output_dir / "SF_section_changes.csv"
     with open(sf_changes_csv, 'w') as f:
         f.write("section_num,start_absolute_s,start_relative_s,duration_s,label\n")
         for i, section in enumerate(sf_sections):
@@ -782,7 +782,7 @@ def create_songformer_plots(
         print(f"  Saved: {sf_changes_csv.name}")
 
     # 4. Create overlapping sections CSV (sections that OVERLAP with snippet, with ratios)
-    sf_overlapping_csv = output_dir / f"{track_id}_SF_overlapping_sections.csv"
+    sf_overlapping_csv = output_dir / "SF_overlapping_sections.csv"
     with open(sf_overlapping_csv, 'w') as f:
         f.write("section_num,start_absolute_s,start_relative_s,duration_s,label,ratio_to_snippet,ratio_in_snippet\n")
         for i, section in enumerate(sf_sections):
@@ -803,6 +803,15 @@ def create_songformer_plots(
     results["output_songformer_overlapping_csv"] = str(sf_overlapping_csv)
     if verbose:
         print(f"  Saved: {sf_overlapping_csv.name}")
+
+    # 5. Create snippet timings CSV (simple 2-column file with snippet start/end)
+    sf_timings_csv = output_dir / "SF_snippet_timings.csv"
+    with open(sf_timings_csv, 'w') as f:
+        f.write("snippet_start,snippet_end\n")
+        f.write(f"{snippet_start:.3f},{snippet_start + snippet_duration:.3f}\n")
+    results["output_songformer_timings_csv"] = str(sf_timings_csv)
+    if verbose:
+        print(f"  Saved: {sf_timings_csv.name}")
 
     return results
 
