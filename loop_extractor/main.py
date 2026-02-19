@@ -848,6 +848,13 @@ def run_complete_pipeline(
                     num_files = len(anchoring_results)
                     print(f"  ✓ Section anchoring completed: {num_files} files created")
 
+                # Generate section anchoring plots
+                from analysis import plots_anchoring
+                plots_anchoring.create_all_anchoring_plots(
+                    anchoring_dir=str(anchoring_dir),
+                    track_id=track_id
+                )
+
     except Exception as e:
         error_msg = f"Step 6.1 failed: {e}"
         results['errors'].append(error_msg)

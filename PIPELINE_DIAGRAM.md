@@ -30,11 +30,12 @@
 21. [Step 2.5: SongFormer Music Structure Analysis](#step-25-songformer-music-structure-analysis)
 22. [Step 13: Spotify Sections Analysis](#step-13-spotify-sections-analysis)
 23. [Step 14: Yodfat Rhythmic Complexity](#step-14-yodfat-rhythmic-complexity)
-24. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-25. [Data Dependencies](#data-dependencies)
-26. [Legend](#legend)
-27. [Notes](#notes)
-28. [TODO](#todo)
+24. [Step 6.1: Section Anchoring Analysis](#step-61-section-anchoring-analysis)
+25. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+26. [Data Dependencies](#data-dependencies)
+27. [Legend](#legend)
+28. [Notes](#notes)
+29. [TODO](#todo)
 
 ---
 
@@ -2537,6 +2538,174 @@ This pattern (increasing correlation with longer segments) is common - individua
 - Uses librosa for all audio processing (runs in main environment, no subprocess needed)
 - Computation time: ~10-30 seconds depending on snippet length
 - Works best with percussive music; may be less informative for ambient/drone music
+
+---
+
+## Step 6.1: Section Anchoring Analysis
+
+Step 6.1 performs **section-anchored microtiming analysis**, analyzing onset phases relative to musical sections identified by SongFormer (Step 2.5). This provides a more musically meaningful analysis by respecting song structure boundaries.
+
+**Dependencies:** Step 2.5 (SongFormer sections), Step 3 (corrected downbeats), Step 4 (onset detection)
+
+**Input:**
+- `3_corrected/{track_id}_downbeats_corrected.txt` - Corrected bar timings
+- `4_onsets/{track_id}_onsets.csv` - Detected onsets
+- `5_songformer/SF_overlapping_sections.csv` - Sections that overlap with the snippet
+- `5_songformer/SF_snippet_timings.csv` - Snippet start/end times
+
+**Output:** `6.1_anchoring/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Anchored phase data for each section/pattern length
+- `SecNo{N}_L{L}_{label}_{ratio}_reference_onsets.csv` - Reference onset data for plotting
+- `{track_id}_section_anchoring_raster.png` - Multi-panel raster plot
+
+### How It Works
+
+```mermaid
+flowchart TD
+    subgraph Inputs
+        SF[SongFormer Sections<br/>SF_overlapping_sections.csv]
+        DB[Corrected Downbeats<br/>_downbeats_corrected.txt]
+        ON[Onsets<br/>_onsets.csv]
+        SN[Snippet Timings<br/>SF_snippet_timings.csv]
+    end
+
+    subgraph "For Each Section"
+        A[Find Anchor Bar<br/>nearest to section start]
+        F[FlexStart: Find Pattern Start<br/>first bar with onset near downbeat]
+        L2[Process L=2 bars]
+        L4[Process L=4 bars]
+    end
+
+    subgraph Processing
+        P[Calculate Bar-Relative Phases<br/>for each onset in section]
+        R[Identify Reference Onsets<br/>closest to each pattern start]
+        C[Create Anchored CSV<br/>with metadata header]
+    end
+
+    subgraph Output
+        CSV[Anchored CSV Files<br/>per section, per L]
+        REF[Reference Onsets CSV<br/>for plotting]
+        PNG[Section Anchoring Raster Plot<br/>multi-panel visualization]
+    end
+
+    SF --> A
+    DB --> A
+    SN --> A
+    A --> F
+    ON --> F
+    F --> L2
+    F --> L4
+    L2 --> P
+    L4 --> P
+    P --> R
+    R --> C
+    C --> CSV
+    C --> REF
+    CSV --> PNG
+    REF --> PNG
+```
+
+### Key Concepts
+
+#### 1. Anchor Bar Selection
+
+For each SongFormer section, find the bar whose downbeat is nearest to the section start time:
+
+```
+Section: chorus (96.124s - 126.485s)
+Bar 39: downbeat at 92.508s → distance = 3.616s
+Bar 40: downbeat at 94.923s → distance = 1.201s ✓ ANCHOR
+Bar 41: downbeat at 97.361s → distance = 1.237s
+```
+
+#### 2. FlexStart Pattern Start
+
+The anchor bar may not have an onset near its downbeat (needed for grid correction). FlexStart searches forward to find the first bar that does:
+
+```
+Anchor bar: 39 (no onset near downbeat)
+Bar 40: onset at 97.408s near downbeat 94.923s? NO
+Bar 41: onset at 97.408s near downbeat 97.361s? YES → Pattern Start = 41
+```
+
+#### 3. Pattern Lengths (L)
+
+Each section is analyzed with multiple pattern lengths:
+- **L=2**: 2-bar repeating patterns (common in pop music)
+- **L=4**: 4-bar repeating patterns (verse/chorus structures)
+
+#### 4. Phase Calculation
+
+For each onset, calculate its phase within the bar:
+
+```
+phase = (onset_time - bar_start) / bar_duration
+# Result: 0.0 = downbeat, 0.5 = middle of bar, 1.0 = next downbeat
+```
+
+### CSV Metadata Header
+
+Each anchored CSV includes metadata in comment headers:
+
+```
+# section_label=chorus
+# section_start_absolute=96.124000
+# section_duration=30.361000
+# ratio_in_snippet=0.6458
+# ratio_outside_snippet=0.3619
+# anchor_bar_global=39
+# pattern_start_bar_global=40
+# section_start_bar_global=39
+# snippet_start_bar_global=44
+# pattern_length=2
+# no_of_repetitions=6
+# snippet_start=107.111000
+# snippet_end=137.111000
+bar_number,bar_number_global,tick_16th,onset_time,phase,grid_time,grid_phase,tick_phase
+```
+
+### Raster Plot Visualization
+
+The output PNG shows one subplot per section/pattern length combination:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Section: chorus | L=2 bars | 6 reps | in: 64.6% out: 36.2% │
+│ pattern@bar40 sec@bar39 snip@bar44                         │
+├─────────────────────────────────────────────────────────────┤
+│ bar 0  ⚪─x──x───x─x──x───x──                               │
+│ bar 1  x───x──x───x─x──x─────                               │
+│ bar 2  ⚪─x──x───x─x──x───x──                               │
+│ ...                                                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Markers:**
+- `x` = onset positions
+- `⚪` (red circle) = reference onset at pattern start
+- Grid lines at 32nd note positions
+
+**Title Information:**
+- Section label and pattern length
+- Number of pattern repetitions
+- Ratio of section inside/outside snippet
+- Global bar numbers for pattern start, section start, and snippet start
+
+### Comparison with Standard Raster (Step 5)
+
+| Aspect | Step 5 (Standard Raster) | Step 6.1 (Section Anchoring) |
+|--------|--------------------------|------------------------------|
+| **Anchor point** | Snippet start time | Each section's start time |
+| **Pattern alignment** | Same for entire song | Per-section alignment |
+| **Musical awareness** | None (time-based) | Respects song structure |
+| **Use case** | General rhythm analysis | Section-specific patterns |
+
+### Example Use Cases
+
+1. **Verse vs Chorus Comparison**: See if rhythm patterns differ between song sections
+2. **Section Transition Analysis**: Identify how rhythm changes at section boundaries
+3. **Pattern Consistency**: Check if 2-bar or 4-bar patterns are more consistent per section
+4. **Micro-timing Drift**: See if timing drifts within specific sections
 
 ---
 

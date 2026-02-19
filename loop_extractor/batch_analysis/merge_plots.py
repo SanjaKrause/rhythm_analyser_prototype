@@ -21,6 +21,7 @@ Merges:
 - All onsets per 4-bar pattern plots into all_onsets_per_pattern_4bar.pdf
 - All onsets per bar (2-bar grid) plots into all_onsets_per_bar_2bar.pdf
 - All onsets per bar (4-bar grid) plots into all_onsets_per_bar_4bar.pdf
+- All section anchoring raster plots into all_section_anchoring_raster.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -619,6 +620,30 @@ def merge_plots(output_dir: Path):
             merger.append(str(temp_pdf))
 
         output_pdf = batch_dir / 'all_songformer_song_sections.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 23. Merge section anchoring raster plots (PNG files in 6.1_anchoring folder)
+    print('\nLooking for section anchoring raster plots...')
+    section_anchoring_pngs = []
+    for track_dir in track_dirs:
+        anchoring_png = track_dir / '6.1_anchoring' / f'{track_dir.name}_section_anchoring_raster.png'
+        if anchoring_png.exists():
+            section_anchoring_pngs.append(anchoring_png)
+            print(f'  Found section anchoring raster: {track_dir.name}')
+
+    if section_anchoring_pngs:
+        print(f'\nConverting and merging {len(section_anchoring_pngs)} section anchoring raster PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(section_anchoring_pngs):
+            temp_pdf = temp_dir / f'section_anchoring_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_section_anchoring_raster.pdf'
         merger.write(str(output_pdf))
         merger.close()
 

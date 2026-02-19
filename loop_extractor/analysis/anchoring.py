@@ -2248,6 +2248,36 @@ def create_comprehensive_csv(
 #
 # ============================================================================
 
+def find_bar_at_time(
+    time: float,
+    downbeats: List[float]
+) -> Optional[int]:
+    """
+    Find the bar index that contains the given time.
+
+    Parameters
+    ----------
+    time : float
+        Time in seconds
+    downbeats : List[float]
+        List of downbeat times (global indexing)
+
+    Returns
+    -------
+    Optional[int]
+        Bar index (global, 0-based) containing the time, or None if not found
+    """
+    for bar_idx in range(len(downbeats) - 1):
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+        if bar_start <= time < bar_end:
+            return bar_idx
+    # Check last bar (if time is at or after last downbeat)
+    if len(downbeats) > 0 and time >= downbeats[-1]:
+        return len(downbeats) - 1
+    return None
+
+
 def find_anchor_bar(
     section_start_time: float,
     section_end_time: float,
@@ -2768,6 +2798,10 @@ def run_anchoring(
                 print(f"    FlexStart: pattern starts at anchor bar {pattern_start_bar}")
             print(f"    First reference offset: {first_ref_offset * 1000:.1f}ms")
 
+        # Calculate bar numbers for section start and snippet start
+        section_start_bar = find_bar_at_time(section_start, downbeats)
+        snippet_start_bar = find_bar_at_time(snippet_start, downbeats)
+
         # Process each pattern length
         for L in pattern_lengths:
             # Calculate anchored phases using FlexStart pattern_start_bar
@@ -2799,6 +2833,8 @@ def run_anchoring(
                 f.write(f"# ratio_outside_snippet={ratio_outside_snippet:.4f}\n")
                 f.write(f"# anchor_bar_global={anchor_bar}\n")
                 f.write(f"# pattern_start_bar_global={pattern_start_bar}\n")
+                f.write(f"# section_start_bar_global={section_start_bar}\n")
+                f.write(f"# snippet_start_bar_global={snippet_start_bar}\n")
                 f.write(f"# pattern_length={L}\n")
                 f.write(f"# no_of_repetitions={n_repetitions}\n")
                 f.write(f"# snippet_start={snippet_start:.6f}\n")
