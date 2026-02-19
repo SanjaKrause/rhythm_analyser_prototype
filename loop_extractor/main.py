@@ -347,7 +347,7 @@ def run_complete_pipeline(
     try:
         snippet_offset_val = results['time_range'].get('actual_start', 30.0)
         snippet_dur_val = results['time_range'].get('actual_duration', 30.0)
-        songformer_json = paths['songformer_dir'] / f'{track_id}_songformer_sections.json'
+        songformer_json = paths['songformer_dir'] / 'SF_sections.json'
 
         if skip_existing and songformer_json.exists():
             if verbose:
@@ -355,7 +355,7 @@ def run_complete_pipeline(
             results['steps_completed'].append('songformer_skipped')
 
             # Still create plots if they don't exist
-            sf_snippet_plot = paths['songformer_dir'] / f'{track_id}_SF_snippet_sections.png'
+            sf_snippet_plot = paths['songformer_dir'] / 'SF_snippet_sections.png'
             if not daw_ready and not sf_snippet_plot.exists():
                 if verbose:
                     print("  Creating SongFormer plots...")

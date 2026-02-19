@@ -106,24 +106,24 @@ def load_onsets(onset_file: str) -> np.ndarray:
 
 def find_anchor_bar(
     section_start_time: float,
+    section_end_time: float,
     downbeats: List[float],
-    first_bar: int,
-    last_bar: int,
     tolerance: float = None
 ) -> Optional[int]:
     """
     Find the bar index nearest to a section boundary.
 
+    First finds all bars overlapping with the section, then among those
+    finds the one nearest to the section start time.
+
     Parameters
     ----------
     section_start_time : float
         Absolute time of the section start
+    section_end_time : float
+        Absolute time of the section end
     downbeats : List[float]
         List of all downbeat times (global indexing)
-    first_bar : int
-        First bar index in the snippet
-    last_bar : int
-        Last bar index in the snippet
     tolerance : float
         Maximum fraction of bar duration for a valid anchor (default from config)
 
@@ -136,13 +136,24 @@ def find_anchor_bar(
     if tolerance is None:
         tolerance = config.ANCHOR_BAR_TOLERANCE
 
+    # Find all bars that overlap with the section
+    overlapping_bars = []
+    for bar_idx in range(len(downbeats) - 1):
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+
+        # Bar overlaps section if bar_start < section_end AND bar_end > section_start
+        if bar_start < section_end_time and bar_end > section_start_time:
+            overlapping_bars.append(bar_idx)
+
+    if not overlapping_bars:
+        return None
+
+    # Among overlapping bars, find the one nearest to section_start
     best_bar = None
     best_distance = float('inf')
 
-    for bar_idx in range(first_bar, last_bar + 1):
-        if bar_idx >= len(downbeats) - 1:
-            break
-
+    for bar_idx in overlapping_bars:
         bar_time = downbeats[bar_idx]
         bar_duration = downbeats[bar_idx + 1] - downbeats[bar_idx]
 
@@ -167,7 +178,7 @@ def calculate_anchored_phases(
     steps_per_bar: int = 16,
     search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
     search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, List[Dict]]:
     """
     Calculate phases with per-pattern anchoring, starting from anchor_bar.
 
@@ -197,11 +208,14 @@ def calculate_anchored_phases(
 
     Returns
     -------
-    pd.DataFrame
-        Anchored onset data with columns:
-        bar_number, bar_number_global, tick_16th, onset_time, phase, grid_time, grid_phase, tick_phase
+    Tuple[pd.DataFrame, List[Dict]]
+        - Anchored onset data with columns:
+          bar_number, bar_number_global, tick_16th, onset_time, phase, grid_time, grid_phase, tick_phase
+        - List of reference onset info dicts with keys:
+          bar_number, bar_number_global, ref_ms, ref_phase, grid_phase, bar_duration, ref_onset_time
     """
     rows = []
+    ref_onsets = []
 
     # Determine the effective end time (minimum of section end and snippet end)
     effective_end_time = min(section_end_time, snippet_end_time)
@@ -239,6 +253,18 @@ def calculate_anchored_phases(
             min_idx = np.argmin(distances)
             nearest_onset = onsets_in_window[min_idx]
             segment_ref_offset_s = nearest_onset - segment_grid_time
+
+            # Store reference onset info for this segment
+            segment_bar_duration = segment_duration / pattern_len
+            ref_onsets.append({
+                'bar_number': segment_idx * pattern_len,  # First bar of this segment (snippet-relative)
+                'bar_number_global': segment_start,  # First bar of this segment (global)
+                'ref_ms': segment_ref_offset_s * 1000.0,  # Offset in milliseconds
+                'ref_phase': segment_ref_offset_s / segment_bar_duration,  # Offset as phase of one bar
+                'grid_phase': 0.0,  # Reference is at tick 0
+                'bar_duration': segment_bar_duration,
+                'ref_onset_time': nearest_onset
+            })
         else:
             # No reference found for this segment, use 0
             segment_ref_offset_s = 0.0
@@ -300,7 +326,7 @@ def calculate_anchored_phases(
         segment_idx += 1
         segment_start += pattern_len
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), ref_onsets
 
 
 def build_complete_grid(
@@ -510,7 +536,7 @@ def run_anchoring(
             print(f"    ratio_in_snippet: {ratio_in_snippet:.4f}, ratio_outside: {ratio_outside_snippet:.4f}")
 
         # Find anchor bar for this section
-        anchor_bar = find_anchor_bar(section_start, downbeats, first_bar, last_bar)
+        anchor_bar = find_anchor_bar(section_start, section_end, downbeats)
 
         if anchor_bar is None:
             if verbose:
@@ -524,7 +550,7 @@ def run_anchoring(
         # Process each pattern length
         for L in pattern_lengths:
             # Calculate anchored phases
-            df_onsets = calculate_anchored_phases(
+            df_onsets, ref_onset_list = calculate_anchored_phases(
                 onsets=onsets,
                 downbeats=downbeats,
                 anchor_bar=anchor_bar,
@@ -573,6 +599,13 @@ def run_anchoring(
                 f.write(f"# snippet_start={snippet_start:.6f}\n")
                 f.write(f"# snippet_end={snippet_end:.6f}\n")
                 df_grid.to_csv(f, index=False)
+
+            # Write reference onsets CSV (for plotting)
+            if ref_onset_list:
+                ref_filename = f"SecNo{sec_idx + 1}_L{L}_{section_label}_{ratio_in_snippet:.4f}_reference_onsets.csv"
+                ref_file = output_path / ref_filename
+                df_ref = pd.DataFrame(ref_onset_list)
+                df_ref.to_csv(ref_file, index=False)
 
             results[f"sec{sec_idx + 1}_L{L}"] = str(output_file)
 
