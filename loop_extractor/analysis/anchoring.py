@@ -2220,6 +2220,33 @@ def create_comprehensive_csv(
 # ============================================================================
 # SECTION ANCHORING
 # ============================================================================
+#
+# OVERVIEW:
+# Section anchoring aligns onset grids to SongFormer section boundaries.
+# It combines two approaches:
+#
+# 1. ANCHOR BAR SELECTION (find_anchor_bar):
+#    - Given a section start time (e.g., 96.124s for a chorus)
+#    - Find the bar whose downbeat is NEAREST to this section start
+#    - This gives us a starting point aligned to the musical structure
+#    - Example: Section starts at 96.124s, bar 40 downbeat is at 94.923s,
+#      bar 41 downbeat is at 97.361s → bar 40 is closer (1.2s vs 1.24s)
+#
+# 2. FLEXSTART PATTERN ALIGNMENT (find_flexstart_pattern_start):
+#    - Problem: The anchor bar may not have any onset near its downbeat!
+#      Example: Bar 40's downbeat at 94.923s, but nearest onset is 94.389s
+#      (0.53s before) - outside the search window (±0.5 sixteenth ~= ±75ms)
+#    - Solution: Starting from anchor bar, search FORWARD through bars
+#      until we find one that HAS an onset near its downbeat
+#    - This becomes the actual "pattern start" for grid correction
+#    - The pattern repeats every L bars (L = 1, 2, or 4)
+#
+# WORKFLOW:
+#   anchor_bar = find_anchor_bar(section_start, ...)  # nearest bar to section
+#   pattern_start = find_flexstart_pattern_start(anchor_bar, ...)  # first bar with onset
+#   phases = calculate_section_anchored_phases(pattern_start, ...)  # compute grid
+#
+# ============================================================================
 
 def find_anchor_bar(
     section_start_time: float,
@@ -2230,8 +2257,27 @@ def find_anchor_bar(
     """
     Find the bar index nearest to a section boundary.
 
-    First finds all bars overlapping with the section, then among those
-    finds the one nearest to the section start time.
+    ANCHOR BAR LOGIC:
+    -----------------
+    This function answers: "Which bar's downbeat is closest to where the
+    section starts?"
+
+    Steps:
+    1. Find all bars that OVERLAP with the section time range
+       (bar overlaps if bar_start < section_end AND bar_end > section_start)
+    2. Among overlapping bars, find the one whose downbeat is NEAREST
+       to section_start_time (measured as fraction of bar duration)
+    3. Return that bar index if within tolerance
+
+    Example:
+        Section: 96.124s - 126.485s
+        Bar 39: 92.508s - 94.923s → does NOT overlap (ends before section)
+        Bar 40: 94.923s - 97.361s → OVERLAPS, distance = |96.124 - 94.923| = 1.201s
+        Bar 41: 97.361s - 99.776s → OVERLAPS, distance = |96.124 - 97.361| = 1.237s
+        → Bar 40 is closest (1.201s < 1.237s)
+
+    NOTE: The anchor bar may not have an onset near its downbeat!
+    Use find_flexstart_pattern_start() to find the actual pattern start.
 
     Parameters
     ----------
@@ -2285,22 +2331,136 @@ def find_anchor_bar(
     return best_bar
 
 
+def find_flexstart_pattern_start(
+    anchor_bar: int,
+    downbeats: List[float],
+    onsets: np.ndarray,
+    section_end_time: float,
+    steps_per_bar: int = 16,
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
+) -> Tuple[Optional[int], float]:
+    """
+    Find the first bar (starting from anchor_bar) that has an onset near its downbeat.
+
+    FLEXSTART LOGIC:
+    ----------------
+    The anchor bar is the one closest to section start, but it may not have
+    any onset near its downbeat. This function searches forward from the
+    anchor bar to find the FIRST bar that does have a usable reference onset.
+
+    Why is this needed?
+    - Grid correction requires a "reference onset" at tick 0 (downbeat)
+    - We measure how far the onset is from the expected grid position
+    - Then we shift the entire grid by that amount
+    - If there's no onset near the downbeat, we can't compute the shift!
+
+    Search process:
+    1. Start at anchor_bar
+    2. For each bar, check if there's an onset within the search window
+       around the downbeat (typically ±0.5 to +0.75 of a sixteenth note)
+    3. If found, return that bar index and the offset (onset_time - downbeat)
+    4. If not found, move to next bar and repeat
+    5. Stop when we reach section_end_time or run out of bars
+
+    Example:
+        anchor_bar = 40 (downbeat at 94.923s)
+        Bar 40: nearest onset is 94.389s (0.53s before downbeat) → OUTSIDE window
+        Bar 41: onset at 99.823s near downbeat at 99.776s → INSIDE window!
+        → pattern_start = 41, offset = 99.823 - 99.776 = 0.047s = 47ms
+
+    Parameters
+    ----------
+    anchor_bar : int
+        Starting bar index (from find_anchor_bar)
+    downbeats : List[float]
+        Downbeat times (global indexing)
+    onsets : np.ndarray
+        Onset times
+    section_end_time : float
+        Don't search beyond this time
+    steps_per_bar : int
+        Grid subdivisions per bar (default 16 for 16th notes)
+    search_window_start_phase : float
+        Search window before downbeat (fraction of sixteenth duration)
+    search_window_end_phase : float
+        Search window after downbeat (fraction of sixteenth duration)
+
+    Returns
+    -------
+    Tuple[Optional[int], float]
+        (pattern_start_bar, reference_offset_seconds)
+        - pattern_start_bar: First bar with usable reference, or None if not found
+        - reference_offset_seconds: Onset time minus downbeat time (can be negative)
+    """
+    # Search forward from anchor bar
+    for bar_idx in range(anchor_bar, len(downbeats) - 1):
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+
+        # Stop if we've passed the section end
+        if bar_start >= section_end_time:
+            break
+
+        bar_duration = bar_end - bar_start
+        sixteenth_duration = bar_duration / steps_per_bar
+
+        # Search window around the downbeat (tick 0)
+        window_start = bar_start - search_window_start_phase * sixteenth_duration
+        window_end = bar_start + search_window_end_phase * sixteenth_duration
+
+        # Find onsets within window
+        onsets_in_window = onsets[(onsets >= window_start) & (onsets <= window_end)]
+
+        if len(onsets_in_window) > 0:
+            # Find closest onset to downbeat
+            distances = np.abs(onsets_in_window - bar_start)
+            min_idx = np.argmin(distances)
+            nearest_onset = onsets_in_window[min_idx]
+
+            # Found a usable reference!
+            ref_offset_s = nearest_onset - bar_start
+            return bar_idx, ref_offset_s
+
+    # No bar with usable reference found
+    return None, 0.0
+
+
 def calculate_section_anchored_phases(
     onsets: np.ndarray,
     downbeats: List[float],
-    anchor_bar: int,
+    pattern_start_bar: int,
     section_end_time: float,
     snippet_end_time: float,
     pattern_len: int,
     steps_per_bar: int = 16,
     search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
     search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
-) -> Tuple[pd.DataFrame, List[Dict]]:
+) -> Tuple[pd.DataFrame, List[Dict], int]:
     """
     Calculate phases with section-anchored grid correction.
 
-    Uses the same logic as FlexStart: for each L-bar pattern starting from
-    anchor_bar, find onset closest to tick 0 (downbeat) and shift the grid.
+    GRID CORRECTION LOGIC (per L-bar segment):
+    ------------------------------------------
+    For each L-bar pattern (L = 1, 2, or 4):
+    1. Find onset closest to tick 0 (downbeat) of the segment's first bar
+    2. Measure offset: ref_offset = onset_time - downbeat_time
+    3. Shift the ENTIRE grid by this offset
+    4. Calculate phases relative to the shifted grid
+
+    This is the "FlexStart" approach: each pattern segment gets its own
+    independent reference onset and grid correction.
+
+    Example (L=2, pattern_start_bar=41):
+      Segment 0: bars 41-42, downbeat at 99.776s
+        - Find onset near 99.776s → found at 99.823s
+        - ref_offset = 99.823 - 99.776 = +47ms
+        - Grid shifted by +47ms for this segment
+      Segment 1: bars 43-44, downbeat at 104.629s
+        - Find onset near 104.629s → found at 104.676s
+        - ref_offset = 104.676 - 104.629 = +47ms
+        - Grid shifted by +47ms for this segment
+      ... and so on
 
     Parameters
     ----------
@@ -2308,8 +2468,10 @@ def calculate_section_anchored_phases(
         Onset times
     downbeats : List[float]
         Downbeat times (global indexing)
-    anchor_bar : int
-        Bar index (global) to start from (nearest to section start)
+    pattern_start_bar : int
+        Bar index (global) to start from. This should be the result of
+        find_flexstart_pattern_start(), which is the first bar with a
+        usable reference onset (not just the nearest bar to section start!)
     section_end_time : float
         End time of the section (absolute)
     snippet_end_time : float
@@ -2338,9 +2500,16 @@ def calculate_section_anchored_phases(
     # Determine the effective end time (minimum of section end and snippet end)
     effective_end_time = min(section_end_time, snippet_end_time)
 
-    # Process every L-bar segment starting from anchor_bar
+    # =========================================================================
+    # MAIN LOOP: Process every L-bar segment starting from pattern_start_bar
+    # =========================================================================
+    # Each segment is L bars long. For each segment:
+    # 1. Find reference onset at segment's first downbeat
+    # 2. Compute grid correction (shift) for this segment
+    # 3. Output all 16 ticks × L bars with corrected phases
+    # =========================================================================
     segment_idx = 0
-    segment_start = anchor_bar
+    segment_start = pattern_start_bar
 
     while segment_start + pattern_len <= len(downbeats) - 1:
         # Calculate segment boundaries
@@ -2359,20 +2528,29 @@ def calculate_section_anchored_phases(
         total_sixteenths = pattern_len * steps_per_bar
         sixteenth_duration = segment_duration / total_sixteenths
 
-        # Find reference onset for THIS segment at tick 0 of segment start
+        # =====================================================================
+        # REFERENCE ONSET SEARCH for this segment
+        # =====================================================================
+        # Look for onset near tick 0 (downbeat) of the segment's first bar.
+        # Search window is asymmetric: -0.5 to +0.75 of a sixteenth note.
+        # =====================================================================
         segment_grid_time = segment_start_time
         window_start = segment_grid_time - search_window_start_phase * sixteenth_duration
         window_end = segment_grid_time + search_window_end_phase * sixteenth_duration
         onsets_in_window = onsets[(onsets >= window_start) & (onsets <= window_end)]
 
         if len(onsets_in_window) > 0:
-            # Find closest onset to grid_time
+            # Find closest onset to grid_time (downbeat)
             distances = np.abs(onsets_in_window - segment_grid_time)
             min_idx = np.argmin(distances)
             nearest_onset = onsets_in_window[min_idx]
+
+            # GRID CORRECTION: shift = onset_time - downbeat_time
+            # Positive = onset is AFTER downbeat (grid shifts right)
+            # Negative = onset is BEFORE downbeat (grid shifts left)
             segment_ref_offset_s = nearest_onset - segment_grid_time
 
-            # Store reference onset info for this segment
+            # Store reference onset info for this segment (for plotting/debugging)
             segment_bar_duration = segment_duration / pattern_len
             ref_onsets.append({
                 'bar_number': segment_idx * pattern_len,
@@ -2384,7 +2562,9 @@ def calculate_section_anchored_phases(
                 'ref_onset_time': nearest_onset
             })
         else:
-            # No reference found for this segment, use 0
+            # No reference found for this segment - no grid correction
+            # This shouldn't happen for segment 0 if find_flexstart_pattern_start()
+            # was used correctly, but may happen for later segments
             segment_ref_offset_s = 0.0
 
         # Process all bars in this L-bar segment
@@ -2538,6 +2718,7 @@ def run_anchoring(
         section_end = section_start + section_duration
         section_label = section['label']
         ratio_in_snippet = section['ratio_in_snippet']
+        ratio_outside_snippet = section['ratio_outside_snippet']
 
         if verbose:
             print(f"\n  Section {sec_idx + 1}: {section_label} (section_num={section_num})")
@@ -2553,15 +2734,42 @@ def run_anchoring(
 
         if verbose:
             anchor_time = downbeats[anchor_bar]
-            print(f"    Anchor bar: {anchor_bar} (time: {anchor_time:.3f}s)")
+            print(f"    Anchor bar: {anchor_bar} (downbeat: {anchor_time:.3f}s)")
+
+        # =====================================================================
+        # FLEXSTART: Find actual pattern start (first bar with usable onset)
+        # =====================================================================
+        # The anchor bar is nearest to section start, but may not have an onset
+        # near its downbeat. Search forward to find the first bar that does.
+        # =====================================================================
+        pattern_start_bar, first_ref_offset = find_flexstart_pattern_start(
+            anchor_bar=anchor_bar,
+            downbeats=downbeats,
+            onsets=onsets,
+            section_end_time=section_end,
+            steps_per_bar=steps_per_bar
+        )
+
+        if pattern_start_bar is None:
+            if verbose:
+                print(f"    ! No bar with usable reference onset found (FlexStart failed)")
+            continue
+
+        if verbose:
+            if pattern_start_bar != anchor_bar:
+                print(f"    FlexStart: pattern starts at bar {pattern_start_bar} "
+                      f"(skipped {pattern_start_bar - anchor_bar} bars without onset)")
+            else:
+                print(f"    FlexStart: pattern starts at anchor bar {pattern_start_bar}")
+            print(f"    First reference offset: {first_ref_offset * 1000:.1f}ms")
 
         # Process each pattern length
         for L in pattern_lengths:
-            # Calculate anchored phases
+            # Calculate anchored phases using FlexStart pattern_start_bar
             df_onsets, ref_onset_list, n_repetitions = calculate_section_anchored_phases(
                 onsets=onsets,
                 downbeats=downbeats,
-                anchor_bar=anchor_bar,
+                pattern_start_bar=pattern_start_bar,
                 section_end_time=section_end,
                 snippet_end_time=snippet_end,
                 pattern_len=L,
@@ -2583,7 +2791,9 @@ def run_anchoring(
                 f.write(f"# section_start_absolute={section_start:.6f}\n")
                 f.write(f"# section_duration={section_duration:.6f}\n")
                 f.write(f"# ratio_in_snippet={ratio_in_snippet:.4f}\n")
+                f.write(f"# ratio_outside_snippet={ratio_outside_snippet:.4f}\n")
                 f.write(f"# anchor_bar_global={anchor_bar}\n")
+                f.write(f"# pattern_start_bar_global={pattern_start_bar}\n")
                 f.write(f"# pattern_length={L}\n")
                 f.write(f"# no_of_repetitions={n_repetitions}\n")
                 f.write(f"# snippet_start={snippet_start:.6f}\n")

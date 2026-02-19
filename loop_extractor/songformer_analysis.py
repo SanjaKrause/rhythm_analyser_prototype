@@ -782,24 +782,48 @@ def create_songformer_plots(
         print(f"  Saved: {sf_changes_csv.name}")
 
     # 4. Create overlapping sections CSV (sections that OVERLAP with snippet, with ratios)
+    # -------------------------------------------------------------------------
+    # RATIO DEFINITIONS (note: different denominators!)
+    # -------------------------------------------------------------------------
+    # ratio_to_snippet:      section_duration / snippet_duration
+    #                        "How big is this section relative to the snippet?"
+    #                        Can be > 1 if section is longer than snippet
+    #
+    # ratio_in_snippet:      duration_inside_snippet / snippet_duration
+    #                        "What fraction of the SNIPPET does this section cover?"
+    #                        Always <= 1, answers "how much of snippet is this section"
+    #
+    # ratio_outside_snippet: duration_outside_snippet / section_duration
+    #                        "What fraction of the SECTION lies outside the snippet?"
+    #                        0 = section fully inside, > 0 = part of section is cut off
+    #                        Different denominator! Measures section completeness.
+    # -------------------------------------------------------------------------
     sf_overlapping_csv = output_dir / "SF_overlapping_sections.csv"
     with open(sf_overlapping_csv, 'w') as f:
-        f.write("section_num,start_absolute_s,start_relative_s,duration_s,label,ratio_to_snippet,ratio_in_snippet\n")
+        f.write("section_num,start_absolute_s,start_relative_s,duration_s,label,ratio_to_snippet,ratio_in_snippet,ratio_outside_snippet\n")
         for i, section in enumerate(sf_sections):
             sec_start = section["start"]
             sec_end = sec_start + section["duration"]
             # Check if section overlaps with snippet
             if sec_start < snippet_end and sec_end > snippet_start:
                 relative_start = sec_start - snippet_start
-                # ratio_to_snippet: full section duration / snippet duration
+
+                # ratio_to_snippet: section_duration / snippet_duration
                 ratio_to_snippet = section["duration"] / snippet_duration
-                # ratio_in_snippet: portion of section inside snippet / snippet duration
+
                 # Clip section to snippet bounds
                 clipped_start = max(sec_start, snippet_start)
                 clipped_end = min(sec_end, snippet_end)
                 duration_in_snippet = clipped_end - clipped_start
+
+                # ratio_in_snippet: duration_inside / snippet_duration
                 ratio_in_snippet = duration_in_snippet / snippet_duration
-                f.write(f"{i},{sec_start:.3f},{relative_start:.3f},{section['duration']:.3f},{section['label']},{ratio_to_snippet:.4f},{ratio_in_snippet:.4f}\n")
+
+                # ratio_outside_snippet: duration_outside / section_duration (different denom!)
+                duration_outside_snippet = section["duration"] - duration_in_snippet
+                ratio_outside_snippet = duration_outside_snippet / section["duration"]
+
+                f.write(f"{i},{sec_start:.3f},{relative_start:.3f},{section['duration']:.3f},{section['label']},{ratio_to_snippet:.4f},{ratio_in_snippet:.4f},{ratio_outside_snippet:.4f}\n")
     results["output_songformer_overlapping_csv"] = str(sf_overlapping_csv)
     if verbose:
         print(f"  Saved: {sf_overlapping_csv.name}")
