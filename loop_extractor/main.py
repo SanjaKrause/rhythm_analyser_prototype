@@ -366,6 +366,7 @@ def run_complete_pipeline(
                     snippet_start=snippet_offset_val,
                     snippet_duration=snippet_dur_val,
                     track_name=track_id,
+                    downbeats_file=paths['corrected_downbeats_file'] if paths['corrected_downbeats_file'].exists() else None,
                     verbose=verbose
                 )
                 results['songformer_plots'] = sf_plot_results
@@ -401,6 +402,7 @@ def run_complete_pipeline(
                         snippet_start=snippet_offset_val,
                         snippet_duration=snippet_dur_val,
                         track_name=track_id,
+                        downbeats_file=paths['corrected_downbeats_file'] if paths['corrected_downbeats_file'].exists() else None,
                         verbose=verbose
                     )
                     results['songformer_plots'] = sf_plot_results

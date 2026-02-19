@@ -545,6 +545,7 @@ def plot_songformer_song_sections(
     output_path: Path,
     track_name: str = "",
     song_id: Optional[int] = None,
+    downbeats_file: Optional[Path] = None,
     verbose: bool = True
 ) -> Optional[Path]:
     """
@@ -567,6 +568,8 @@ def plot_songformer_song_sections(
         Track name for the title
     song_id : int, optional
         Song ID to include in the title
+    downbeats_file : Path, optional
+        Path to corrected downbeats file for adding bar markers
     verbose : bool
         Print progress messages
 
@@ -632,9 +635,33 @@ def plot_songformer_song_sections(
     # Add shaded region for snippet
     ax.axvspan(snippet_start, snippet_end, alpha=0.15, color='red')
 
+    # Add downbeat markers if provided
+    if downbeats_file and Path(downbeats_file).exists():
+        import pandas as pd
+        try:
+            # Read downbeats file (tab-separated, skip comment lines)
+            df = pd.read_csv(downbeats_file, sep='\t', comment='#')
+            downbeat_times = df['corrected_downbeat_time(s)'].values
+            bar_numbers = df['corrected_bar_num'].values
+
+            # Draw tick marks below the section bars
+            tick_y = y_pos - bar_height/2 - 0.05
+            for bar_num, db_time in zip(bar_numbers, downbeat_times):
+                if 0 <= db_time <= song_duration:
+                    # Draw tick mark
+                    ax.plot([db_time, db_time], [tick_y, tick_y - 0.08],
+                            color='black', linewidth=0.8, alpha=0.7)
+                    # Add bar number label (show every 4th bar to avoid clutter)
+                    if bar_num % 4 == 1:
+                        ax.text(db_time, tick_y - 0.12, str(int(bar_num)),
+                                ha='center', va='top', fontsize=6, alpha=0.8)
+        except Exception as e:
+            if verbose:
+                print(f"  Warning: Could not read downbeats file: {e}")
+
     # Set axis limits to full song
     ax.set_xlim(0, song_duration)
-    ax.set_ylim(0, 1)
+    ax.set_ylim(-0.3, 1)
 
     # Labels and formatting
     ax.set_xlabel('Time (seconds)', fontsize=11)
@@ -651,12 +678,16 @@ def plot_songformer_song_sections(
         title = 'SongFormer Song Sections'
     ax.set_title(title, fontsize=12, fontweight='bold')
 
-    # Add legend for section types (only those present in data) + snippet marker
+    # Add legend for section types (only those present in data) + snippet marker + bar markers
     present_labels = set(s.get("label", "unknown") for s in sections)
     legend_patches = [mpatches.Patch(color=label_colors.get(l, default_color), label=l.capitalize())
                       for l in present_labels if l in label_colors]
     # Add snippet boundary to legend
     legend_patches.append(mpatches.Patch(color='red', alpha=0.3, label=f'Snippet ({snippet_start:.1f}s - {snippet_end:.1f}s)'))
+    # Add bar markers to legend if downbeats were added
+    if downbeats_file and Path(downbeats_file).exists():
+        from matplotlib.lines import Line2D
+        legend_patches.append(Line2D([0], [0], color='black', linewidth=1, label='Bar downbeats'))
     if legend_patches:
         ax.legend(handles=legend_patches, loc='upper right', fontsize=8, ncol=2)
 
@@ -681,6 +712,7 @@ def create_songformer_plots(
     snippet_duration: float,
     track_name: str = "",
     song_id: Optional[int] = None,
+    downbeats_file: Optional[Path] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
     """
@@ -707,6 +739,8 @@ def create_songformer_plots(
         Track name for plot titles
     song_id : int, optional
         Song ID to include in plot titles
+    downbeats_file : Path, optional
+        Path to corrected downbeats file for adding bar markers
     verbose : bool
         Print progress messages
 
@@ -761,6 +795,7 @@ def create_songformer_plots(
         output_path=sf_song_plot,
         track_name=track_name,
         song_id=song_id,
+        downbeats_file=downbeats_file,
         verbose=verbose
     )
     if sf_song_path:
