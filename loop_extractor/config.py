@@ -108,6 +108,17 @@ class Config:
     GRID_POSITIONS_PER_BAR = 16  # 16th note grid
 
     # ============================================================================
+    # STEP 6.1: SECTION ANCHORING
+    # ============================================================================
+
+    # Tolerance for finding the nearest bar to a section boundary
+    # 0.5 = exactly in the middle between two downbeats (half a bar duration)
+    ANCHOR_BAR_TOLERANCE = 0.5
+
+    # Output folder name for anchoring results
+    ANCHORING_OUTPUT_FOLDER = '6.1_anchoring'
+
+    # ============================================================================
     # STEP 5: RMS HISTOGRAMS
     # ============================================================================
 
@@ -203,6 +214,9 @@ class Config:
 
             # Step 5: Raster/grid calculations
             'comprehensive_csv': track_dir / '5_grid' / f'{track_name}_comprehensive_phases.csv',
+
+            # Step 6.1: Section anchoring
+            'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER,
 
             # Step 6: RMS analysis
             'rms_summary': track_dir / '6_rms' / f'{track_name}_rms_summary.json',

@@ -73,7 +73,7 @@ config = config_module.config
 # Import all pipeline modules
 from stem_separation import spleeter_interface
 from beat_detection import transformer
-from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots
+from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring
 from utils import audio_export, raster_plots, midi_export, microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
@@ -790,6 +790,70 @@ def run_complete_pipeline(
         if verbose:
             print(f"  ✗ ERROR: {e}")
         # Don't raise - continue to RMS if we have the CSV from before
+
+    # ========================================================================
+    # STEP 6.1: SECTION ANCHORING
+    # ========================================================================
+    try:
+        # Check if SongFormer sections exist
+        sf_overlapping_csv = paths['songformer_dir'] / 'SF_overlapping_sections.csv'
+        sf_timings_csv = paths['songformer_dir'] / 'SF_snippet_timings.csv'
+
+        if daw_ready:
+            if verbose:
+                print("\n[6.1] Section anchoring - SKIPPED (DAW ready mode)")
+            results['steps_completed'].append('anchoring_skipped_daw')
+        elif not sf_overlapping_csv.exists() or not sf_timings_csv.exists():
+            if verbose:
+                print("\n[6.1] Section anchoring - SKIPPED (no SongFormer sections)")
+            results['steps_completed'].append('anchoring_skipped_no_sections')
+        elif not paths['corrected_downbeats_file'].exists():
+            if verbose:
+                print("\n[6.1] Section anchoring - SKIPPED (no corrected downbeats)")
+            results['steps_completed'].append('anchoring_skipped_no_downbeats')
+        else:
+            # Check if anchoring already exists
+            anchoring_dir = paths['anchoring_dir']
+            anchoring_exists = anchoring_dir.exists() and any(anchoring_dir.glob('*.csv'))
+
+            if skip_existing and anchoring_exists:
+                if verbose:
+                    print("\n[6.1] Section anchoring - SKIPPED (exists)")
+                results['steps_completed'].append('anchoring_skipped')
+            else:
+                if verbose:
+                    print("\n[6.1] Section anchoring...")
+
+                # Get onset file
+                if onset_file is None:
+                    onset_file = paths['onsets_file']
+
+                if not Path(onset_file).exists():
+                    raise FileNotFoundError(f"Onset file not found: {onset_file}")
+
+                anchoring_results = anchoring.run_anchoring(
+                    corrected_downbeats_file=str(paths['corrected_downbeats_file']),
+                    onset_file=str(onset_file),
+                    songformer_sections_csv=str(sf_overlapping_csv),
+                    snippet_timings_csv=str(sf_timings_csv),
+                    output_dir=str(anchoring_dir),
+                    pattern_lengths=[2, 4],
+                    verbose=verbose
+                )
+
+                results['anchoring_files'] = anchoring_results
+                results['steps_completed'].append('anchoring')
+
+                if verbose:
+                    num_files = len(anchoring_results)
+                    print(f"  ✓ Section anchoring completed: {num_files} files created")
+
+    except Exception as e:
+        error_msg = f"Step 6.1 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+        # Don't raise - continue to raster plots
 
     # ========================================================================
     # STEP 6.5: RASTER PLOTS
