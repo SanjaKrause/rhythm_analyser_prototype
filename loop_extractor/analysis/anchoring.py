@@ -1,11 +1,14 @@
 """
-Simplified raster plot generation and phase calculations.
+Section-anchored onset grid calculation and phase analysis.
 
-This module calculates phase deviations of onsets from expected grid positions
-using 3 correction methods:
+This module calculates phase deviations of onsets from expected grid positions,
+with support for section-anchored grids that align to SongFormer section boundaries.
+
+Correction methods:
 1. Uncorrected (raw downbeat-based grid)
 2. Per-snippet correction (finds first onset at 1/16th position)
 3. 4-bar loop correction (equidistant grid across 4 bars)
+4. Section-anchored: FlexStart-style correction per section
 
 Environment: AEinBOX_13_3 (numpy, pandas)
 """
@@ -2214,16 +2217,415 @@ def create_comprehensive_csv(
     )
 
 
+# ============================================================================
+# SECTION ANCHORING
+# ============================================================================
+
+def find_anchor_bar(
+    section_start_time: float,
+    section_end_time: float,
+    downbeats: List[float],
+    tolerance: float = None
+) -> Optional[int]:
+    """
+    Find the bar index nearest to a section boundary.
+
+    First finds all bars overlapping with the section, then among those
+    finds the one nearest to the section start time.
+
+    Parameters
+    ----------
+    section_start_time : float
+        Absolute time of the section start
+    section_end_time : float
+        Absolute time of the section end
+    downbeats : List[float]
+        List of all downbeat times (global indexing)
+    tolerance : float
+        Maximum fraction of bar duration for a valid anchor (default from config)
+
+    Returns
+    -------
+    Optional[int]
+        Bar index (global) of the nearest bar to section boundary, or None if
+        no bar is within tolerance
+    """
+    if tolerance is None:
+        tolerance = config.ANCHOR_BAR_TOLERANCE
+
+    # Find all bars that overlap with the section
+    overlapping_bars = []
+    for bar_idx in range(len(downbeats) - 1):
+        bar_start = downbeats[bar_idx]
+        bar_end = downbeats[bar_idx + 1]
+
+        # Bar overlaps section if bar_start < section_end AND bar_end > section_start
+        if bar_start < section_end_time and bar_end > section_start_time:
+            overlapping_bars.append(bar_idx)
+
+    if not overlapping_bars:
+        return None
+
+    # Among overlapping bars, find the one nearest to section_start
+    best_bar = None
+    best_distance = float('inf')
+
+    for bar_idx in overlapping_bars:
+        bar_time = downbeats[bar_idx]
+        bar_duration = downbeats[bar_idx + 1] - downbeats[bar_idx]
+
+        # Calculate distance as fraction of bar duration
+        distance = abs(section_start_time - bar_time)
+        distance_frac = distance / bar_duration
+
+        if distance_frac <= tolerance and distance_frac < best_distance:
+            best_distance = distance_frac
+            best_bar = bar_idx
+
+    return best_bar
+
+
+def calculate_section_anchored_phases(
+    onsets: np.ndarray,
+    downbeats: List[float],
+    anchor_bar: int,
+    section_end_time: float,
+    snippet_end_time: float,
+    pattern_len: int,
+    steps_per_bar: int = 16,
+    search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
+    search_window_end_phase: float = SEARCH_WINDOW_END_PHASE
+) -> Tuple[pd.DataFrame, List[Dict]]:
+    """
+    Calculate phases with section-anchored grid correction.
+
+    Uses the same logic as FlexStart: for each L-bar pattern starting from
+    anchor_bar, find onset closest to tick 0 (downbeat) and shift the grid.
+
+    Parameters
+    ----------
+    onsets : np.ndarray
+        Onset times
+    downbeats : List[float]
+        Downbeat times (global indexing)
+    anchor_bar : int
+        Bar index (global) to start from (nearest to section start)
+    section_end_time : float
+        End time of the section (absolute)
+    snippet_end_time : float
+        End time of the snippet (absolute)
+    pattern_len : int
+        Pattern length in bars (1, 2, or 4)
+    steps_per_bar : int
+        Number of grid positions per bar (default 16)
+    search_window_start_phase : float
+        Search window before grid position for reference onset
+    search_window_end_phase : float
+        Search window after grid position for reference onset
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, List[Dict], int]
+        - DataFrame with columns: bar_number, bar_number_global, tick_16th,
+          onset_time, phase, grid_time, grid_phase, tick_phase
+          (all 16 ticks per bar are included; onset fields are None if no onset)
+        - List of reference onset info dicts
+        - Number of complete pattern repetitions
+    """
+    rows = []
+    ref_onsets = []
+
+    # Determine the effective end time (minimum of section end and snippet end)
+    effective_end_time = min(section_end_time, snippet_end_time)
+
+    # Process every L-bar segment starting from anchor_bar
+    segment_idx = 0
+    segment_start = anchor_bar
+
+    while segment_start + pattern_len <= len(downbeats) - 1:
+        # Calculate segment boundaries
+        segment_start_time = downbeats[segment_start]
+        segment_end_time = downbeats[segment_start + pattern_len]
+
+        # Stop if segment starts beyond effective end time
+        if segment_start_time >= effective_end_time:
+            break
+
+        # Skip incomplete patterns (those that extend beyond effective end)
+        if segment_end_time > effective_end_time:
+            break
+
+        segment_duration = segment_end_time - segment_start_time
+        total_sixteenths = pattern_len * steps_per_bar
+        sixteenth_duration = segment_duration / total_sixteenths
+
+        # Find reference onset for THIS segment at tick 0 of segment start
+        segment_grid_time = segment_start_time
+        window_start = segment_grid_time - search_window_start_phase * sixteenth_duration
+        window_end = segment_grid_time + search_window_end_phase * sixteenth_duration
+        onsets_in_window = onsets[(onsets >= window_start) & (onsets <= window_end)]
+
+        if len(onsets_in_window) > 0:
+            # Find closest onset to grid_time
+            distances = np.abs(onsets_in_window - segment_grid_time)
+            min_idx = np.argmin(distances)
+            nearest_onset = onsets_in_window[min_idx]
+            segment_ref_offset_s = nearest_onset - segment_grid_time
+
+            # Store reference onset info for this segment
+            segment_bar_duration = segment_duration / pattern_len
+            ref_onsets.append({
+                'bar_number': segment_idx * pattern_len,
+                'bar_number_global': segment_start,
+                'ref_ms': segment_ref_offset_s * 1000.0,
+                'ref_phase': segment_ref_offset_s / segment_bar_duration,
+                'grid_phase': 0.0,
+                'bar_duration': segment_bar_duration,
+                'ref_onset_time': nearest_onset
+            })
+        else:
+            # No reference found for this segment, use 0
+            segment_ref_offset_s = 0.0
+
+        # Process all bars in this L-bar segment
+        for bar_offset in range(pattern_len):
+            bar_idx = segment_start + bar_offset
+
+            if bar_idx >= len(downbeats) - 1:
+                break
+
+            # Calculate equidistant bar boundaries within the segment
+            bar_sixteenth_pos = bar_offset * steps_per_bar
+            equi_bar_start = segment_start_time + (bar_sixteenth_pos * sixteenth_duration)
+            equi_bar_duration = steps_per_bar * sixteenth_duration
+            equi_bar_end = equi_bar_start + equi_bar_duration
+
+            # Apply segment-specific correction to grid positions
+            corrected_equi_bar_start = equi_bar_start + segment_ref_offset_s
+
+            # Filter onsets using UNCORRECTED equidistant boundaries (avoid gaps)
+            bar_onsets = onsets[(onsets >= equi_bar_start) & (onsets < equi_bar_end)]
+
+            # Track which ticks have onsets (to avoid duplicates)
+            tick_to_onset = {}
+
+            for onset_time in bar_onsets:
+                # Calculate corrected phase (relative to segment-corrected equidistant grid)
+                phase = (onset_time - corrected_equi_bar_start) / equi_bar_duration
+
+                # Assign to nearest tick
+                nearest_tick = int(round(phase * steps_per_bar))
+                nearest_tick = max(0, min(steps_per_bar - 1, nearest_tick))
+
+                # Check if within tolerance (asymmetric boundaries)
+                grid_time = corrected_equi_bar_start + (nearest_tick / steps_per_bar) * equi_bar_duration
+                distance = abs(onset_time - grid_time)
+
+                if onset_time < grid_time:
+                    tolerance = MAX_MATCH_FRAC_BEFORE * sixteenth_duration
+                else:
+                    tolerance = MAX_MATCH_FRAC_AFTER * sixteenth_duration
+
+                if distance <= tolerance:
+                    # Store onset for this tick (keep closest if multiple)
+                    if nearest_tick not in tick_to_onset or distance < tick_to_onset[nearest_tick]['distance']:
+                        tick_to_onset[nearest_tick] = {
+                            'onset_time': onset_time,
+                            'phase': phase,
+                            'distance': distance
+                        }
+
+            # Now output ALL 16 ticks for this bar
+            for tick in range(steps_per_bar):
+                grid_phase = tick / steps_per_bar
+                grid_time = corrected_equi_bar_start + grid_phase * equi_bar_duration
+
+                if tick in tick_to_onset:
+                    # Tick has an onset
+                    onset_info = tick_to_onset[tick]
+                    onset_time = onset_info['onset_time']
+                    phase = onset_info['phase']
+                    tick_phase = (phase - grid_phase) * steps_per_bar
+                else:
+                    # No onset at this tick - leave onset fields empty
+                    onset_time = None
+                    phase = None
+                    tick_phase = None
+
+                rows.append({
+                    'bar_number': bar_offset + (segment_idx * pattern_len),
+                    'bar_number_global': bar_idx,
+                    'tick_16th': tick,
+                    'onset_time': onset_time,
+                    'phase': phase,
+                    'grid_time': grid_time,
+                    'grid_phase': grid_phase,
+                    'tick_phase': tick_phase
+                })
+
+        segment_idx += 1
+        segment_start += pattern_len
+
+    # Calculate number of complete pattern repetitions
+    n_repetitions = segment_idx
+
+    return pd.DataFrame(rows), ref_onsets, n_repetitions
+
+
+def run_anchoring(
+    corrected_downbeats_file: str,
+    onset_file: str,
+    songformer_sections_csv: str,
+    snippet_timings_csv: str,
+    output_dir: str,
+    pattern_lengths: List[int] = [2, 4],
+    verbose: bool = True
+) -> Dict[str, str]:
+    """
+    Run section-anchored grid calculation for all overlapping sections.
+
+    Parameters
+    ----------
+    corrected_downbeats_file : str
+        Path to corrected downbeats file
+    onset_file : str
+        Path to onset detection CSV
+    songformer_sections_csv : str
+        Path to SF_overlapping_sections.csv
+    snippet_timings_csv : str
+        Path to SF_snippet_timings.csv
+    output_dir : str
+        Output directory for anchored CSVs
+    pattern_lengths : List[int]
+        Pattern lengths to process (default [2, 4])
+    verbose : bool
+        Print progress information
+
+    Returns
+    -------
+    Dict[str, str]
+        Dictionary with output file paths
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    results = {}
+
+    # Parse inputs
+    downbeats, time_sig = parse_corrected_downbeats(corrected_downbeats_file)
+    onsets = load_onsets(onset_file)
+
+    # Parse snippet timings (new format: single 'time' column with start on row 0, end on row 1)
+    snippet_df = pd.read_csv(snippet_timings_csv)
+    snippet_start = snippet_df['time'].iloc[0]
+    snippet_end = snippet_df['time'].iloc[1]
+
+    # Parse sections
+    sections_df = pd.read_csv(songformer_sections_csv)
+
+    steps_per_bar = time_sig * GRID_SUBDIV_PER_BEAT
+
+    if verbose:
+        print(f"\nSection Anchoring:")
+        print(f"  Snippet: {snippet_start:.3f}s - {snippet_end:.3f}s")
+        print(f"  Overlapping sections: {len(sections_df)}")
+
+    # Process each section
+    for sec_idx, section in sections_df.iterrows():
+        section_num = section['section_num']
+        section_start = section['start_absolute_s']
+        section_duration = section['duration_s']
+        section_end = section_start + section_duration
+        section_label = section['label']
+        ratio_in_snippet = section['ratio_in_snippet']
+
+        if verbose:
+            print(f"\n  Section {sec_idx + 1}: {section_label} (section_num={section_num})")
+            print(f"    Time: {section_start:.3f}s - {section_end:.3f}s")
+
+        # Find anchor bar for this section
+        anchor_bar = find_anchor_bar(section_start, section_end, downbeats)
+
+        if anchor_bar is None:
+            if verbose:
+                print(f"    ! No anchor bar found within tolerance {config.ANCHOR_BAR_TOLERANCE}")
+            continue
+
+        if verbose:
+            anchor_time = downbeats[anchor_bar]
+            print(f"    Anchor bar: {anchor_bar} (time: {anchor_time:.3f}s)")
+
+        # Process each pattern length
+        for L in pattern_lengths:
+            # Calculate anchored phases
+            df_onsets, ref_onset_list, n_repetitions = calculate_section_anchored_phases(
+                onsets=onsets,
+                downbeats=downbeats,
+                anchor_bar=anchor_bar,
+                section_end_time=section_end,
+                snippet_end_time=snippet_end,
+                pattern_len=L,
+                steps_per_bar=steps_per_bar
+            )
+
+            if df_onsets.empty:
+                if verbose:
+                    print(f"    L={L}: No data found")
+                continue
+
+            # Output filename
+            output_filename = f"SecNo{sec_idx + 1}_L{L}_{section_label}_{ratio_in_snippet:.4f}_anchored.csv"
+            output_file = output_path / output_filename
+
+            # Write CSV with metadata header
+            with open(output_file, 'w') as f:
+                f.write(f"# section_label={section_label}\n")
+                f.write(f"# section_start_absolute={section_start:.6f}\n")
+                f.write(f"# section_duration={section_duration:.6f}\n")
+                f.write(f"# ratio_in_snippet={ratio_in_snippet:.4f}\n")
+                f.write(f"# anchor_bar_global={anchor_bar}\n")
+                f.write(f"# pattern_length={L}\n")
+                f.write(f"# no_of_repetitions={n_repetitions}\n")
+                f.write(f"# snippet_start={snippet_start:.6f}\n")
+                f.write(f"# snippet_end={snippet_end:.6f}\n")
+                df_onsets.to_csv(f, index=False)
+
+            # Write reference onsets CSV (for plotting)
+            if ref_onset_list:
+                ref_filename = f"SecNo{sec_idx + 1}_L{L}_{section_label}_{ratio_in_snippet:.4f}_reference_onsets.csv"
+                ref_file = output_path / ref_filename
+                df_ref = pd.DataFrame(ref_onset_list)
+                df_ref.to_csv(ref_file, index=False)
+
+            results[f"sec{sec_idx + 1}_L{L}"] = str(output_file)
+
+            if verbose:
+                n_bars = df_onsets['bar_number'].max() + 1 if not df_onsets.empty else 0
+                print(f"    L={L}: {n_bars} bars, {len(df_onsets)} onsets -> {output_filename}")
+
+    return results
+
+
 if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 5:
-        print("Usage: python raster.py <corrected_downbeats_file> <onset_file> <snippet_offset> <output_file>")
+        print("Usage: python anchoring.py <corrected_downbeats_file> <onset_file> <snippet_offset> <output_file>")
+        print("   OR: python anchoring.py --section <corrected_downbeats> <onsets> <sf_sections> <sf_timings> <output_dir>")
         sys.exit(1)
 
-    corrected_downbeats_file = sys.argv[1]
-    onset_file = sys.argv[2]
-    snippet_offset = float(sys.argv[3])
-    output_file = sys.argv[4]
-
-    create_raster_csv(corrected_downbeats_file, onset_file, snippet_offset, output_file)
+    if sys.argv[1] == "--section":
+        # Section anchoring mode
+        if len(sys.argv) < 7:
+            print("Usage: python anchoring.py --section <corrected_downbeats> <onsets> <sf_sections> <sf_timings> <output_dir>")
+            sys.exit(1)
+        run_anchoring(
+            sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
+        )
+    else:
+        # Regular raster mode
+        corrected_downbeats_file = sys.argv[1]
+        onset_file = sys.argv[2]
+        snippet_offset = float(sys.argv[3])
+        output_file = sys.argv[4]
+        create_raster_csv(corrected_downbeats_file, onset_file, snippet_offset, output_file)

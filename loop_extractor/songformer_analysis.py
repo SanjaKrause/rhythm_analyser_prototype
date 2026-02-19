@@ -804,11 +804,12 @@ def create_songformer_plots(
     if verbose:
         print(f"  Saved: {sf_overlapping_csv.name}")
 
-    # 5. Create snippet timings CSV (simple 2-column file with snippet start/end)
+    # 5. Create snippet timings CSV (simple 1-column file with snippet start/end on separate rows)
     sf_timings_csv = output_dir / "SF_snippet_timings.csv"
     with open(sf_timings_csv, 'w') as f:
-        f.write("snippet_start,snippet_end\n")
-        f.write(f"{snippet_start:.3f},{snippet_start + snippet_duration:.3f}\n")
+        f.write("time\n")
+        f.write(f"{snippet_start:.3f}\n")
+        f.write(f"{snippet_start + snippet_duration:.3f}\n")
     results["output_songformer_timings_csv"] = str(sf_timings_csv)
     if verbose:
         print(f"  Saved: {sf_timings_csv.name}")
