@@ -2431,7 +2431,6 @@ def calculate_section_anchored_phases(
     downbeats: List[float],
     pattern_start_bar: int,
     section_end_time: float,
-    snippet_end_time: float,
     pattern_len: int,
     steps_per_bar: int = 16,
     search_window_start_phase: float = SEARCH_WINDOW_START_PHASE,
@@ -2462,10 +2461,13 @@ def calculate_section_anchored_phases(
         - Grid shifted by +47ms for this segment
       ... and so on
 
+    NOTE: Analyzes the full section (up to section_end_time), regardless of
+    snippet boundaries. Onsets are detected for the full track.
+
     Parameters
     ----------
     onsets : np.ndarray
-        Onset times
+        Onset times (full track)
     downbeats : List[float]
         Downbeat times (global indexing)
     pattern_start_bar : int
@@ -2473,9 +2475,7 @@ def calculate_section_anchored_phases(
         find_flexstart_pattern_start(), which is the first bar with a
         usable reference onset (not just the nearest bar to section start!)
     section_end_time : float
-        End time of the section (absolute)
-    snippet_end_time : float
-        End time of the snippet (absolute)
+        End time of the section (absolute). Analysis runs up to this point.
     pattern_len : int
         Pattern length in bars (1, 2, or 4)
     steps_per_bar : int
@@ -2497,8 +2497,13 @@ def calculate_section_anchored_phases(
     rows = []
     ref_onsets = []
 
-    # Determine the effective end time (minimum of section end and snippet end)
-    effective_end_time = min(section_end_time, snippet_end_time)
+    # -------------------------------------------------------------------------
+    # Use section_end_time (NOT clipped to snippet_end_time)
+    # -------------------------------------------------------------------------
+    # We analyze the full section even if it extends beyond the snippet.
+    # Onsets exist for the full track, not just the snippet.
+    # -------------------------------------------------------------------------
+    effective_end_time = section_end_time
 
     # =========================================================================
     # MAIN LOOP: Process every L-bar segment starting from pattern_start_bar
@@ -2766,12 +2771,12 @@ def run_anchoring(
         # Process each pattern length
         for L in pattern_lengths:
             # Calculate anchored phases using FlexStart pattern_start_bar
+            # Note: We analyze the full section (up to section_end), not clipped to snippet
             df_onsets, ref_onset_list, n_repetitions = calculate_section_anchored_phases(
                 onsets=onsets,
                 downbeats=downbeats,
                 pattern_start_bar=pattern_start_bar,
                 section_end_time=section_end,
-                snippet_end_time=snippet_end,
                 pattern_len=L,
                 steps_per_bar=steps_per_bar
             )
