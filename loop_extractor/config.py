@@ -119,6 +119,24 @@ class Config:
     ANCHORING_OUTPUT_FOLDER = '6.1_anchoring'
 
     # ============================================================================
+    # STEP 6.2: FILTER ANCHORED PATTERNS
+    # ============================================================================
+
+    # Tukey IQR multiplier for outlier detection
+    # 1.5 = standard outlier detection
+    # 3.0 = extreme outlier detection (more conservative)
+    IQR_MULTIPLIER_TUKEY = 1.5
+
+    # Running mean threshold for pattern filtering (percentage)
+    # 0.5 = keep patterns with at least 50% of the running mean onset count
+    RUNNING_MEAN_THRESHOLD = 0.5
+
+    # Threshold for choosing filtering method
+    # If patterns <= this value: use running mean method
+    # If patterns > this value: use Tukey method
+    NO_OF_REPETITIONS_TH = 2
+
+    # ============================================================================
     # STEP 5: RMS HISTOGRAMS
     # ============================================================================
 

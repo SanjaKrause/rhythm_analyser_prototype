@@ -223,14 +223,14 @@ def create_anchoring_plot(
         })
 
     # Calculate figure dimensions
-    fig_height_per_bar = 0.25
-    min_section_height = 2.0
-    fig_height = max(8, sum(max(min_section_height, s['n_bars'] * fig_height_per_bar) for s in section_data))
+    fig_height_per_bar = 0.35
+    min_section_height = 2.5
+    fig_height = max(10, sum(max(min_section_height, s['n_bars'] * fig_height_per_bar) for s in section_data))
 
     # Create figure with one subplot per section
     height_ratios = [max(min_section_height, s['n_bars'] * fig_height_per_bar) for s in section_data]
     fig = plt.figure(figsize=(14, fig_height))
-    gs = fig.add_gridspec(n_sections, 1, height_ratios=height_ratios, hspace=0.6)
+    gs = fig.add_gridspec(n_sections, 1, height_ratios=height_ratios, hspace=0.8, top=0.92, bottom=0.05)
 
     for i, section in enumerate(section_data):
         ax = fig.add_subplot(gs[i])
@@ -274,7 +274,7 @@ def create_anchoring_plot(
 
     # Overall title
     fig.suptitle(f"Track {track_id} — Section Anchoring Raster Plots",
-                fontsize=12, fontweight="bold", y=0.995)
+                fontsize=12, fontweight="bold", y=1.02)
 
     # Save
     output_file.parent.mkdir(parents=True, exist_ok=True)

@@ -36,10 +36,19 @@ config = config_module.config
 
 SNIPPET_DURATION_S = config.CORRECT_BARS_SNIPPET_DURATION_S
 GRID_SUBDIV_PER_BEAT = 4  # Sixteenth notes
+
+#old parameters for asymmetric tolerances and search windows (tuned on 2-bar snippets)
+#MAX_MATCH_FRAC_BEFORE = 0.49  # Max distance before grid position (prevents overlap)
+#MAX_MATCH_FRAC_AFTER = 0.51  # Max distance after grid position (prevents overlap)
+#SEARCH_WINDOW_START_PHASE = 0.5  # Search window before 1/16th for reference onset
+#SEARCH_WINDOW_END_PHASE = 0.75  # Search window after 1/16th for reference onset
+
+#new parameters: for some reason negative onsets always wrong
 MAX_MATCH_FRAC_BEFORE = 0.49  # Max distance before grid position (prevents overlap)
 MAX_MATCH_FRAC_AFTER = 0.51  # Max distance after grid position (prevents overlap)
-SEARCH_WINDOW_START_PHASE = 0.5  # Search window before 1/16th for reference onset
-SEARCH_WINDOW_END_PHASE = 0.75  # Search window after 1/16th for reference onset
+SEARCH_WINDOW_START_PHASE = 0.1  # Search window before 1/16th for reference onset
+SEARCH_WINDOW_END_PHASE = 1  # Search window after 1/16th for reference onset
+
 IQR_MULTIPLIER_TUKEY = 1.5  # IQR multiplier for Tukey outlier detection (1.5=standard, 3.0=extreme)
 RUNNING_MEAN_THRESHOLD = 0.5  # Threshold for running mean filtering (0.5 = 50%)
 NO_OF_REPETITIONS_TH = 2  # Threshold for choosing filtering method (≤2: running mean, >2: Tukey)

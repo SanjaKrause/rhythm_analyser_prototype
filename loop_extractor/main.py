@@ -857,8 +857,29 @@ def run_complete_pipeline(
                     track_id=track_id
                 )
 
+                # ================================================================
+                # STEP 6.2: FILTER ANCHORED PATTERNS
+                # ================================================================
+                if verbose:
+                    print("\n[6.2] Filtering anchored patterns...")
+
+                from analysis.filter_anchored_patterns import filter_all_anchored_patterns
+                filter_results = filter_all_anchored_patterns(
+                    anchoring_dir=anchoring_dir,
+                    iqr_multiplier=config.IQR_MULTIPLIER_TUKEY,
+                    threshold=config.RUNNING_MEAN_THRESHOLD,
+                    no_of_repetitions_TH=config.NO_OF_REPETITIONS_TH,
+                    verbose=verbose
+                )
+
+                results['anchoring_filtered_files'] = filter_results
+                results['steps_completed'].append('anchoring_filtering')
+
+                if verbose:
+                    print(f"  ✓ Filtering completed: {len(filter_results)} files filtered")
+
     except Exception as e:
-        error_msg = f"Step 6.1 failed: {e}"
+        error_msg = f"Step 6.1/6.2 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
