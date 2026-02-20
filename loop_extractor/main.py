@@ -864,7 +864,7 @@ def run_complete_pipeline(
                     print("\n[6.2] Filtering anchored patterns...")
 
                 from analysis.filter_anchored_patterns import filter_all_anchored_patterns
-                filtered_dir = paths['anchoring_dir'].parent / '6.2_filtered_patterns'
+                filtered_dir = paths['filtered_patterns_dir']
                 filter_results = filter_all_anchored_patterns(
                     anchoring_dir=anchoring_dir,
                     output_dir=filtered_dir,
@@ -881,8 +881,24 @@ def run_complete_pipeline(
                 if verbose:
                     print(f"  ✓ Filtering completed: {len(filter_results)} files filtered")
 
+                # ================================================================
+                # STEP 6.3: PLOT FILTERED PATTERNS RASTER
+                # ================================================================
+                if verbose:
+                    print("\n[6.3] Plotting filtered patterns raster...")
+
+                plots_anchoring.create_all_anchoring_plots(
+                    anchoring_dir=str(filtered_dir),
+                    track_id=track_id
+                )
+
+                results['steps_completed'].append('filtered_patterns_plot')
+
+                if verbose:
+                    print(f"  ✓ Filtered patterns raster plot created")
+
     except Exception as e:
-        error_msg = f"Step 6.1/6.2 failed: {e}"
+        error_msg = f"Step 6.1/6.2/6.3 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")

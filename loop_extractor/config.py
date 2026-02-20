@@ -236,6 +236,9 @@ class Config:
             # Step 6.1: Section anchoring
             'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER,
 
+            # Step 6.2/6.3: Filtered patterns (output goes here, plot stays here)
+            'filtered_patterns_dir': track_dir / '6.2_filtered_patterns',
+
             # Step 6: RMS analysis
             'rms_summary': track_dir / '6_rms' / f'{track_name}_rms_summary.json',
 

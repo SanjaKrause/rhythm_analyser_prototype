@@ -103,6 +103,14 @@ def plot_anchoring_raster(
     # Get number of bars
     n_bars = int(df['bar_number'].max()) + 1
 
+    # Get global bar numbers for secondary y-axis (if available)
+    global_bar_map = {}
+    if 'bar_number_global' in df.columns:
+        for bar_idx in range(n_bars):
+            bar_rows = df[df['bar_number'] == bar_idx]
+            if len(bar_rows) > 0:
+                global_bar_map[bar_idx] = int(bar_rows['bar_number_global'].iloc[0])
+
     # Generate bar colors
     colors = make_bar_colors(n_bars)
 
@@ -155,7 +163,7 @@ def plot_anchoring_raster(
     for xg in ticks_grid:
         ax.axvline(xg, color="0.9", linewidth=0.6, zorder=0)
 
-    # Y-axis ticks
+    # Y-axis ticks (left side - section-relative)
     if n_bars > 0:
         tick_step = max(1, n_bars // 10)
         ax.set_yticks(np.arange(0, n_bars, tick_step))
@@ -164,6 +172,24 @@ def plot_anchoring_raster(
     ax.set_xlabel("bar phase", fontsize=10)
     ax.set_ylabel("bar index (section)", fontsize=10)
     ax.grid(True, alpha=0.3, axis='y')
+
+    # Secondary y-axis on the right with global bar indices
+    if global_bar_map:
+        ax2 = ax.twinx()
+        ax2.set_ylim(ax.get_ylim())
+
+        # Create tick positions and labels for global bars
+        tick_positions = []
+        tick_labels = []
+        tick_step = max(1, n_bars // 10)
+        for bar_idx in range(0, n_bars, tick_step):
+            if bar_idx in global_bar_map:
+                tick_positions.append(bar_idx)
+                tick_labels.append(str(global_bar_map[bar_idx]))
+
+        ax2.set_yticks(tick_positions)
+        ax2.set_yticklabels(tick_labels)
+        ax2.set_ylabel("bar index (global)", fontsize=10)
 
     return ax
 

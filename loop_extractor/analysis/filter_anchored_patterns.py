@@ -9,6 +9,7 @@ Step 6.2 in the pipeline: Filters patterns within each anchored section file.
 
 import numpy as np
 import pandas as pd
+import shutil
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 import re
@@ -368,9 +369,13 @@ def filter_all_anchored_patterns(
         # Extract pattern length from filename (L1, L2, L4)
         pattern_len = extract_pattern_len_from_filename(input_file.name)
 
-        # Output filename: replace _anchored.csv with _filtered.csv
-        output_filename = input_file.name.replace('_anchored.csv', '_filtered.csv')
-        output_file = output_path / output_filename
+        # Output filename: keep same name (folder distinguishes filtered from anchored)
+        output_file = output_path / input_file.name
+
+        # Copy corresponding reference_onsets file to output folder (for plotting)
+        ref_onsets_file = input_file.parent / input_file.name.replace('_anchored.csv', '_reference_onsets.csv')
+        if ref_onsets_file.exists():
+            shutil.copy2(ref_onsets_file, output_path / ref_onsets_file.name)
 
         if verbose:
             print(f"\n  Processing: {input_file.name} (L={pattern_len})")
