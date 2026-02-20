@@ -75,7 +75,11 @@ def filter_anchored_csv(
     """
     Filter anchored patterns using hybrid approach based on pattern count.
 
-    HYBRID FILTERING STRATEGY:
+    FILTERING ORDER:
+    1. First, remove patterns without a reference onset (not in reference_onsets CSV)
+    2. Then apply Tukey/running mean filtering on remaining patterns
+
+    HYBRID FILTERING STRATEGY (step 2):
     - If patterns <= no_of_repetitions_TH: Use percentage-based method (running mean)
       - First loop (reference loop) is always kept
       - Remove loops with < threshold * running_mean onset count
@@ -120,14 +124,36 @@ def filter_anchored_csv(
     min_bar = df['bar_number'].min()
     df['loop_index'] = (df['bar_number'] - min_bar) // pattern_len
 
+    # =========================================================================
+    # STEP 1: Filter out patterns without reference onset
+    # =========================================================================
+    # Load reference onsets CSV to check which patterns have a reference onset
+    ref_csv_path = input_path.parent / input_path.name.replace('_anchored.csv', '_reference_onsets.csv')
+
+    loops_without_ref = set()
+    if ref_csv_path.exists():
+        ref_df = pd.read_csv(ref_csv_path)
+        # bar_number in ref_onsets is the starting bar of each pattern (0-based within section)
+        # Convert to loop_index
+        if 'bar_number' in ref_df.columns:
+            ref_loop_indices = set(ref_df['bar_number'] // pattern_len)
+            all_loop_indices = set(df['loop_index'].unique())
+            loops_without_ref = all_loop_indices - ref_loop_indices
+
     # Count onsets per loop (where onset_time is not NaN)
     loop_onset_counts = df.groupby('loop_index')['onset_time'].apply(
         lambda x: x.notna().sum()
     ).to_dict()
 
-    total_patterns = len(loop_onset_counts)
+    # Remove loops without reference onset from consideration
+    for loop_idx in loops_without_ref:
+        if loop_idx in loop_onset_counts:
+            del loop_onset_counts[loop_idx]
+
+    total_patterns_original = len(set(df['loop_index'].unique()))
+    total_patterns = len(loop_onset_counts)  # After reference filtering
     loops_to_keep = set()
-    loops_to_remove = set()
+    loops_to_remove = set(loops_without_ref)  # Start with loops without ref onset
 
     # HYBRID APPROACH: Choose filtering method based on pattern count
     if total_patterns <= no_of_repetitions_TH:
@@ -199,6 +225,7 @@ def filter_anchored_csv(
     kept_patterns = len(loops_to_keep)
     removed_patterns = len(loops_to_remove)
     removed_indices = sorted(list(loops_to_remove))
+    removed_no_ref_indices = sorted(list(loops_without_ref))
 
     # Write combined metadata (original + filtering) then CSV data
     with open(output_csv, 'w') as f:
@@ -209,7 +236,9 @@ def filter_anchored_csv(
         # Write filtering metadata
         f.write(f"# filtering_method={filtering_method}\n")
         f.write(f"# patterns_displayed={kept_patterns}\n")
-        f.write(f"# patterns_total={total_patterns}\n")
+        f.write(f"# patterns_total={total_patterns_original}\n")
+        f.write(f"# patterns_with_ref_onset={total_patterns}\n")
+        f.write(f"# removed_no_ref_onset={','.join(map(str, removed_no_ref_indices))}\n")
         if total_patterns <= no_of_repetitions_TH:
             f.write(f"# filter_threshold={threshold}\n")
         else:
@@ -230,6 +259,7 @@ def filter_anchored_csv(
 
 def filter_all_anchored_patterns(
     anchoring_dir: Path,
+    output_dir: Path = None,
     iqr_multiplier: float = 1.5,
     threshold: float = 0.5,
     no_of_repetitions_TH: int = 2,
@@ -238,12 +268,14 @@ def filter_all_anchored_patterns(
     """
     Filter all anchored CSVs in the 6.1_anchoring directory.
 
-    Processes all *_anchored.csv files, creating *_anchored_filtered.csv output.
+    Processes all *_anchored.csv files, creating *_filtered.csv output in 6.2_filtered_patterns.
 
     Parameters
     ----------
     anchoring_dir : Path
         Path to 6.1_anchoring directory
+    output_dir : Path, optional
+        Path to output directory (default: sibling 6.2_filtered_patterns folder)
     iqr_multiplier : float
         IQR multiplier for Tukey outlier detection (default 1.5)
     threshold : float
@@ -265,6 +297,13 @@ def filter_all_anchored_patterns(
             print(f"  ! Anchoring directory not found: {anchoring_dir}")
         return {}
 
+    # Create output directory (6.2_filtered_patterns as sibling to 6.1_anchoring)
+    if output_dir is None:
+        output_path = anchoring_path.parent / '6.2_filtered_patterns'
+    else:
+        output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
     # Find all anchored CSV files (exclude macOS resource fork files)
     anchored_files = sorted([
         f for f in anchoring_path.glob("*_anchored.csv")
@@ -278,6 +317,8 @@ def filter_all_anchored_patterns(
 
     if verbose:
         print(f"\nStep 6.2: Filtering anchored patterns")
+        print(f"  Input:  {anchoring_path}")
+        print(f"  Output: {output_path}")
         print(f"  Running mean (threshold={threshold}) for patterns ≤ {no_of_repetitions_TH}")
         print(f"  Tukey (IQR multiplier={iqr_multiplier}) for patterns > {no_of_repetitions_TH}")
         print(f"  Found {len(anchored_files)} anchored files")
@@ -288,9 +329,9 @@ def filter_all_anchored_patterns(
         # Extract pattern length from filename (L1, L2, L4)
         pattern_len = extract_pattern_len_from_filename(input_file.name)
 
-        # Output filename: replace _anchored.csv with _anchored_filtered.csv
-        output_filename = input_file.name.replace('_anchored.csv', '_anchored_filtered.csv')
-        output_file = anchoring_path / output_filename
+        # Output filename: replace _anchored.csv with _filtered.csv
+        output_filename = input_file.name.replace('_anchored.csv', '_filtered.csv')
+        output_file = output_path / output_filename
 
         if verbose:
             print(f"\n  Processing: {input_file.name} (L={pattern_len})")
@@ -320,7 +361,7 @@ def filter_all_anchored_patterns(
                 print(f"    ! No patterns kept")
 
     if verbose:
-        print(f"\n  Filtered {len(results)} files")
+        print(f"\n  Filtered {len(results)} files -> {output_path}")
 
     return results
 
@@ -346,4 +387,10 @@ if __name__ == "__main__":
     threshold = float(sys.argv[3]) if len(sys.argv) > 3 else 0.5
     no_of_repetitions_TH = int(sys.argv[4]) if len(sys.argv) > 4 else 2
 
-    filter_all_anchored_patterns(anchoring_dir, iqr_multiplier, threshold, no_of_repetitions_TH)
+    filter_all_anchored_patterns(
+        anchoring_dir=anchoring_dir,
+        output_dir=None,  # Use default sibling folder
+        iqr_multiplier=iqr_multiplier,
+        threshold=threshold,
+        no_of_repetitions_TH=no_of_repetitions_TH
+    )

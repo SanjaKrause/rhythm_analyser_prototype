@@ -864,8 +864,10 @@ def run_complete_pipeline(
                     print("\n[6.2] Filtering anchored patterns...")
 
                 from analysis.filter_anchored_patterns import filter_all_anchored_patterns
+                filtered_dir = paths['anchoring_dir'].parent / '6.2_filtered_patterns'
                 filter_results = filter_all_anchored_patterns(
                     anchoring_dir=anchoring_dir,
+                    output_dir=filtered_dir,
                     iqr_multiplier=config.IQR_MULTIPLIER_TUKEY,
                     threshold=config.RUNNING_MEAN_THRESHOLD,
                     no_of_repetitions_TH=config.NO_OF_REPETITIONS_TH,
@@ -873,6 +875,7 @@ def run_complete_pipeline(
                 )
 
                 results['anchoring_filtered_files'] = filter_results
+                results['anchoring_filtered_dir'] = str(filtered_dir)
                 results['steps_completed'].append('anchoring_filtering')
 
                 if verbose:
