@@ -214,31 +214,68 @@ def filter_anchored_csv(
     # Filter dataframe to keep only non-removed patterns
     df_filtered = df[df['loop_index'].isin(loops_to_keep)].copy()
 
-    # Drop the temporary loop_index column from filtered data
-    df_filtered = df_filtered.drop(columns=['loop_index'])
-
     # Save filtered CSV with combined metadata
     output_path = Path(output_csv)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Calculate statistics
+    # Calculate statistics - separate by removal reason
+    removed_no_ref_pattern_indices = sorted(list(loops_without_ref))
+    # Tukey/running mean removed = all removed minus those removed for missing ref
+    removed_by_filter = loops_to_remove - loops_without_ref
+    removed_filter_pattern_indices = sorted(list(removed_by_filter))
+
     kept_patterns = len(loops_to_keep)
-    removed_patterns = len(loops_to_remove)
-    removed_indices = sorted(list(loops_to_remove))
-    removed_no_ref_indices = sorted(list(loops_without_ref))
+    kept_pattern_indices = sorted(list(loops_to_keep))
+    kept_bars = len(df_filtered)  # rows in filtered df (before dropping loop_index)
+    # Get kept bar numbers (global)
+    if 'bar_number_global' in df.columns:
+        kept_bar_numbers = sorted(df_filtered['bar_number_global'].unique().tolist())
+    else:
+        kept_bar_numbers = sorted(df_filtered['bar_number'].unique().tolist())
+
+    # Get actual bar numbers for removed patterns (use global bar numbers)
+    if 'bar_number_global' in df.columns:
+        removed_no_ref_bar_numbers = sorted(df[df['loop_index'].isin(loops_without_ref)]['bar_number_global'].unique().tolist())
+        removed_filter_bar_numbers = sorted(df[df['loop_index'].isin(removed_by_filter)]['bar_number_global'].unique().tolist())
+    else:
+        # Fallback to relative bar numbers if global not available
+        removed_no_ref_bar_numbers = sorted(df[df['loop_index'].isin(loops_without_ref)]['bar_number'].unique().tolist())
+        removed_filter_bar_numbers = sorted(df[df['loop_index'].isin(removed_by_filter)]['bar_number'].unique().tolist())
+
+    removed_no_ref_patterns = len(loops_without_ref)
+    removed_no_ref_bars = len(removed_no_ref_bar_numbers)
+
+    removed_filter_patterns = len(removed_by_filter)
+    removed_filter_bars = len(removed_filter_bar_numbers)
+
+    # Drop the temporary loop_index column from filtered data
+    df_filtered = df_filtered.drop(columns=['loop_index'])
 
     # Write combined metadata (original + filtering) then CSV data
     with open(output_csv, 'w') as f:
-        # Write original metadata first
+        # Write original metadata first (rename no_of_repetitions to no_of_repetitions_before)
         for key, value in original_metadata.items():
-            f.write(f"# {key}={value}\n")
+            if key == 'no_of_repetitions':
+                f.write(f"# no_of_repetitions_before={value}\n")
+            else:
+                f.write(f"# {key}={value}\n")
 
-        # Write filtering metadata
+        # Write filtering summary (clean format)
         f.write(f"# filtering_method={filtering_method}\n")
-        f.write(f"# patterns_displayed={kept_patterns}\n")
-        f.write(f"# patterns_total={total_patterns_original}\n")
-        f.write(f"# patterns_with_ref_onset={total_patterns}\n")
-        f.write(f"# removed_no_ref_onset={','.join(map(str, removed_no_ref_indices))}\n")
+        f.write(f"# patterns_kept={kept_patterns}\n")
+        f.write(f"# patterns_kept_indices={';'.join(map(str, kept_pattern_indices))}\n")
+        f.write(f"# bars_kept={len(kept_bar_numbers)}\n")
+        f.write(f"# bars_kept_indices={';'.join(map(str, kept_bar_numbers))}\n")
+        f.write(f"# patterns_removed_no_ref={removed_no_ref_patterns}\n")
+        f.write(f"# patterns_removed_no_ref_indices={';'.join(map(str, removed_no_ref_pattern_indices)) if removed_no_ref_pattern_indices else ''}\n")
+        f.write(f"# bars_removed_no_ref={removed_no_ref_bars}\n")
+        f.write(f"# bars_removed_no_ref_indices={';'.join(map(str, removed_no_ref_bar_numbers)) if removed_no_ref_bar_numbers else ''}\n")
+        f.write(f"# patterns_removed_tukey_runMean={removed_filter_patterns}\n")
+        f.write(f"# patterns_removed_tukey_runMean_indices={';'.join(map(str, removed_filter_pattern_indices)) if removed_filter_pattern_indices else ''}\n")
+        f.write(f"# bars_removed_tukey_runMean={removed_filter_bars}\n")
+        f.write(f"# bars_removed_tukey_runMean_indices={';'.join(map(str, removed_filter_bar_numbers)) if removed_filter_bar_numbers else ''}\n")
+
+        # Write filter parameters
         if total_patterns <= no_of_repetitions_TH:
             f.write(f"# filter_threshold={threshold}\n")
         else:
@@ -249,7 +286,9 @@ def filter_anchored_csv(
             f.write(f"# filter_lower_bound={lower_bound:.2f}\n")
             f.write(f"# filter_upper_bound={upper_bound:.2f}\n")
             f.write(f"# filter_median={median_onsets:.2f}\n")
-        f.write(f"# removed_pattern_indices={','.join(map(str, removed_indices))}\n")
+
+        # Write final repetition count (after filtering)
+        f.write(f"# no_of_repetitions={kept_patterns}\n")
 
         # Write the CSV content
         df_filtered.to_csv(f, index=False)
@@ -348,12 +387,20 @@ def filter_all_anchored_patterns(
         if not df_filtered.empty:
             # Read back the metadata to report
             metadata = parse_csv_metadata(output_file)
-            patterns_displayed = metadata.get('patterns_displayed', '?')
-            patterns_total = metadata.get('patterns_total', '?')
+            patterns_kept = metadata.get('patterns_kept', '?')
+            bars_kept = metadata.get('bars_kept', '?')
+            patterns_no_ref = metadata.get('patterns_removed_no_ref', '0')
+            bars_no_ref = metadata.get('bars_removed_no_ref', '0')
+            patterns_filter = metadata.get('patterns_removed_tukey_runMean', '0')
+            bars_filter = metadata.get('bars_removed_tukey_runMean', '0')
             method = metadata.get('filtering_method', '?')
 
             if verbose:
-                print(f"    ✓ Kept {patterns_displayed}/{patterns_total} patterns ({method})")
+                print(f"    ✓ kept: {patterns_kept} patterns, {bars_kept} bars")
+                if int(patterns_no_ref) > 0:
+                    print(f"      removed (no ref): {patterns_no_ref} patterns, {bars_no_ref} bars")
+                if int(patterns_filter) > 0:
+                    print(f"      removed ({method}): {patterns_filter} patterns, {bars_filter} bars")
 
             results[input_file.name] = str(output_file)
         else:
