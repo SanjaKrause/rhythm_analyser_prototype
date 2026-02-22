@@ -897,8 +897,41 @@ def run_complete_pipeline(
                 if verbose:
                     print(f"  ✓ Filtered patterns raster plot created")
 
+                # ================================================================
+                # STEP 6.4: ONSET HISTOGRAMS
+                # ================================================================
+                if verbose:
+                    print("\n[6.4] Creating onset histograms...")
+
+                from analysis import anchored_onset_histograms
+
+                # Create histograms for unfiltered patterns (output to 6.1 folder)
+                histogram_results_unfiltered = anchored_onset_histograms.create_combined_onset_histograms(
+                    filtered_dir=str(anchoring_dir),
+                    output_dir=str(anchoring_dir),
+                    track_id=track_id,
+                    verbose=verbose
+                )
+
+                # Create histograms for filtered patterns (output to 6.2 folder)
+                histogram_results_filtered = anchored_onset_histograms.create_combined_onset_histograms(
+                    filtered_dir=str(filtered_dir),
+                    output_dir=str(filtered_dir),
+                    track_id=track_id,
+                    verbose=verbose
+                )
+
+                results['onset_histogram_files'] = {
+                    'unfiltered': histogram_results_unfiltered,
+                    'filtered': histogram_results_filtered
+                }
+                results['steps_completed'].append('onset_histograms')
+
+                if verbose:
+                    print(f"  ✓ Onset histograms created (unfiltered + filtered)")
+
     except Exception as e:
-        error_msg = f"Step 6.1/6.2/6.3 failed: {e}"
+        error_msg = f"Step 6.1/6.2/6.3/6.4 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")

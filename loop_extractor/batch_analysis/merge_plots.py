@@ -674,6 +674,80 @@ def merge_plots(output_dir: Path):
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
+    # 25. Merge unfiltered onset histograms (from 6.1_anchoring folder)
+    print('\nLooking for unfiltered onset histograms...')
+    unfiltered_pattern_pngs = []
+    unfiltered_bar_pngs = []
+    for track_dir in track_dirs:
+        pattern_png = track_dir / '6.1_anchoring' / f'{track_dir.name}_onsets_per_pattern.png'
+        bar_png = track_dir / '6.1_anchoring' / f'{track_dir.name}_onsets_per_bar.png'
+        if pattern_png.exists():
+            unfiltered_pattern_pngs.append(pattern_png)
+            print(f'  Found unfiltered onsets_per_pattern: {track_dir.name}')
+        if bar_png.exists():
+            unfiltered_bar_pngs.append(bar_png)
+
+    if unfiltered_pattern_pngs:
+        print(f'\nConverting and merging {len(unfiltered_pattern_pngs)} unfiltered onsets_per_pattern PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(unfiltered_pattern_pngs):
+            temp_pdf = temp_dir / f'unfiltered_pattern_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_onsets_per_pattern.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    if unfiltered_bar_pngs:
+        print(f'\nConverting and merging {len(unfiltered_bar_pngs)} unfiltered onsets_per_bar PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(unfiltered_bar_pngs):
+            temp_pdf = temp_dir / f'unfiltered_bar_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_onsets_per_bar.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 26. Merge filtered onset histograms (from 6.2_filtered_patterns folder)
+    print('\nLooking for filtered onset histograms...')
+    filtered_pattern_pngs = []
+    filtered_bar_pngs = []
+    for track_dir in track_dirs:
+        pattern_png = track_dir / '6.2_filtered_patterns' / f'{track_dir.name}_onsets_per_pattern.png'
+        bar_png = track_dir / '6.2_filtered_patterns' / f'{track_dir.name}_onsets_per_bar.png'
+        if pattern_png.exists():
+            filtered_pattern_pngs.append(pattern_png)
+            print(f'  Found filtered onsets_per_pattern: {track_dir.name}')
+        if bar_png.exists():
+            filtered_bar_pngs.append(bar_png)
+
+    if filtered_pattern_pngs:
+        print(f'\nConverting and merging {len(filtered_pattern_pngs)} filtered onsets_per_pattern PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(filtered_pattern_pngs):
+            temp_pdf = temp_dir / f'filtered_pattern_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_filtered_onsets_per_pattern.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    if filtered_bar_pngs:
+        print(f'\nConverting and merging {len(filtered_bar_pngs)} filtered onsets_per_bar PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(filtered_bar_pngs):
+            temp_pdf = temp_dir / f'filtered_bar_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_filtered_onsets_per_bar.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
     # Clean up temporary files at the end
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
