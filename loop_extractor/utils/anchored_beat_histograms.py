@@ -241,9 +241,12 @@ def create_anchored_beat_histograms(
             sec_no = parsed['section_no']
             if sec_no not in sections:
                 sections[sec_no] = {}
+            # Read full metadata from anchored CSV file
+            full_metadata = read_anchored_csv_metadata(str(csv_file))
             sections[sec_no][parsed['pattern_length']] = {
                 'path': csv_file,
-                'metadata': parsed
+                'metadata': parsed,
+                'full_metadata': full_metadata
             }
 
     # Process each section and pattern length, save separate CSVs
@@ -267,7 +270,13 @@ def create_anchored_beat_histograms(
                 ratio = metadata['ratio_in_snippet']
                 csv_filename = f"SecNo{sec_no}_L{pattern_length}_{section_label}_{ratio:.4f}_ioi_data.csv"
                 csv_output_path = output_path / csv_filename
-                df_ioi.to_csv(csv_output_path, index=False)
+
+                # Write CSV with metadata header (copied from original anchored CSV)
+                full_metadata = csv_info['full_metadata']
+                with open(csv_output_path, 'w') as f:
+                    for key, value in full_metadata.items():
+                        f.write(f"# {key}={value}\n")
+                    df_ioi.to_csv(f, index=False)
                 output_files['csv_files'].append(str(csv_output_path))
                 print(f"    SecNo{sec_no} L{pattern_length}: {len(df_ioi)} IOIs -> {csv_filename}")
 
@@ -447,7 +456,13 @@ def create_anchored_beat_histograms(
             df_stats = pd.DataFrame(csv_stats_rows)
             stats_csv_filename = f"SecNo{sec_no}_L{pattern_length}_{section_label}_{ratio:.4f}_beat_histogram_stats.csv"
             stats_csv_path = output_path / stats_csv_filename
-            df_stats.to_csv(stats_csv_path, index=False)
+
+            # Write CSV with metadata header (copied from original anchored CSV)
+            full_metadata = sections[sec_no][pattern_length]['full_metadata']
+            with open(stats_csv_path, 'w') as f:
+                for key, value in full_metadata.items():
+                    f.write(f"# {key}={value}\n")
+                df_stats.to_csv(f, index=False)
             output_files['csv_files'].append(str(stats_csv_path))
 
     # Add a single legend for the entire figure describing the visual elements

@@ -1,7 +1,9 @@
 # Checkpoints and pretrained models (large files)
 Beat-Transformer/checkpoint/*.pt
 *.pt
+*.safetensors
 pretrained_models/
+songformer/src/SongFormer/ckpts/
 
 # Python
 __pycache__/
