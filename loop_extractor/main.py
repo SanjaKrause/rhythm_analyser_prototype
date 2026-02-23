@@ -14,11 +14,14 @@ Complete pipeline for music microtiming analysis and loop extraction:
 5.2. Filter close onsets (for drumtranscriber mode)
 5.5. Pattern length detection (drum/mel/pitch methods with circular convolution)
 6. Raster/grid calculations
+6.1. Section anchoring (anchor onsets to SongFormer sections with FlexStart)
+6.2. Filter anchored patterns (Tukey IQR outlier removal)
 6.5. Raster plots
-6.6. Microtiming plots
-6.7. Rhythm histograms
+6.6. Microtiming plots / Anchored rhythm histograms
+6.7. Rhythm histograms / Anchored beat histograms
 6.8. Full song histograms
-7. RMS histogram analysis
+7. RMS histogram analysis (commented out) STEP 7: ANCHORED RHYTHM HISTOGRAMS
+7.1. Anchored beat histograms (IOI analysis from filtered patterns)
 8. Audio example generation
 9. LEPA data export
 10. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
@@ -1389,6 +1392,44 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 7 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 7.1: ANCHORED BEAT HISTOGRAMS
+    # ========================================================================
+    try:
+        if verbose:
+            print("\n[7.1] Creating anchored beat histograms...")
+
+        from utils import anchored_beat_histograms
+
+        # Output folder for anchored beat histograms
+        beat_hist_dir = track_dir / '6.7_anchored_beat_histograms'
+        beat_hist_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create from filtered patterns (6.2_filtered_patterns -> 6.7_anchored_beat_histograms)
+        if filtered_dir.exists():
+            beat_results = anchored_beat_histograms.create_anchored_beat_histograms(
+                filtered_patterns_dir=str(filtered_dir),
+                track_id=track_id,
+                output_dir=str(beat_hist_dir)
+            )
+
+            beat_results_all = anchored_beat_histograms.create_anchored_beat_histograms_all_onsets(
+                filtered_patterns_dir=str(filtered_dir),
+                track_id=track_id,
+                output_dir=str(beat_hist_dir)
+            )
+
+        results['steps_completed'].append('anchored_beat_histograms')
+
+        if verbose:
+            print(f"  ✓ Anchored beat histograms created")
+
+    except Exception as e:
+        error_msg = f"Step 7.1 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")

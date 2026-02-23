@@ -2676,6 +2676,13 @@ def calculate_section_anchored_phases(
                     phase = None
                     tick_phase = None
 
+                # Corrected pattern boundaries (using same ref offset for start and end)
+                corrected_pattern_start = segment_start_time + segment_ref_offset_s
+                corrected_pattern_end = segment_end_time + segment_ref_offset_s
+                pattern_duration = corrected_pattern_end - corrected_pattern_start
+                # Local tempo: BPM = 60 * beats / duration, where beats = pattern_len * 4 (4 beats per bar)
+                local_tempo = 60.0 * pattern_len * 4 / pattern_duration if pattern_duration > 0 else None
+
                 rows.append({
                     'bar_number': bar_offset + (segment_idx * pattern_len),
                     'bar_number_global': bar_idx,
@@ -2684,7 +2691,11 @@ def calculate_section_anchored_phases(
                     'phase': phase,
                     'grid_time': grid_time,
                     'grid_phase': grid_phase,
-                    'tick_phase': tick_phase
+                    'tick_phase': tick_phase,
+                    'pattern_index': segment_idx,
+                    'pattern_start_time': corrected_pattern_start,
+                    'pattern_end_time': corrected_pattern_end,
+                    'local_tempo': local_tempo
                 })
 
         segment_idx += 1
@@ -2833,6 +2844,13 @@ def run_anchoring(
             output_filename = f"SecNo{sec_idx + 1}_L{L}_{section_label}_{ratio_in_snippet:.4f}_anchored.csv"
             output_file = output_path / output_filename
 
+            # Calculate mean_section_tempo from local_tempo (one value per pattern)
+            mean_section_tempo = None
+            if 'local_tempo' in df_onsets.columns and 'pattern_index' in df_onsets.columns:
+                unique_tempos = df_onsets.groupby('pattern_index')['local_tempo'].first().dropna()
+                if len(unique_tempos) > 0:
+                    mean_section_tempo = float(np.mean(unique_tempos))
+
             # Write CSV with metadata header
             with open(output_file, 'w') as f:
                 f.write(f"# section_label={section_label}\n")
@@ -2848,6 +2866,8 @@ def run_anchoring(
                 f.write(f"# no_of_repetitions={n_repetitions}\n")
                 f.write(f"# snippet_start={snippet_start:.6f}\n")
                 f.write(f"# snippet_end={snippet_end:.6f}\n")
+                if mean_section_tempo is not None:
+                    f.write(f"# mean_section_tempo={mean_section_tempo:.2f}\n")
                 df_onsets.to_csv(f, index=False)
 
             # Write reference onsets CSV (for plotting)

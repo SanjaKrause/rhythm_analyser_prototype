@@ -320,6 +320,8 @@ def create_anchored_rhythm_histograms(
             filtering_method = metadata.get('filtering_method', '')
             # ratio_in_snippet: fraction of snippet covered by this section (duration_inside_snippet / snippet_duration)
             ratio_in_snippet = metadata.get('ratio_in_snippet', parsed.get('ratio') if parsed else None)
+            # mean_section_tempo: average tempo across all patterns in this section
+            mean_section_tempo = metadata.get('mean_section_tempo', None)
 
             # Extract histogram and statistics
             hist, median_phases, iqr_16th, raw_iqr_phases = extract_rhythm_histogram_from_anchored(
@@ -424,6 +426,7 @@ def create_anchored_rhythm_histograms(
                     'pattern_length': pattern_length,
                     'num_repetitions': num_repetitions,
                     'ratio_in_snippet': ratio_in_snippet,
+                    'mean_section_tempo': mean_section_tempo,
                     'position': pos_idx + 1,  # 1-based
                     'onset_strength': float(hist[pos_idx]),
                     'median_tick_phase': float(median_phases[pos_idx]) if not np.isnan(median_phases[pos_idx]) else None,
@@ -555,6 +558,7 @@ def create_anchored_groove_pulse_histograms(
             section_id = section_df['section_id'].iloc[0]
             num_repetitions = section_df['num_repetitions'].iloc[0]
             ratio_in_snippet = section_df['ratio_in_snippet'].iloc[0] if 'ratio_in_snippet' in section_df.columns else None
+            mean_section_tempo = section_df['mean_section_tempo'].iloc[0] if 'mean_section_tempo' in section_df.columns else None
             num_positions = pattern_length * 16
 
             # Extract arrays from dataframe
@@ -660,6 +664,7 @@ def create_anchored_groove_pulse_histograms(
                     'pattern_length': pattern_length,
                     'num_repetitions': num_repetitions,
                     'ratio_in_snippet': ratio_in_snippet,
+                    'mean_section_tempo': mean_section_tempo,
                     'position': pos_idx + 1,
                     'onset_strength_original': float(onset_strength[pos_idx]),
                     'onset_strength_filtered': float(filtered_hist[pos_idx]),
@@ -796,6 +801,7 @@ def create_anchored_rhythm_patterns(
             section_id = section_df['section_id'].iloc[0]
             num_repetitions = section_df['num_repetitions'].iloc[0]
             ratio_in_snippet = section_df['ratio_in_snippet'].iloc[0] if 'ratio_in_snippet' in section_df.columns else None
+            mean_section_tempo = section_df['mean_section_tempo'].iloc[0] if 'mean_section_tempo' in section_df.columns else None
             num_positions = pattern_length * 16
 
             # Extract arrays from dataframe
@@ -902,6 +908,7 @@ def create_anchored_rhythm_patterns(
                     'pattern_length': pattern_length,
                     'num_repetitions': num_repetitions,
                     'ratio_in_snippet': ratio_in_snippet,
+                    'mean_section_tempo': mean_section_tempo,
                     'position': pos_idx + 1,
                     'onset_strength_filtered': float(onset_strength[pos_idx]),
                     'pattern_value': float(pattern_values[pos_idx]),

@@ -31,11 +31,14 @@
 22. [Step 13: Spotify Sections Analysis](#step-13-spotify-sections-analysis)
 23. [Step 14: Yodfat Rhythmic Complexity](#step-14-yodfat-rhythmic-complexity)
 24. [Step 6.1: Section Anchoring Analysis](#step-61-section-anchoring-analysis)
-25. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-26. [Data Dependencies](#data-dependencies)
-27. [Legend](#legend)
-28. [Notes](#notes)
-29. [TODO](#todo)
+25. [Step 6.2: Filtered Patterns](#step-62-filtered-patterns)
+26. [Step 6.6: Anchored Rhythm Histograms](#step-66-anchored-rhythm-histograms)
+27. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
+28. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+29. [Data Dependencies](#data-dependencies)
+30. [Legend](#legend)
+31. [Notes](#notes)
+32. [TODO](#todo)
 
 ---
 
@@ -2661,8 +2664,20 @@ Each anchored CSV includes metadata in comment headers:
 # no_of_repetitions=6
 # snippet_start=107.111000
 # snippet_end=137.111000
-bar_number,bar_number_global,tick_16th,onset_time,phase,grid_time,grid_phase,tick_phase
+# mean_section_tempo=102.97
+bar_number,bar_number_global,tick_16th,onset_time,phase,grid_time,grid_phase,tick_phase,pattern_index,pattern_start_time,pattern_end_time,local_tempo
 ```
+
+### New Tempo Columns
+
+Step 6.1 now calculates **per-pattern tempo** to capture local tempo variations:
+
+- **`local_tempo`**: BPM calculated per pattern = `60.0 * pattern_len * 4 / pattern_duration`
+  - For L=2 patterns: `60 * 2 * 4 / duration_in_seconds`
+  - Each row within a pattern shares the same `local_tempo` value
+- **`mean_section_tempo`**: Average of all `local_tempo` values across patterns in the section (in metadata header)
+- **`pattern_index`**: 0-based index identifying which pattern repetition this row belongs to
+- **`pattern_start_time`** / **`pattern_end_time`**: Absolute time boundaries of the pattern
 
 ### Raster Plot Visualization
 
@@ -2735,14 +2750,23 @@ The filtering process removes pattern repetitions that are outliers based on ons
 
 ### CSV Metadata Updates
 
-Filtered CSVs include additional metadata:
+Filtered CSVs preserve all Step 6.1 metadata (including `mean_section_tempo`) and add filtering info:
 
 ```
-# filtering_method=Tukey fence (k=1.5)
+# section_label=chorus
+# section_start_absolute=96.124000
+# ... (all 6.1 metadata preserved)
+# mean_section_tempo=102.97
+# filtering_method=Tukey (IQR multiplier=1.5)
 # no_of_repetitions_before=8
 # patterns_kept=6
+# patterns_kept_indices=0;2;3;4;5;7
 # bars_kept=12
+# bars_kept_indices=40;41;44;45;...
+# no_of_repetitions=6
 ```
+
+The data columns (`local_tempo`, `pattern_index`, etc.) are also preserved from Step 6.1.
 
 ### Visualization: Onsets Per Pattern
 
@@ -2821,19 +2845,78 @@ Each subplot title includes:
 
 ### CSV Output Format
 
-Each visualization produces a CSV with per-position data:
+Each visualization produces a CSV with per-position data, including the **mean_section_tempo** from Step 6.1:
 
 **Rhythm Histograms CSV:**
 ```csv
-section_id,sec_no,section_label,pattern_length,num_repetitions,ratio_in_snippet,position,onset_strength,median_tick_phase,iqr_tick_phase,iqr_16th
-SecNo1_chorus_L2,1,chorus,2,6,0.5438,1,1.0,0.0,0.0,0.0
-SecNo1_chorus_L2,1,chorus,2,6,0.5438,2,0.0,,,
+section_id,sec_no,section_label,pattern_length,num_repetitions,ratio_in_snippet,mean_section_tempo,position,onset_strength,median_tick_phase,iqr_tick_phase,iqr_16th
+SecNo1_chorus_L2,1,chorus,2,6,0.5438,102.97,1,1.0,0.0,0.0,0.0
+SecNo1_chorus_L2,1,chorus,2,6,0.5438,102.97,2,0.0,,,
 ...
 ```
 
 **Groove Pulse CSV:** Adds `onset_strength_original`, `onset_strength_filtered`, `threshold`
 
 **Rhythm Patterns CSV:** Adds `pattern_value`, `binary_threshold`
+
+The `mean_section_tempo` column allows downstream analysis to correlate rhythm patterns with tempo.
+
+---
+
+## Step 6.7: Anchored Beat Histograms (IOI Analysis)
+
+Step 6.7 creates **inter-onset interval (IOI) analysis** from the filtered section-anchored patterns, showing the distribution and timing of rhythmic note values.
+
+**Dependencies:** Step 6.2 (Filtered Patterns)
+
+**Input:** `6.2_filtered_patterns/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Filtered anchored phase data
+
+**Output:** `6.7_anchored_beat_histograms/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_ioi_data.csv` - IOI data per section (with full metadata header)
+- `SecNo{N}_L{L}_{label}_{ratio}_ioi_stats.csv` - IOI statistics per section
+- `{track_id}_anchored_beat_histograms.png` - Combined IOI histogram visualization
+- `{track_id}_anchored_beat_histograms_all_onsets.png` - Scatter plot of all IOIs
+
+### IOI Categories
+
+Inter-onset intervals are categorized by their duration in 16th notes:
+
+| Ticks | Category | Musical Value |
+|-------|----------|---------------|
+| ≥16 | 4/4 | Whole note |
+| ≥8 | 2/4 | Half note |
+| ≥6 | 6/16 | Dotted quarter |
+| ≥4 | 1/4 | Quarter note |
+| ≥3 | 3/16 | Dotted eighth |
+| ≥2 | 1/8 | Eighth note |
+| ≥1 | 1/16 | Sixteenth note |
+
+### IOI Data CSV Format
+
+Each IOI CSV preserves the full metadata header from Step 6.2 and contains:
+
+```csv
+section_label,pattern_length,no_of_repetitions,ratio_in_snippet,onset1_bar,onset1_tick,onset1_tick_absolute,onset1_tick_phase,onset1_time,onset2_bar,onset2_tick,onset2_tick_absolute,onset2_tick_phase,onset2_time,tick_delta,tick_phase_diff,ioi_exact_ticks,ioi_seconds,ioi_category,section_no
+chorus,2,3,0.5438,0,0,0,0.0,70.774,0,4,4,-0.0199,71.355,4,-0.0199,3.98,0.580,1/4,1
+```
+
+### Visualizations
+
+#### 1. Anchored Beat Histograms
+
+Combined stacked bar chart showing IOI category distribution per section:
+- One subplot per section/pattern length
+- Bars colored by IOI category (1/4, 1/8, etc.)
+- Shows relative frequency of each rhythmic duration
+
+#### 2. All Onsets Scatter Plot
+
+Scatter plot showing individual IOI values:
+- X-axis: onset position in pattern (tick)
+- Y-axis: IOI duration (ticks)
+- Points colored by IOI category
+- Shows timing variability at each position
 
 ---
 

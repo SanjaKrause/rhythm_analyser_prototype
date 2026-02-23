@@ -26,6 +26,8 @@ Merges:
 - All anchored rhythm histograms into all_anchored_rhythm_histograms.pdf
 - All anchored groove pulse histograms into all_anchored_groove_pulse_histograms.pdf
 - All anchored rhythm patterns into all_anchored_rhythm_patterns.pdf
+- All anchored beat histograms into all_anchored_beat_histograms.pdf
+- All anchored beat histograms (all onsets) into all_anchored_beat_histograms_all_onsets.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -817,6 +819,48 @@ def merge_plots(output_dir: Path):
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
         output_pdf = batch_dir / 'all_anchored_rhythm_patterns.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 30. Merge anchored beat histograms (PNG files in 6.7_anchored_beat_histograms folder)
+    print('\nLooking for anchored beat histograms...')
+    anchored_beat_pngs = []
+    for track_dir in track_dirs:
+        anchored_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_anchored_beat_histograms.png'
+        if anchored_png.exists():
+            anchored_beat_pngs.append(anchored_png)
+            print(f'  Found anchored beat histogram: {track_dir.name}')
+
+    if anchored_beat_pngs:
+        print(f'\nConverting and merging {len(anchored_beat_pngs)} anchored beat histogram PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(anchored_beat_pngs):
+            temp_pdf = temp_dir / f'anchored_beat_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_anchored_beat_histograms.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 31. Merge anchored beat histograms all onsets (PNG files in 6.7_anchored_beat_histograms folder)
+    print('\nLooking for anchored beat histograms (all onsets)...')
+    anchored_beat_all_pngs = []
+    for track_dir in track_dirs:
+        anchored_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_anchored_beat_histograms_all_onsets.png'
+        if anchored_png.exists():
+            anchored_beat_all_pngs.append(anchored_png)
+            print(f'  Found anchored beat histogram (all onsets): {track_dir.name}')
+
+    if anchored_beat_all_pngs:
+        print(f'\nConverting and merging {len(anchored_beat_all_pngs)} anchored beat histogram (all onsets) PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(anchored_beat_all_pngs):
+            temp_pdf = temp_dir / f'anchored_beat_all_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_anchored_beat_histograms_all_onsets.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
