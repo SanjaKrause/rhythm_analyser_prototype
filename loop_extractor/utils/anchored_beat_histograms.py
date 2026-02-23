@@ -164,7 +164,7 @@ def process_section_ioi(csv_path: str) -> pd.DataFrame:
         all_ioi_data.append({
             'section_label': section_label,
             'pattern_length': pattern_length,
-            'no_of_repetitions': no_of_repetitions,
+            'num_repetitions': no_of_repetitions,
             'ratio_in_snippet': ratio_in_snippet,
             'onset1_bar': int(bar1),
             'onset1_tick': int(tick1),
@@ -262,11 +262,13 @@ def create_anchored_beat_histograms(
             df_ioi = process_section_ioi(str(csv_path))
 
             if not df_ioi.empty:
-                df_ioi['section_no'] = sec_no
+                section_label = metadata['section_label']
+                # Add section_id and section_no columns right after section_label
+                df_ioi.insert(0, 'section_id', f'SecNo{sec_no}_{section_label}_L{pattern_length}')
+                df_ioi.insert(2, 'section_no', sec_no)
                 all_ioi_data.append(df_ioi)
 
                 # Save separate CSV for this section/pattern length
-                section_label = metadata['section_label']
                 ratio = metadata['ratio_in_snippet']
                 csv_filename = f"SecNo{sec_no}_L{pattern_length}_{section_label}_{ratio:.4f}_ioi_data.csv"
                 csv_output_path = output_path / csv_filename
@@ -285,6 +287,12 @@ def create_anchored_beat_histograms(
         return {}
 
     df_all = pd.concat(all_ioi_data, ignore_index=True)
+
+    # Save aggregated IOI data CSV (all sections combined)
+    aggregated_csv_path = output_path / f'{track_id}_anchored_ioi_data.csv'
+    df_all.to_csv(aggregated_csv_path, index=False)
+    output_files['aggregated_ioi_csv'] = str(aggregated_csv_path)
+    print(f"    Saved aggregated IOI data: {aggregated_csv_path.name}")
 
     # Get all unique section numbers and pattern lengths
     all_sec_nos = sorted(sections.keys())
@@ -308,6 +316,9 @@ def create_anchored_beat_histograms(
         '6/16': 6, '2/4': 8, '4/4': 16
     }
 
+    # Collect all stats for aggregated CSV
+    all_stats_rows = []
+
     for row_idx, pattern_length in enumerate(all_pattern_lengths):
         for col_idx, sec_no in enumerate(all_sec_nos):
             ax = axes[row_idx, col_idx]
@@ -324,7 +335,7 @@ def create_anchored_beat_histograms(
 
             section_label = df_section['section_label'].iloc[0]
             ratio = df_section['ratio_in_snippet'].iloc[0]
-            num_reps = df_section['no_of_repetitions'].iloc[0]
+            num_reps = df_section['num_repetitions'].iloc[0]
 
             # Calculate statistics for each IOI category
             category_stats = {}
@@ -444,7 +455,7 @@ def create_anchored_beat_histograms(
             csv_stats_rows = []
             for cat in category_order:
                 stats = category_stats[cat]
-                csv_stats_rows.append({
+                row_data = {
                     'ioi_category': cat,
                     'nominal_ticks': stats['nominal_ticks'],
                     'count': stats['count'],
@@ -452,6 +463,17 @@ def create_anchored_beat_histograms(
                     'median_shift': stats['median_shift'],
                     'iqr_shift': stats['iqr_shift'],
                     'iqr_scaled': stats['iqr_scaled']
+                }
+                csv_stats_rows.append(row_data)
+                # Add to aggregated stats with section info
+                all_stats_rows.append({
+                    'section_id': f'SecNo{sec_no}_{section_label}_L{pattern_length}',
+                    'section_label': section_label,
+                    'section_no': sec_no,
+                    'pattern_length': pattern_length,
+                    'num_repetitions': num_reps,
+                    'ratio_in_snippet': ratio,
+                    **row_data
                 })
             df_stats = pd.DataFrame(csv_stats_rows)
             stats_csv_filename = f"SecNo{sec_no}_L{pattern_length}_{section_label}_{ratio:.4f}_beat_histogram_stats.csv"
@@ -464,6 +486,14 @@ def create_anchored_beat_histograms(
                     f.write(f"# {key}={value}\n")
                 df_stats.to_csv(f, index=False)
             output_files['csv_files'].append(str(stats_csv_path))
+
+    # Save aggregated stats CSV (all sections combined)
+    if all_stats_rows:
+        df_all_stats = pd.DataFrame(all_stats_rows)
+        aggregated_stats_csv_path = output_path / f'{track_id}_anchored_beat_histograms.csv'
+        df_all_stats.to_csv(aggregated_stats_csv_path, index=False)
+        output_files['aggregated_stats_csv'] = str(aggregated_stats_csv_path)
+        print(f"    Saved aggregated beat histograms: {aggregated_stats_csv_path.name}")
 
     # Add a single legend for the entire figure describing the visual elements
     from matplotlib.patches import Patch
@@ -573,7 +603,7 @@ def create_anchored_beat_histograms_all_onsets(
 
             section_label = df_section['section_label'].iloc[0]
             ratio = df_section['ratio_in_snippet'].iloc[0]
-            num_reps = df_section['no_of_repetitions'].iloc[0]
+            num_reps = df_section['num_repetitions'].iloc[0]
 
             ioi_values = df_section['ioi_exact_ticks'].values
             ioi_categories = df_section['ioi_category'].values

@@ -34,11 +34,12 @@
 25. [Step 6.2: Filtered Patterns](#step-62-filtered-patterns)
 26. [Step 6.6: Anchored Rhythm Histograms](#step-66-anchored-rhythm-histograms)
 27. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
-28. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-29. [Data Dependencies](#data-dependencies)
-30. [Legend](#legend)
-31. [Notes](#notes)
-32. [TODO](#todo)
+28. [Step 20: Snippet Ratio Batch Analysis](#step-20-snippet-ratio-batch-analysis)
+29. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+30. [Data Dependencies](#data-dependencies)
+31. [Legend](#legend)
+32. [Notes](#notes)
+33. [TODO](#todo)
 
 ---
 
@@ -2917,6 +2918,82 @@ Scatter plot showing individual IOI values:
 - Y-axis: IOI duration (ticks)
 - Points colored by IOI category
 - Shows timing variability at each position
+
+---
+
+## Step 20: Snippet Ratio Batch Analysis
+
+Step 20 is a **batch analysis** step that evaluates section coverage ratios across all processed songs, showing what percentage of songs meet various `ratio_in_snippet` thresholds.
+
+**Note:** This step only runs during batch (whole folder) processing, not for individual tracks.
+
+**Dependencies:** Step 6.6 (Anchored Rhythm Histograms)
+
+**Input:** `6.6_anchored_rhythm_histograms/` folders containing:
+- `{track_id}_anchored_rhythm_histograms.csv` - Section coverage data with `ratio_in_snippet` values
+
+**Output:** `snippet_ratio_batch_analysis/` folder containing:
+- `snippet_ratio_diagram.png` - Bar plot with conditions table
+- `snippet_ratio_diagram.pdf` - PDF version of the diagram
+- `snippet_ratio_results.csv` - Song IDs meeting each condition
+
+### Analysis Conditions
+
+The analysis evaluates songs against 11 conditions (cumulative/overlapping counting):
+
+| ID | Condition | Description |
+|----|-----------|-------------|
+| k | 1 section > 95% | At least one section covers >95% of snippet |
+| a | 1 section > 90% | At least one section covers >90% of snippet |
+| b | 1 section > 80% | At least one section covers >80% of snippet |
+| c | 1 section > 70% | At least one section covers >70% of snippet |
+| d | 1 section > 60% | At least one section covers >60% of snippet |
+| e | 1 section > 50% | At least one section covers >50% of snippet |
+| f | 2 sections both > 40% | Two or more sections each cover >40% |
+| g | 2 sections both > 30% | Two or more sections each cover >30% |
+| h | 1 > 30% AND 1 > 40% | At least one section >30% AND one >40% |
+| j | No section > 30% | All sections cover ≤30% of snippet |
+| i | 3+ sections > 20% each | Three or more sections each cover >20% |
+
+### Output Visualization
+
+The diagram consists of two parts:
+
+1. **Bar Plot (Top)**: Shows percentage of songs meeting each condition
+   - Primary Y-axis: Percentage of songs (%)
+   - Secondary Y-axis: Absolute song count
+   - X-axis: Condition letters (k, a, b, c, d, e, f, g, h, j, i)
+
+2. **Conditions Table (Bottom)**: Reference table showing:
+   - Condition ID (letter)
+   - Full condition description
+   - Song count
+   - Percentage
+
+### Results CSV Format
+
+```csv
+condition,description,count,percentage,song_ids
+k,1 section > 95%,15,12.5,101_Song Name; 203_Another Song; ...
+a,1 section > 90%,28,23.3,101_Song Name; 158_Track Name; ...
+...
+```
+
+### Script Location
+
+**Script**: `loop_extractor/batch_analysis/snippet_ratio_diagrams.py`
+
+**Standalone Usage**:
+```bash
+python snippet_ratio_diagrams.py /path/to/batch/output
+```
+
+**Pipeline Integration** (in `main.py`):
+```python
+# After batch processing completes
+from batch_analysis.snippet_ratio_diagrams import create_snippet_ratio_diagrams
+create_snippet_ratio_diagrams(Path(args.output_dir))
+```
 
 ---
 

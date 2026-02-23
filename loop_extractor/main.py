@@ -2288,6 +2288,16 @@ Environment:
         except Exception as e:
             print(f"\n⚠️  LEPA data export failed: {e}")
 
+        # Create snippet ratio diagrams (section coverage analysis)
+        try:
+            from batch_analysis.snippet_ratio_diagrams import create_snippet_ratio_diagrams
+            create_snippet_ratio_diagrams(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  Snippet ratio diagrams skipped: {ie}")
+            print("Install required packages: pip install matplotlib numpy")
+        except Exception as e:
+            print(f"\n⚠️  Snippet ratio diagrams failed: {e}")
+
         # Exit with error code if any files failed
         if batch_results['failed']:
             sys.exit(1)
