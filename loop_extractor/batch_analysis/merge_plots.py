@@ -23,6 +23,9 @@ Merges:
 - All onsets per bar (4-bar grid) plots into all_onsets_per_bar_4bar.pdf
 - All section anchoring raster plots into all_section_anchoring_raster.pdf
 - All filtered section anchoring raster plots into all_section_anchoring_raster_filtered.pdf
+- All anchored rhythm histograms into all_anchored_rhythm_histograms.pdf
+- All anchored groove pulse histograms into all_anchored_groove_pulse_histograms.pdf
+- All anchored rhythm patterns into all_anchored_rhythm_patterns.pdf
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -748,9 +751,82 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
+    # 27. Merge anchored rhythm histograms (PNG files in 6.6_anchored_rhythm_histograms folder)
+    print('\nLooking for anchored rhythm histograms...')
+    anchored_rhythm_pngs = []
+    for track_dir in track_dirs:
+        # Look for both filtered and non-filtered versions
+        for suffix in ['_filtered_anchored_rhythm_histograms.png', '_anchored_rhythm_histograms.png']:
+            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_dir.name}{suffix}'
+            if anchored_png.exists():
+                anchored_rhythm_pngs.append(anchored_png)
+                print(f'  Found anchored rhythm histogram: {track_dir.name}')
+                break
+
+    if anchored_rhythm_pngs:
+        print(f'\nConverting and merging {len(anchored_rhythm_pngs)} anchored rhythm histogram PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(anchored_rhythm_pngs):
+            temp_pdf = temp_dir / f'anchored_rhythm_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_anchored_rhythm_histograms.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 28. Merge anchored groove pulse histograms (PNG files in 6.6_anchored_rhythm_histograms folder)
+    print('\nLooking for anchored groove pulse histograms...')
+    anchored_groove_pngs = []
+    for track_dir in track_dirs:
+        for suffix in ['_filtered_anchored_groove_pulse_histograms.png', '_anchored_groove_pulse_histograms.png']:
+            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_dir.name}{suffix}'
+            if anchored_png.exists():
+                anchored_groove_pngs.append(anchored_png)
+                print(f'  Found anchored groove pulse histogram: {track_dir.name}')
+                break
+
+    if anchored_groove_pngs:
+        print(f'\nConverting and merging {len(anchored_groove_pngs)} anchored groove pulse histogram PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(anchored_groove_pngs):
+            temp_pdf = temp_dir / f'anchored_groove_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_anchored_groove_pulse_histograms.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 29. Merge anchored rhythm patterns (PNG files in 6.6_anchored_rhythm_histograms folder)
+    print('\nLooking for anchored rhythm patterns...')
+    anchored_pattern_pngs = []
+    for track_dir in track_dirs:
+        for suffix in ['_filtered_anchored_rhythm_patterns.png', '_anchored_rhythm_patterns.png']:
+            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_dir.name}{suffix}'
+            if anchored_png.exists():
+                anchored_pattern_pngs.append(anchored_png)
+                print(f'  Found anchored rhythm pattern: {track_dir.name}')
+                break
+
+    if anchored_pattern_pngs:
+        print(f'\nConverting and merging {len(anchored_pattern_pngs)} anchored rhythm pattern PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(anchored_pattern_pngs):
+            temp_pdf = temp_dir / f'anchored_pattern_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_anchored_rhythm_patterns.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
     # Clean up temporary files at the end
     if temp_dir.exists():
-        shutil.rmtree(temp_dir)
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception as e:
+            print(f'Warning: Could not fully clean up temp directory: {e}')
 
     print('\n✓ All plots merged successfully!')
 

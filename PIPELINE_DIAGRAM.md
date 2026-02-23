@@ -2709,6 +2709,134 @@ The output PNG shows one subplot per section/pattern length combination:
 
 ---
 
+## Step 6.2: Filtered Patterns
+
+Step 6.2 applies **outlier filtering** to the section-anchored data from Step 6.1, removing inconsistent pattern repetitions to improve the quality of rhythm analysis.
+
+**Dependencies:** Step 6.1 (Section Anchoring)
+
+**Input:** `6.1_anchoring/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Raw anchored phase data
+
+**Output:** `6.2_filtered_patterns/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Filtered anchored phase data (with updated metadata)
+- `{track_id}_section_anchoring_raster.png` - Raster plot of filtered patterns
+- `{track_id}_onsets_per_pattern.png` - Bar chart showing onsets per pattern repetition
+- `{track_id}_onsets_per_bar.png` - Bar chart showing onsets per bar
+
+### How It Works
+
+The filtering process removes pattern repetitions that are outliers based on onset count:
+
+1. **Count Onsets**: For each pattern repetition, count the number of detected onsets
+2. **Calculate Statistics**: Compute median and IQR of onset counts across all repetitions
+3. **Apply Tukey Fence**: Remove repetitions where onset count is outside `median ± 1.5×IQR`
+4. **Fallback**: If Tukey filtering removes too many patterns, use running mean with looser threshold
+
+### CSV Metadata Updates
+
+Filtered CSVs include additional metadata:
+
+```
+# filtering_method=Tukey fence (k=1.5)
+# no_of_repetitions_before=8
+# patterns_kept=6
+# bars_kept=12
+```
+
+### Visualization: Onsets Per Pattern
+
+Shows a bar chart of onset counts per pattern repetition:
+- Bars colored by status (kept vs filtered)
+- Horizontal line at median
+- Shaded region showing IQR bounds
+
+---
+
+## Step 6.6: Anchored Rhythm Histograms
+
+Step 6.6 creates **section-anchored rhythm visualizations** showing aggregated rhythm patterns, groove pulse positions, and binary rhythm patterns for each section.
+
+**Dependencies:** Step 6.2 (Filtered Patterns)
+
+**Input:** `6.2_filtered_patterns/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Filtered anchored phase data
+
+**Output:** `6.6_anchored_rhythm_histograms/` folder containing:
+- `{track_id}_filtered_anchored_rhythm_histograms.png/pdf/csv` - Onset strength histograms
+- `{track_id}_filtered_anchored_groove_pulse_histograms.png/pdf/csv` - Groove pulse filtered histograms
+- `{track_id}_filtered_anchored_rhythm_patterns.png/pdf/csv` - Binary rhythm patterns
+
+### Three Chained Visualizations
+
+#### 1. Anchored Rhythm Histograms
+
+Aggregates all onset phases across pattern repetitions to show **onset strength** at each 16th-note position:
+
+```
+onset_strength[position] = count of onsets at position / number of repetitions
+```
+
+**Features:**
+- 2-row layout: Row 1 = L2 patterns, Row 2 = L4 patterns
+- N columns for N sections
+- Bar height = onset strength (0.0 to 1.0)
+- Error bars showing IQR of tick phases
+- Secondary y-axis showing raw counts
+
+#### 2. Anchored Groove Pulse Histograms
+
+Applies a **threshold filter** (default 0.2) to show only positions with consistent onsets:
+
+```
+filtered_strength[position] = onset_strength[position] if onset_strength >= threshold else 0
+```
+
+**Features:**
+- Same layout as rhythm histograms
+- Shows only "groove pulse" positions (consistently played)
+- Title shows filtered/original position counts
+
+#### 3. Anchored Rhythm Patterns
+
+Converts to **binary pattern** showing strong vs weak positions:
+
+```
+pattern_value = 1.0 if onset_strength > 0.5 else 0.5 if onset_strength > 0 else 0.0
+```
+
+**Features:**
+- Same layout as other histograms
+- Two-level bars: 1.0 (strong) and 0.5 (weak)
+- Title shows strong+weak=total positions
+
+### Subplot Title Information
+
+Each subplot title includes:
+- Section number and label (e.g., "SecNo1 — chorus")
+- Pattern length (e.g., "L2")
+- Number of repetitions (e.g., "6 reps")
+- Position counts (e.g., "24/32 pos")
+- Ratio in snippet (e.g., "54.4% of snippet")
+
+### CSV Output Format
+
+Each visualization produces a CSV with per-position data:
+
+**Rhythm Histograms CSV:**
+```csv
+section_id,sec_no,section_label,pattern_length,num_repetitions,ratio_in_snippet,position,onset_strength,median_tick_phase,iqr_tick_phase,iqr_16th
+SecNo1_chorus_L2,1,chorus,2,6,0.5438,1,1.0,0.0,0.0,0.0
+SecNo1_chorus_L2,1,chorus,2,6,0.5438,2,0.0,,,
+...
+```
+
+**Groove Pulse CSV:** Adds `onset_strength_original`, `onset_strength_filtered`, `threshold`
+
+**Rhythm Patterns CSV:** Adds `pattern_value`, `binary_threshold`
+
+---
+
 ## Legend
 
 - **Blue boxes**: Input/intermediate audio data

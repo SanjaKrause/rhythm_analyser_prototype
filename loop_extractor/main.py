@@ -1334,54 +1334,114 @@ def run_complete_pipeline(
         # Don't raise - continue to RMS analysis
 
     # ========================================================================
-    # STEP 7: RMS ANALYSIS
+    # STEP 7: ANCHORED RHYTHM HISTOGRAMS
     # ========================================================================
     try:
-        if daw_ready:
-            if verbose:
-                print("\n[7] RMS analysis - SKIPPED (DAW ready mode)")
-            results['steps_completed'].append('rms_skipped_daw')
-        elif not paths['comprehensive_csv'].exists():
-            if verbose:
-                print("\n[7] RMS analysis - SKIPPED (no comprehensive CSV)")
-            results['steps_completed'].append('rms_skipped')
-        elif skip_existing and paths['rms_summary'].exists():
-            if verbose:
-                print("\n[7] RMS analysis - SKIPPED (exists)")
-            results['steps_completed'].append('rms_analysis_skipped')
-        else:
-            if verbose:
-                print("\n[7] RMS histogram analysis...")
+        if verbose:
+            print("\n[7] Creating anchored rhythm histograms...")
 
-            rms_values = rms_grid_histograms.calculate_rms_from_csv(
-                str(paths['comprehensive_csv'])
+        from analysis import anchored_rhythm_histograms
+
+        # Output folder for anchored rhythm histograms
+        rhythm_hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        rhythm_hist_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create for unfiltered patterns (from 6.1_anchoring, output to 6.6_anchored_rhythm_histograms)
+        if anchoring_dir.exists():
+            rhythm_results_unfiltered = anchored_rhythm_histograms.create_anchored_rhythm_histograms(
+                anchoring_dir=str(anchoring_dir),
+                output_dir=str(rhythm_hist_dir),
+                track_id=track_id,
+                verbose=verbose
             )
 
-            if rms_values:
-                # Save RMS summary as JSON
-                with open(paths['rms_summary'], 'w') as f:
-                    # Convert numpy types to Python types for JSON
-                    rms_json = {k: float(v) if not isinstance(v, dict) else v
-                               for k, v in rms_values.items()}
-                    json.dump(rms_json, f, indent=2)
+        # Create for filtered patterns (from 6.2_filtered_patterns, output to 6.6_anchored_rhythm_histograms)
+        if filtered_dir.exists():
+            rhythm_results_filtered = anchored_rhythm_histograms.create_anchored_rhythm_histograms(
+                anchoring_dir=str(filtered_dir),
+                output_dir=str(rhythm_hist_dir),
+                track_id=track_id + '_filtered',
+                verbose=verbose
+            )
 
-                results['rms_values'] = rms_values
-                results['steps_completed'].append('rms_analysis')
+            # Create groove pulse histograms from the filtered rhythm histograms CSV
+            if rhythm_results_filtered and rhythm_results_filtered.get('csv'):
+                groove_pulse_results = anchored_rhythm_histograms.create_anchored_groove_pulse_histograms(
+                    rhythm_histograms_csv=rhythm_results_filtered['csv'],
+                    track_id=track_id + '_filtered',
+                    output_dir=str(rhythm_hist_dir),
+                    verbose=verbose
+                )
 
-                if verbose:
-                    print(f"  ✓ RMS calculated:")
-                    print(f"    Uncorrected: {rms_values['uncorrected_ms']:.2f}ms")
-                    print(f"    Per-snippet: {rms_values['per_snippet_ms']:.2f}ms")
-                    print(f"    Drum method: {rms_values['drum_ms']:.2f}ms")
-            else:
-                if verbose:
-                    print(f"  ⚠️  RMS calculation returned no values")
+                # Create rhythm patterns from the groove pulse CSV
+                if groove_pulse_results and groove_pulse_results.get('csv'):
+                    rhythm_patterns_results = anchored_rhythm_histograms.create_anchored_rhythm_patterns(
+                        groove_pulse_csv=groove_pulse_results['csv'],
+                        track_id=track_id + '_filtered',
+                        output_dir=str(rhythm_hist_dir),
+                        verbose=verbose
+                    )
+
+        results['steps_completed'].append('anchored_rhythm_histograms')
+
+        if verbose:
+            print(f"  ✓ Anchored rhythm histograms created")
 
     except Exception as e:
         error_msg = f"Step 7 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 7 (OLD): RMS ANALYSIS - COMMENTED OUT FOR FUTURE REFERENCE
+    # ========================================================================
+    # try:
+    #     if daw_ready:
+    #         if verbose:
+    #             print("\n[7] RMS analysis - SKIPPED (DAW ready mode)")
+    #         results['steps_completed'].append('rms_skipped_daw')
+    #     elif not paths['comprehensive_csv'].exists():
+    #         if verbose:
+    #             print("\n[7] RMS analysis - SKIPPED (no comprehensive CSV)")
+    #         results['steps_completed'].append('rms_skipped')
+    #     elif skip_existing and paths['rms_summary'].exists():
+    #         if verbose:
+    #             print("\n[7] RMS analysis - SKIPPED (exists)")
+    #         results['steps_completed'].append('rms_analysis_skipped')
+    #     else:
+    #         if verbose:
+    #             print("\n[7] RMS histogram analysis...")
+    #
+    #         rms_values = rms_grid_histograms.calculate_rms_from_csv(
+    #             str(paths['comprehensive_csv'])
+    #         )
+    #
+    #         if rms_values:
+    #             # Save RMS summary as JSON
+    #             with open(paths['rms_summary'], 'w') as f:
+    #                 # Convert numpy types to Python types for JSON
+    #                 rms_json = {k: float(v) if not isinstance(v, dict) else v
+    #                            for k, v in rms_values.items()}
+    #                 json.dump(rms_json, f, indent=2)
+    #
+    #             results['rms_values'] = rms_values
+    #             results['steps_completed'].append('rms_analysis')
+    #
+    #             if verbose:
+    #                 print(f"  ✓ RMS calculated:")
+    #                 print(f"    Uncorrected: {rms_values['uncorrected_ms']:.2f}ms")
+    #                 print(f"    Per-snippet: {rms_values['per_snippet_ms']:.2f}ms")
+    #                 print(f"    Drum method: {rms_values['drum_ms']:.2f}ms")
+    #         else:
+    #             if verbose:
+    #                 print(f"  ⚠️  RMS calculation returned no values")
+    #
+    # except Exception as e:
+    #     error_msg = f"Step 7 failed: {e}"
+    #     results['errors'].append(error_msg)
+    #     if verbose:
+    #         print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
     # STEP 8: AUDIO EXAMPLES
