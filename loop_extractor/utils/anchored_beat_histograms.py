@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Beat Histograms - Create beat-level visualizations from inter-onset interval data.
+Anchored Beat Histograms - Create beat-level IOI visualizations from section-anchored data.
 
-This module reads FlexStart filtered CSV files and calculates inter-onset intervals (IOI)
-between consecutive onsets, categorizing them by duration (4/4, 2/4, 1/4, 3/16, 1/8, 6/16, 1/16).
+This module reads section-anchored CSV files from 6.2_filtered_patterns and calculates
+inter-onset intervals (IOI) between consecutive onsets, categorizing them by duration
+(4/4, 2/4, 1/4, 3/16, 1/8, 6/16, 1/16).
+
+Input: 6.2_filtered_patterns/SecNoX_LY_label_ratio_anchored.csv files
+Output: 6.7_anchored_beat_histograms/ with IOI CSVs per section and combined histogram plots
 
 Environment: Base (numpy, pandas, matplotlib)
 """
@@ -12,12 +16,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, Dict
+import re
 import sys
-
-# Add parent directory to path to import rhythm_histograms utilities
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.rhythm_histograms import read_filtered_csv_metadata
 
 
 def categorize_ioi(ioi_ticks: float) -> str:
@@ -34,7 +35,6 @@ def categorize_ioi(ioi_ticks: float) -> str:
     str
         IOI category (4/4, 2/4, 1/4, 3/16, 1/8, 6/16, 1/16)
     """
-    # Define categories in descending order of size
     categories = [
         (16, '4/4'),
         (8, '2/4'),
@@ -45,1324 +45,625 @@ def categorize_ioi(ioi_ticks: float) -> str:
         (1, '1/16'),
     ]
 
-    # Find closest category (use rounding)
     ioi_rounded = round(ioi_ticks)
     for ticks, category in categories:
         if ioi_rounded >= ticks:
             return category
 
-    return '1/16'  # Default to smallest
+    return '1/16'
 
 
-def get_pattern_metadata(grid_output_dir: str, base_name: str) -> dict:
+def parse_anchored_filename(filename: str) -> Optional[Dict]:
     """
-    Get metadata (patterns_displayed/patterns_total) for each pattern length.
+    Parse section-anchored CSV filename to extract metadata.
 
-    Parameters
-    ----------
-    grid_output_dir : str
-        Directory containing the FlexStart filtered CSV files
-    base_name : str
-        Base filename (without extension)
+    Format: SecNoX_LY_label_ratio_anchored.csv
+    Example: SecNo1_L2_chorus_0.5438_anchored.csv
 
     Returns
     -------
-    dict
-        Dictionary with pattern_length as key and (displayed, total) tuple as value
+    dict or None
+        Dictionary with section_no, pattern_length, section_label, ratio_in_snippet
     """
-    grid_dir = Path(grid_output_dir)
-    pattern_lengths = [4, 2, 1]
+    pattern = r'SecNo(\d+)_L(\d+)_([^_]+)_([0-9.]+)_anchored\.csv'
+    match = re.match(pattern, filename)
+
+    if match:
+        return {
+            'section_no': int(match.group(1)),
+            'pattern_length': int(match.group(2)),
+            'section_label': match.group(3),
+            'ratio_in_snippet': float(match.group(4))
+        }
+    return None
+
+
+def read_anchored_csv_metadata(csv_path: str) -> Dict:
+    """
+    Read metadata from comment lines in anchored CSV file.
+    """
     metadata = {}
 
-    for pattern_length in pattern_lengths:
-        filtered_csv_name = f'{base_name}_comprehensive_phases_{pattern_length}bar_flexStart_filtered.csv'
-        filtered_csv_path = grid_dir / filtered_csv_name
-
-        if filtered_csv_path.exists():
-            num_displayed, num_total, _ = read_filtered_csv_metadata(str(filtered_csv_path))
-            metadata[pattern_length] = (num_displayed, num_total)
-        else:
-            metadata[pattern_length] = (None, None)
+    with open(csv_path, 'r') as f:
+        for line in f:
+            if not line.startswith('#'):
+                break
+            line = line.strip()[2:]  # Remove '# '
+            if '=' in line:
+                key, value = line.split('=', 1)
+                try:
+                    if '.' in value:
+                        metadata[key] = float(value)
+                    elif value.isdigit() or (value.startswith('-') and value[1:].isdigit()):
+                        metadata[key] = int(value)
+                    else:
+                        metadata[key] = value
+                except ValueError:
+                    metadata[key] = value
 
     return metadata
 
 
-def process_pattern_based_ioi(
-    grid_output_dir: str,
-    base_name: str,
-    bpm: float,
-    snippet_start_time: float
-) -> pd.DataFrame:
+def process_section_ioi(csv_path: str) -> pd.DataFrame:
     """
-    Process pattern-based IOI from FlexStart filtered CSV files.
+    Process IOI from a single section-anchored CSV file.
 
-    Reads the 3 FlexStart filtered CSVs (L=4, L=2, L=1) and calculates
-    inter-onset intervals between consecutive onsets within each pattern.
-
-    Parameters
-    ----------
-    grid_output_dir : str
-        Directory containing the FlexStart filtered CSV files
-    base_name : str
-        Base filename (without extension)
-    bpm : float
-        Tempo in BPM for time conversion
-    snippet_start_time : float
-        Start time of snippet in seconds (for absolute time calculation)
+    Reads the anchored CSV and calculates inter-onset intervals between
+    consecutive onsets within the section.
 
     Returns
     -------
     pd.DataFrame
         DataFrame with IOI data
     """
-    grid_dir = Path(grid_output_dir)
+    metadata = read_anchored_csv_metadata(csv_path)
+    pattern_length = metadata.get('pattern_length', 2)
+    section_label = metadata.get('section_label', 'unknown')
+    no_of_repetitions = metadata.get('no_of_repetitions', 0)
+    ratio_in_snippet = metadata.get('ratio_in_snippet', 0.0)
 
-    # Pattern lengths to process
-    pattern_lengths = [4, 2, 1]
+    df = pd.read_csv(csv_path, comment='#')
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.sort_values(['bar_number', 'tick_16th']).reset_index(drop=True)
+    df = df[df['onset_time'].notna()].copy()
+
+    if len(df) < 2:
+        return pd.DataFrame()
 
     all_ioi_data = []
 
-    # Calculate tick duration in seconds
-    bar_duration = 60.0 / bpm * 4  # 4 beats per bar at BPM
-    tick_duration = bar_duration / 16  # 16th note duration
+    for i in range(len(df) - 1):
+        onset1 = df.iloc[i]
+        onset2 = df.iloc[i + 1]
 
-    for pattern_length in pattern_lengths:
-        # Find filtered CSV file - use base_name directly, it already has the track name
-        filtered_csv_name = f'{base_name}_comprehensive_phases_{pattern_length}bar_flexStart_filtered.csv'
-        filtered_csv_path = grid_dir / filtered_csv_name
+        tick1 = onset1['tick_16th']
+        tick2 = onset2['tick_16th']
+        bar1 = onset1['bar_number']
+        bar2 = onset2['bar_number']
 
-        if not filtered_csv_path.exists():
-            print(f"    Warning: FlexStart filtered CSV not found: {filtered_csv_name}")
-            continue
+        # Get tick_phase if available
+        tick_phase1 = onset1.get('tick_phase', 0.0) if pd.notna(onset1.get('tick_phase', np.nan)) else 0.0
+        tick_phase2 = onset2.get('tick_phase', 0.0) if pd.notna(onset2.get('tick_phase', np.nan)) else 0.0
 
-        # Read CSV data (skip comment lines starting with #)
-        df = pd.read_csv(filtered_csv_path, comment='#')
+        tick1_absolute = bar1 * 16 + tick1
+        tick2_absolute = bar2 * 16 + tick2
 
-        if df.empty:
-            continue
+        tick_delta = tick2_absolute - tick1_absolute
+        tick_phase_diff = tick_phase2 - tick_phase1
+        ioi_exact_ticks = tick_delta + tick_phase_diff
 
-        # Get metadata from CSV header
-        num_patterns_displayed, num_patterns_total, filtering_method = read_filtered_csv_metadata(str(filtered_csv_path))
+        time1 = onset1['onset_time']
+        time2 = onset2['onset_time']
+        ioi_seconds = time2 - time1
 
-        # Sort by bar_number and tick_16th to ensure correct ordering
-        df = df.sort_values(['bar_number', 'tick_16th']).reset_index(drop=True)
+        ioi_category = categorize_ioi(ioi_exact_ticks)
 
-        # Filter to only rows with onsets (non-null tick_phase)
-        df = df[df['tick_phase'].notna()].copy()
-
-        if df.empty:
-            continue
-
-        # Calculate IOI between consecutive onsets
-        for i in range(len(df) - 1):
-            onset1 = df.iloc[i]
-            onset2 = df.iloc[i + 1]
-
-            # Get tick positions and tick_phases (phase within the 16th note, 0.0-1.0)
-            tick1 = onset1['tick_16th']
-            tick2 = onset2['tick_16th']
-            bar1 = onset1['bar_number']
-            bar2 = onset2['bar_number']
-            tick_phase1 = onset1['tick_phase']  # Fractional position within 16th note
-            tick_phase2 = onset2['tick_phase']
-
-            # Calculate absolute tick positions (accounting for bar crossings)
-            tick1_absolute = bar1 * 16 + tick1
-            tick2_absolute = bar2 * 16 + tick2
-
-            # Calculate tick delta (can span multiple bars)
-            tick_delta = tick2_absolute - tick1_absolute
-
-            # Calculate tick_phase difference (fractional ticks)
-            tick_phase_diff = tick_phase2 - tick_phase1
-
-            # Calculate exact IOI in ticks
-            ioi_exact_ticks = tick_delta + tick_phase_diff
-
-            # Calculate times in seconds (relative to snippet start)
-            time1_rel = (tick1 + tick_phase1) * tick_duration
-            time2_rel = (tick2 + tick_phase2) * tick_duration
-
-            # Absolute times
-            time1_abs = snippet_start_time + time1_rel
-            time2_abs = snippet_start_time + time2_rel
-
-            # Categorize IOI
-            ioi_category = categorize_ioi(ioi_exact_ticks)
-
-            # Store data
-            all_ioi_data.append({
-                'method': 'Pattern-based',
-                'pattern_length': pattern_length,
-                'onset1_bar': int(bar1),
-                'onset1_tick': int(tick1),
-                'onset1_tick_absolute': int(tick1_absolute),
-                'onset1_tick_phase': float(tick_phase1),
-                'onset1_time_abs': float(time1_abs),
-                'onset1_time_rel': float(time1_rel),
-                'onset2_bar': int(bar2),
-                'onset2_tick': int(tick2),
-                'onset2_tick_absolute': int(tick2_absolute),
-                'onset2_tick_phase': float(tick_phase2),
-                'onset2_time_abs': float(time2_abs),
-                'onset2_time_rel': float(time2_rel),
-                'tick_delta': int(tick_delta),
-                'tick_phase_diff': float(tick_phase_diff),
-                'ioi_exact_ticks': float(ioi_exact_ticks),
-                'ioi_category': ioi_category
-            })
+        all_ioi_data.append({
+            'section_label': section_label,
+            'pattern_length': pattern_length,
+            'no_of_repetitions': no_of_repetitions,
+            'ratio_in_snippet': ratio_in_snippet,
+            'onset1_bar': int(bar1),
+            'onset1_tick': int(tick1),
+            'onset1_tick_absolute': int(tick1_absolute),
+            'onset1_tick_phase': float(tick_phase1),
+            'onset1_time': float(time1),
+            'onset2_bar': int(bar2),
+            'onset2_tick': int(tick2),
+            'onset2_tick_absolute': int(tick2_absolute),
+            'onset2_tick_phase': float(tick_phase2),
+            'onset2_time': float(time2),
+            'tick_delta': int(tick_delta),
+            'tick_phase_diff': float(tick_phase_diff),
+            'ioi_exact_ticks': float(ioi_exact_ticks),
+            'ioi_seconds': float(ioi_seconds),
+            'ioi_category': ioi_category
+        })
 
     if not all_ioi_data:
         return pd.DataFrame()
 
-    # Create DataFrame
     df_ioi = pd.DataFrame(all_ioi_data)
 
-    # Define category order for sorting
     category_order = ['4/4', '2/4', '1/4', '3/16', '1/8', '6/16', '1/16']
     df_ioi['ioi_category'] = pd.Categorical(df_ioi['ioi_category'], categories=category_order, ordered=True)
-
-    # Sort by category (descending length), then by time (ascending)
-    df_ioi = df_ioi.sort_values(['ioi_category', 'onset1_time_rel']).reset_index(drop=True)
 
     return df_ioi
 
 
-def create_beat_histograms(
-    grid_output_dir: str,
-    base_name: str,
+def create_anchored_beat_histograms(
+    filtered_patterns_dir: str,
     track_id: str,
-    output_dir: str,
-    bpm: float,
-    snippet_start_time: float
-) -> dict:
+    output_dir: str
+) -> Dict:
     """
-    Create beat-level histograms from inter-onset interval data.
+    Create beat-level histograms from section-anchored inter-onset interval data.
+
+    Processes all anchored CSV files in 6.2_filtered_patterns directory and creates
+    IOI CSVs per section and combined histogram plots.
 
     Parameters
     ----------
-    grid_output_dir : str
-        Directory containing the FlexStart filtered CSV files
-    base_name : str
-        Base filename (without extension)
+    filtered_patterns_dir : str
+        Directory containing the section-anchored CSV files (6.2_filtered_patterns)
     track_id : str
         Track identifier for plot title
     output_dir : str
-        Output directory for saving plots
-    bpm : float
-        Tempo in BPM for time conversion
-    snippet_start_time : float
-        Start time of snippet in seconds
+        Output directory for saving plots (6.7_anchored_beat_histograms)
 
     Returns
     -------
     dict
         Dictionary with paths to saved files and statistics
     """
-    print(f"\n  [Beat Histograms] Creating beat histograms from inter-onset intervals...")
+    print(f"\n  [Anchored Beat Histograms] Creating section-anchored IOI histograms...")
 
+    filtered_dir = Path(filtered_patterns_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Process pattern-based IOI
-    df_ioi = process_pattern_based_ioi(grid_output_dir, base_name, bpm, snippet_start_time)
+    anchored_files = sorted(filtered_dir.glob('SecNo*_anchored.csv'))
 
-    if df_ioi.empty:
-        print(f"    ⚠️  No IOI data found")
+    if not anchored_files:
+        print(f"    Warning: No anchored CSV files found in {filtered_patterns_dir}")
         return {}
 
-    # Get metadata for each pattern length (displayed/total repetitions)
-    pattern_metadata = get_pattern_metadata(grid_output_dir, base_name)
+    print(f"    Found {len(anchored_files)} anchored CSV files")
 
-    # Save separate CSV files for each pattern length
-    output_files = {}
-    pattern_lengths = [4, 2, 1]
+    # Group files by section number
+    sections = {}
+    for csv_file in anchored_files:
+        parsed = parse_anchored_filename(csv_file.name)
+        if parsed:
+            sec_no = parsed['section_no']
+            if sec_no not in sections:
+                sections[sec_no] = {}
+            sections[sec_no][parsed['pattern_length']] = {
+                'path': csv_file,
+                'metadata': parsed
+            }
 
-    for pattern_length in pattern_lengths:
-        df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
+    # Process each section and pattern length, save separate CSVs
+    all_ioi_data = []
+    output_files = {'csv_files': []}
 
-        if not df_pattern.empty:
-            output_csv = output_path / f'{track_id}_pre_beat_histogram_L{pattern_length}.csv'
-            df_pattern.to_csv(output_csv, index=False)
-            print(f"    Saved: {output_csv.name} ({len(df_pattern)} intervals)")
-            output_files[f'L{pattern_length}'] = str(output_csv)
+    for sec_no in sorted(sections.keys()):
+        for pattern_length in sorted(sections[sec_no].keys()):
+            csv_info = sections[sec_no][pattern_length]
+            csv_path = csv_info['path']
+            metadata = csv_info['metadata']
 
-    # Create histogram visualizations
-    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
-    fig.suptitle(f'Beat Histograms (IOI) — {track_id}', fontsize=14, fontweight='bold', y=0.995)
+            df_ioi = process_section_ioi(str(csv_path))
 
-    # Define colors for each pattern length
-    colors = ['#2ECC71', '#F39C12', '#9B59B6']  # Green, Orange, Purple
+            if not df_ioi.empty:
+                df_ioi['section_no'] = sec_no
+                all_ioi_data.append(df_ioi)
 
-    # Define IOI categories in ascending order (smallest to largest)
+                # Save separate CSV for this section/pattern length
+                section_label = metadata['section_label']
+                ratio = metadata['ratio_in_snippet']
+                csv_filename = f"SecNo{sec_no}_L{pattern_length}_{section_label}_{ratio:.4f}_ioi_data.csv"
+                csv_output_path = output_path / csv_filename
+                df_ioi.to_csv(csv_output_path, index=False)
+                output_files['csv_files'].append(str(csv_output_path))
+                print(f"    SecNo{sec_no} L{pattern_length}: {len(df_ioi)} IOIs -> {csv_filename}")
+
+    if not all_ioi_data:
+        print(f"    Warning: No IOI data found")
+        return {}
+
+    df_all = pd.concat(all_ioi_data, ignore_index=True)
+
+    # Get all unique section numbers and pattern lengths
+    all_sec_nos = sorted(sections.keys())
+    all_pattern_lengths = sorted(set(pl for sec in sections.values() for pl in sec.keys()))
+
+    # Create figure: rows = pattern lengths (L2 top, L4 bottom), columns = sections
+    num_cols = len(all_sec_nos)
+    num_rows = len(all_pattern_lengths)
+
+    fig, axes = plt.subplots(num_rows, num_cols,
+                             figsize=(8 * num_cols, 4 * num_rows),
+                             squeeze=False)
+    fig.suptitle(f'Anchored Beat Histograms (IOI) — {track_id}',
+                 fontsize=14, fontweight='bold', y=0.995)
+
+    colors = {2: '#F39C12', 4: '#2ECC71'}  # Orange for L2, Green for L4
+
     category_order = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
-
-    # Map categories to tick values for logarithmic positioning
     category_to_ticks = {
-        '1/16': 1,
-        '1/8': 2,
-        '3/16': 3,
-        '1/4': 4,
-        '6/16': 6,
-        '2/4': 8,
-        '4/4': 16
+        '1/16': 1, '1/8': 2, '3/16': 3, '1/4': 4,
+        '6/16': 6, '2/4': 8, '4/4': 16
     }
 
-    for idx, (pattern_length, color) in enumerate(zip(pattern_lengths, colors)):
-        ax = axes[idx]
-        df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
+    for row_idx, pattern_length in enumerate(all_pattern_lengths):
+        for col_idx, sec_no in enumerate(all_sec_nos):
+            ax = axes[row_idx, col_idx]
+            color = colors.get(pattern_length, '#3498DB')
 
-        if df_pattern.empty:
-            ax.text(0.5, 0.5, f'No data for L={pattern_length}',
-                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
-            ax.set_title(f'Pattern Length L={pattern_length}', fontsize=11, fontweight='bold')
-            continue
+            df_section = df_all[(df_all['section_no'] == sec_no) &
+                               (df_all['pattern_length'] == pattern_length)]
 
-        # Calculate statistics for each IOI category
-        category_stats = {}
-        for cat in category_order:
-            cat_data = df_pattern[df_pattern['ioi_category'] == cat]['ioi_exact_ticks']
+            if df_section.empty:
+                ax.text(0.5, 0.5, f'No L{pattern_length} data\nfor SecNo{sec_no}',
+                       ha='center', va='center', transform=ax.transAxes, fontsize=10)
+                ax.set_title(f'SecNo{sec_no} — L{pattern_length}', fontsize=10, fontweight='bold')
+                continue
 
-            if len(cat_data) > 0:
-                count = len(cat_data)
-                mean_ioi = np.mean(cat_data)
+            section_label = df_section['section_label'].iloc[0]
+            ratio = df_section['ratio_in_snippet'].iloc[0]
+            num_reps = df_section['no_of_repetitions'].iloc[0]
 
-                # Calculate IQR with 1.5 scaling factor (similar to rhythm histograms)
-                if len(cat_data) > 1:
-                    q75, q25 = np.percentile(cat_data, [75, 25])
-                    iqr_raw = q75 - q25
-                    # Apply scaling factor: multiply by 1.5 for better error bar representation
-                    iqr_scaled = iqr_raw * 1.5
-                else:
-                    iqr_raw = 0.0
-                    iqr_scaled = 0.0
-
-                category_stats[cat] = {
-                    'count': count,
-                    'mean': mean_ioi,
-                    'iqr_scaled': iqr_scaled
-                }
-            else:
-                category_stats[cat] = {
-                    'count': 0,
-                    'mean': np.nan,
-                    'iqr_scaled': 0.0
-                }
-
-        # Extract arrays for plotting
-        counts = np.array([category_stats[cat]['count'] for cat in category_order])
-        means = np.array([category_stats[cat]['mean'] for cat in category_order])
-        iqrs_scaled = np.array([category_stats[cat]['iqr_scaled'] for cat in category_order])
-
-        # Calculate onset strength (normalize to max count)
-        max_count = np.max(counts) if len(counts) > 0 else 1
-        onset_strength = counts / max_count if max_count > 0 else counts
-
-        # Calculate base positions in log space (nominal tick values)
-        base_positions_log = np.array([np.log2(category_to_ticks[cat]) for cat in category_order])
-
-        # Calculate shifted positions based on mean IOI (similar to rhythm histograms median phase shifts)
-        shifted_positions_log = base_positions_log.copy()
-        for i, (cat, mean_val) in enumerate(zip(category_order, means)):
-            if not np.isnan(mean_val) and mean_val > 0:
-                # Shift position to actual mean IOI in log space
-                shifted_positions_log[i] = np.log2(mean_val)
-
-        # Create bar plot with shifted logarithmic x-positioning
-        bar_width = 0.15  # Width in log space
-        bars = ax.bar(shifted_positions_log, onset_strength, width=bar_width, color=color, alpha=0.7,
-                     edgecolor='black', linewidth=0.5)
-
-        # Add horizontal IQR error bars (positioned at 90% of bar height)
-        for i, (cat, shifted_log, strength, iqr_val, mean_val) in enumerate(zip(category_order, shifted_positions_log, onset_strength, iqrs_scaled, means)):
-            if strength > 0 and iqr_val > 0 and not np.isnan(mean_val):
-                # Position error bar at 90% of bar height
-                error_bar_y = strength * 0.9
-
-                # Convert IQR from tick units to log space
-                # Calculate log distance for ±IQR/2 around mean
-                log_upper = np.log2(mean_val + iqr_val / 2)
-                log_lower = np.log2(max(0.1, mean_val - iqr_val / 2))  # Prevent log(0)
-                iqr_log = (log_upper - log_lower) / 2
-
-                ax.errorbar(shifted_log, error_bar_y,
-                           xerr=iqr_log, fmt='none',
-                           ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
-
-        # Add relative deviation labels on top of bars (similar to rhythm histograms)
-        for i, (cat, shifted_log, strength, mean_val) in enumerate(zip(category_order, shifted_positions_log, onset_strength, means)):
-            if strength > 0 and not np.isnan(mean_val):
-                # Calculate relative deviation from nominal tick value
+            # Calculate statistics for each IOI category
+            category_stats = {}
+            for cat in category_order:
+                cat_data = df_section[df_section['ioi_category'] == cat]['ioi_exact_ticks']
                 nominal_ticks = category_to_ticks[cat]
-                relative_deviation = mean_val - nominal_ticks
 
-                # Format without leading zero (e.g., .34 instead of 0.34)
-                label_text = f'{relative_deviation:.2f}'.replace('0.', '.').replace('-0.', '-.')
-                ax.text(shifted_log, strength, label_text, ha='center', va='bottom',
-                       fontsize=7, fontweight='bold')
+                if len(cat_data) > 0:
+                    count = len(cat_data)
+                    median_ioi = np.median(cat_data)
+                    # Calculate shifts (deviation from nominal)
+                    shifts = cat_data - nominal_ticks
 
-        # Formatting with logarithmic x-axis
-        tick_values = [1, 2, 3, 4, 6, 8, 16]
-        tick_positions_log = [np.log2(v) for v in tick_values]
-        tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+                    if len(cat_data) > 1:
+                        q75, q25 = np.percentile(cat_data, [75, 25])
+                        iqr_scaled = (q75 - q25) * 1.5
+                        # IQR of shifts (same as IQR of raw values since it's a constant offset)
+                        shift_q75, shift_q25 = np.percentile(shifts, [75, 25])
+                        iqr_shift = shift_q75 - shift_q25
+                    else:
+                        iqr_scaled = 0.0
+                        iqr_shift = 0.0
 
-        ax.set_xticks(tick_positions_log)
-        ax.set_xticklabels(tick_labels, fontsize=10)
-        ax.set_ylabel('Onset Strength', fontsize=10, fontweight='bold')
+                    median_shift = np.median(shifts)
+                    category_stats[cat] = {
+                        'count': count,
+                        'median': median_ioi,
+                        'median_shift': median_shift,
+                        'iqr_scaled': iqr_scaled,
+                        'iqr_shift': iqr_shift,
+                        'nominal_ticks': nominal_ticks
+                    }
+                else:
+                    category_stats[cat] = {
+                        'count': 0,
+                        'median': np.nan,
+                        'median_shift': np.nan,
+                        'iqr_scaled': 0.0,
+                        'iqr_shift': 0.0,
+                        'nominal_ticks': nominal_ticks
+                    }
 
-        # Adjust left y-axis scale based on data
-        max_strength = np.max(onset_strength) if max_count > 0 else 1.0
-        ax.set_ylim(0, max_strength * 1.2)  # Extra padding for labels
+            counts = np.array([category_stats[cat]['count'] for cat in category_order])
+            medians = np.array([category_stats[cat]['median'] for cat in category_order])
+            iqrs_scaled = np.array([category_stats[cat]['iqr_scaled'] for cat in category_order])
 
-        # Create second y-axis for counts (right side)
-        ax2 = ax.twinx()
-        ax2.set_ylabel('Onset Count', fontsize=10, fontweight='bold', rotation=270, labelpad=15)
+            max_count = np.max(counts) if len(counts) > 0 else 1
+            onset_strength = counts / max_count if max_count > 0 else counts
 
-        # Adjust right y-axis scale to match left axis
-        ax2.set_ylim(0, max_count * 1.2)  # Match padding
+            base_positions_log = np.array([np.log2(category_to_ticks[cat]) for cat in category_order])
+            shifted_positions_log = base_positions_log.copy()
 
-        # Get repetition info for this pattern length
-        num_displayed, num_total = pattern_metadata.get(pattern_length, (None, None))
-        if num_displayed is not None and num_total is not None:
-            rep_info = f' — Repetitions: {num_displayed}/{num_total}'
-        else:
-            rep_info = ''
+            for i, (cat, median_val) in enumerate(zip(category_order, medians)):
+                if not np.isnan(median_val) and median_val > 0:
+                    shifted_positions_log[i] = np.log2(median_val)
 
-        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals){rep_info}',
-                    fontsize=11, fontweight='bold', pad=10)
-        ax.grid(True, alpha=0.3, axis='y')
+            bar_width = 0.15
+            ax.bar(shifted_positions_log, onset_strength, width=bar_width,
+                  color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
 
-        # Add vertical gray grid lines at nominal category positions (log scale)
-        for tick_log in tick_positions_log:
-            ax.axvline(x=tick_log, color='gray', linestyle=':',
-                      linewidth=0.8, alpha=0.4, zorder=1)
+            # Add IQR error bars
+            for i, (cat, shifted_log, strength, iqr_val, median_val) in enumerate(
+                zip(category_order, shifted_positions_log, onset_strength, iqrs_scaled, medians)):
+                if strength > 0 and iqr_val > 0 and not np.isnan(median_val):
+                    error_bar_y = strength * 0.9
+                    log_upper = np.log2(median_val + iqr_val / 2)
+                    log_lower = np.log2(max(0.1, median_val - iqr_val / 2))
+                    iqr_log = (log_upper - log_lower) / 2
+                    ax.errorbar(shifted_log, error_bar_y, xerr=iqr_log, fmt='none',
+                               ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
 
-        # Add vertical blue lines at center of each bar (shifted positions, bar height)
-        y_limits = ax.get_ylim()
-        y_range = y_limits[1] - y_limits[0]
-        for i, (cat, shifted_log, strength) in enumerate(zip(category_order, shifted_positions_log, onset_strength)):
-            if strength > 0 and not np.isnan(means[i]):
-                # Calculate ymax as fraction of axes height
-                ymax_fraction = (strength - y_limits[0]) / y_range
-                ax.axvline(x=shifted_log, ymin=0, ymax=ymax_fraction,
-                          color='blue', linestyle='-', linewidth=1.5, alpha=0.7, zorder=10)
+            # Add deviation labels (median shift)
+            for i, (cat, shifted_log, strength, median_val) in enumerate(
+                zip(category_order, shifted_positions_log, onset_strength, medians)):
+                if strength > 0 and not np.isnan(median_val):
+                    nominal_ticks = category_to_ticks[cat]
+                    relative_deviation = median_val - nominal_ticks
+                    label_text = f'{relative_deviation:.2f}'.replace('0.', '.').replace('-0.', '-.')
+                    ax.text(shifted_log, strength, label_text, ha='center', va='bottom',
+                           fontsize=7, fontweight='bold')
 
-        # Set x-axis limits with padding in log space
-        ax.set_xlim(-0.5, 4.5)  # log2(1) = 0, log2(16) = 4
+            tick_values = [1, 2, 3, 4, 6, 8, 16]
+            tick_positions_log = [np.log2(v) for v in tick_values]
+            tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
 
-        # Only show x-label on bottom subplot
-        if idx == len(pattern_lengths) - 1:
-            ax.set_xlabel('IOI Category (16th note ticks, log scale)', fontsize=10, fontweight='bold')
+            ax.set_xticks(tick_positions_log)
+            ax.set_xticklabels(tick_labels, fontsize=9)
+            ax.set_ylabel('Onset Strength', fontsize=9)
 
+            max_strength = np.max(onset_strength) if max_count > 0 else 1.0
+            ax.set_ylim(0, max_strength * 1.2)
+
+            # Add secondary y-axis for actual counts
+            ax2 = ax.twinx()
+            ax2.set_ylim(0, max_count * 1.2)
+            ax2.set_ylabel('Count', fontsize=9)
+
+            title = f'SecNo{sec_no} — {section_label} — L{pattern_length}'
+            if num_reps:
+                title += f' — {num_reps} reps'
+            title += f' — {len(df_section)} IOIs'
+            if ratio:
+                title += f' — {ratio:.1%} of snippet'
+
+            ax.set_title(title, fontsize=10, fontweight='bold', pad=5)
+            ax.grid(True, alpha=0.3, axis='y')
+
+            for tick_log in tick_positions_log:
+                ax.axvline(x=tick_log, color='gray', linestyle=':', linewidth=0.8, alpha=0.4)
+
+            ax.set_xlim(-0.5, 4.5)
+
+            if row_idx == num_rows - 1:
+                ax.set_xlabel('IOI Category (16th note ticks, log scale)', fontsize=9)
+
+            # Save beat histogram summary CSV for this section/pattern length
+            csv_stats_rows = []
+            for cat in category_order:
+                stats = category_stats[cat]
+                csv_stats_rows.append({
+                    'ioi_category': cat,
+                    'nominal_ticks': stats['nominal_ticks'],
+                    'count': stats['count'],
+                    'median_ioi': stats['median'],
+                    'median_shift': stats['median_shift'],
+                    'iqr_shift': stats['iqr_shift'],
+                    'iqr_scaled': stats['iqr_scaled']
+                })
+            df_stats = pd.DataFrame(csv_stats_rows)
+            stats_csv_filename = f"SecNo{sec_no}_L{pattern_length}_{section_label}_{ratio:.4f}_beat_histogram_stats.csv"
+            stats_csv_path = output_path / stats_csv_filename
+            df_stats.to_csv(stats_csv_path, index=False)
+            output_files['csv_files'].append(str(stats_csv_path))
+
+    # Add a single legend for the entire figure describing the visual elements
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Patch(facecolor='gray', edgecolor='black', alpha=0.7, label='Bar: median IOI (ticks)'),
+        Line2D([0], [0], color='black', linewidth=1.5, marker='|', markersize=10, label='Error bar: IQR × 1.5'),
+        Line2D([0], [0], color='none', marker='$+.02$', markersize=12, markerfacecolor='black',
+               markeredgecolor='none', label='Text: median shift (ticks)'),
+    ]
     plt.tight_layout()
+    plt.subplots_adjust(bottom=0.12)  # Make room for legend at bottom
+    fig.legend(handles=legend_elements, loc='lower center', ncol=3, fontsize=9,
+               framealpha=0.9, bbox_to_anchor=(0.5, 0.02))
 
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_beat_histograms.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_beat_histograms.png'
+    output_png = output_path / f'{track_id}_anchored_beat_histograms.png'
     plt.savefig(output_png, dpi=150, bbox_inches='tight')
     print(f"    Saved: {output_png.name}")
 
     plt.close()
 
-    output_files['beat_histogram_pdf'] = str(output_pdf)
-    output_files['beat_histogram_png'] = str(output_png)
+    output_files['png'] = str(output_png)
 
-    print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
+    print(f"    Processed {len(df_all)} total IOIs across {num_cols} sections")
 
     return output_files
 
 
-def create_beat_histograms_all_onsets(
-    grid_output_dir: str,
-    base_name: str,
+def create_anchored_beat_histograms_all_onsets(
+    filtered_patterns_dir: str,
     track_id: str,
-    output_dir: str,
-    bpm: float,
-    snippet_start_time: float
-) -> dict:
+    output_dir: str
+) -> Dict:
     """
-    Create beat-level histograms showing all individual onsets as markers.
-
-    Each IOI is plotted as an 'x' marker at its exact value in log space.
-
-    Parameters
-    ----------
-    grid_output_dir : str
-        Directory containing the FlexStart filtered CSV files
-    base_name : str
-        Base filename (without extension)
-    track_id : str
-        Track identifier for plot title
-    output_dir : str
-        Output directory for saving plots
-    bpm : float
-        Tempo in BPM for time conversion
-    snippet_start_time : float
-        Start time of snippet in seconds
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files and statistics
+    Create beat-level scatter plots showing all individual IOIs as markers.
     """
-    print(f"\n  [Beat Histograms - All Onsets] Creating individual onset plots...")
+    print(f"\n  [Anchored Beat Histograms - All Onsets] Creating individual IOI scatter plots...")
 
+    filtered_dir = Path(filtered_patterns_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Process pattern-based IOI
-    df_ioi = process_pattern_based_ioi(grid_output_dir, base_name, bpm, snippet_start_time)
+    anchored_files = sorted(filtered_dir.glob('SecNo*_anchored.csv'))
 
-    if df_ioi.empty:
-        print(f"    ⚠️  No IOI data found")
+    if not anchored_files:
+        print(f"    Warning: No anchored CSV files found")
         return {}
 
-    # Get metadata for each pattern length (displayed/total repetitions)
-    pattern_metadata = get_pattern_metadata(grid_output_dir, base_name)
+    sections = {}
+    for csv_file in anchored_files:
+        parsed = parse_anchored_filename(csv_file.name)
+        if parsed:
+            sec_no = parsed['section_no']
+            if sec_no not in sections:
+                sections[sec_no] = {}
+            sections[sec_no][parsed['pattern_length']] = {
+                'path': csv_file,
+                'metadata': parsed
+            }
 
-    # Create visualization
-    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
-    fig.suptitle(f'Beat Histograms — All Onsets (IOI) — {track_id}', fontsize=14, fontweight='bold', y=0.995)
+    all_ioi_data = []
+    for sec_no in sorted(sections.keys()):
+        for pattern_length in sorted(sections[sec_no].keys()):
+            csv_path = sections[sec_no][pattern_length]['path']
+            df_ioi = process_section_ioi(str(csv_path))
+            if not df_ioi.empty:
+                df_ioi['section_no'] = sec_no
+                all_ioi_data.append(df_ioi)
 
-    # Define colors for each pattern length
-    colors = ['#2ECC71', '#F39C12', '#9B59B6']  # Green, Orange, Purple
+    if not all_ioi_data:
+        print(f"    Warning: No IOI data found")
+        return {}
 
-    # Define IOI categories for x-axis reference
-    category_order = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+    df_all = pd.concat(all_ioi_data, ignore_index=True)
+
+    # Get all unique section numbers and pattern lengths
+    all_sec_nos = sorted(sections.keys())
+    all_pattern_lengths = sorted(set(pl for sec in sections.values() for pl in sec.keys()))
+
+    # Create figure: rows = pattern lengths (L2 top, L4 bottom), columns = sections
+    num_cols = len(all_sec_nos)
+    num_rows = len(all_pattern_lengths)
+
+    fig, axes = plt.subplots(num_rows, num_cols,
+                             figsize=(8 * num_cols, 3 * num_rows),
+                             squeeze=False)
+    fig.suptitle(f'Anchored Beat Histograms — All IOIs — {track_id}',
+                 fontsize=14, fontweight='bold', y=0.995)
+
     category_to_ticks = {
-        '1/16': 1,
-        '1/8': 2,
-        '3/16': 3,
-        '1/4': 4,
-        '6/16': 6,
-        '2/4': 8,
-        '4/4': 16
+        '1/16': 1, '1/8': 2, '3/16': 3, '1/4': 4,
+        '6/16': 6, '2/4': 8, '4/4': 16
     }
 
-    pattern_lengths = [4, 2, 1]
+    for row_idx, pattern_length in enumerate(all_pattern_lengths):
+        for col_idx, sec_no in enumerate(all_sec_nos):
+            ax = axes[row_idx, col_idx]
 
-    for idx, (pattern_length, color) in enumerate(zip(pattern_lengths, colors)):
-        ax = axes[idx]
-        df_pattern = df_ioi[df_ioi['pattern_length'] == pattern_length].copy()
+            df_section = df_all[(df_all['section_no'] == sec_no) &
+                               (df_all['pattern_length'] == pattern_length)]
 
-        if df_pattern.empty:
-            ax.text(0.5, 0.5, f'No data for L={pattern_length}',
-                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
-            ax.set_title(f'Pattern Length L={pattern_length}', fontsize=11, fontweight='bold')
-            continue
+            if df_section.empty:
+                ax.text(0.5, 0.5, f'No L{pattern_length} data\nfor SecNo{sec_no}',
+                       ha='center', va='center', transform=ax.transAxes, fontsize=10)
+                ax.set_title(f'SecNo{sec_no} — L{pattern_length}', fontsize=10, fontweight='bold')
+                continue
 
-        # Get all IOI values and categories
-        ioi_values = df_pattern['ioi_exact_ticks'].values
-        ioi_log = np.log2(ioi_values)
+            section_label = df_section['section_label'].iloc[0]
+            ratio = df_section['ratio_in_snippet'].iloc[0]
+            num_reps = df_section['no_of_repetitions'].iloc[0]
 
-        # Create y-positions: jittered slightly for visibility
-        np.random.seed(42)  # Reproducible jitter
-        y_positions = np.random.uniform(0.4, 0.6, size=len(ioi_values))
+            ioi_values = df_section['ioi_exact_ticks'].values
+            ioi_categories = df_section['ioi_category'].values
 
-        # Plot each onset as an 'x' marker
-        ax.scatter(ioi_log, y_positions, marker='x', s=50,
-                  color='black', alpha=0.5, linewidths=1.5)
+            # Filter out invalid values
+            valid_mask = ioi_values > 0
+            ioi_values = ioi_values[valid_mask]
+            ioi_categories = ioi_categories[valid_mask]
 
-        # Formatting with logarithmic x-axis
-        tick_values = [1, 2, 3, 4, 6, 8, 16]
-        tick_positions_log = [np.log2(v) for v in tick_values]
-        tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+            if len(ioi_values) == 0:
+                ax.text(0.5, 0.5, 'No valid IOIs',
+                       ha='center', va='center', transform=ax.transAxes, fontsize=12)
+                continue
 
-        ax.set_xticks(tick_positions_log)
-        ax.set_xticklabels(tick_labels, fontsize=10)
-        ax.set_ylabel('Onset Density', fontsize=10, fontweight='bold')
-        ax.set_ylim(0, 1)
-        ax.set_yticks([])  # Hide y-axis ticks (density visualization)
+            ioi_log = np.log2(ioi_values)
 
-        # Get repetition info for this pattern length
-        num_displayed, num_total = pattern_metadata.get(pattern_length, (None, None))
-        if num_displayed is not None and num_total is not None:
-            rep_info = f' — Repetitions: {num_displayed}/{num_total}'
-        else:
-            rep_info = ''
+            np.random.seed(42 + sec_no + pattern_length)
+            y_positions = np.random.uniform(0.3, 0.7, size=len(ioi_values))
 
-        ax.set_title(f'Pattern Length L={pattern_length} ({len(df_pattern)} intervals){rep_info}',
-                    fontsize=11, fontweight='bold', pad=10)
-        ax.grid(True, alpha=0.3, axis='x')
+            # Define colors for each IOI category
+            category_colors = {
+                '1/16': '#E74C3C',  # Red
+                '1/8': '#F39C12',   # Orange
+                '3/16': '#F1C40F',  # Yellow
+                '1/4': '#2ECC71',   # Green
+                '6/16': '#8E44AD',  # Purple
+                '2/4': '#3498DB',   # Blue
+                '4/4': '#2C3E50'    # Dark blue-gray
+            }
 
-        # Add vertical gray grid lines at nominal category positions (log scale)
-        for tick_log in tick_positions_log:
-            ax.axvline(x=tick_log, color='gray', linestyle=':',
-                      linewidth=0.8, alpha=0.4, zorder=1)
+            # Map categories to colors
+            point_colors = [category_colors.get(cat, 'black') for cat in ioi_categories]
 
-        # Set x-axis limits with padding in log space
-        ax.set_xlim(-0.5, 4.5)  # log2(1) = 0, log2(16) = 4
+            ax.scatter(ioi_log, y_positions, marker='x', s=50,
+                      c=point_colors, alpha=0.7, linewidths=1.5)
 
-        # Only show x-label on bottom subplot
-        if idx == len(pattern_lengths) - 1:
-            ax.set_xlabel('IOI Category (16th note ticks, log scale)', fontsize=10, fontweight='bold')
+            tick_values = [1, 2, 3, 4, 6, 8, 16]
+            tick_positions_log = [np.log2(v) for v in tick_values]
+            tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
 
-        print(f"    Pattern Length L={pattern_length}: {len(df_pattern)} onsets")
+            ax.set_xticks(tick_positions_log)
+            ax.set_xticklabels(tick_labels, fontsize=9)
+            ax.set_ylabel('Density', fontsize=9)
+            ax.set_ylim(0, 1)
+            ax.set_yticks([])
 
+            title = f'SecNo{sec_no} — {section_label} — L{pattern_length}'
+            if num_reps:
+                title += f' — {num_reps} reps'
+            title += f' — {len(df_section)} IOIs'
+            if ratio:
+                title += f' — {ratio:.1%}'
+
+            ax.set_title(title, fontsize=10, fontweight='bold', pad=5)
+            ax.grid(True, alpha=0.3, axis='x')
+
+            for tick_log in tick_positions_log:
+                ax.axvline(x=tick_log, color='gray', linestyle=':', linewidth=0.8, alpha=0.4)
+
+            ax.set_xlim(-0.5, 4.5)
+
+            if row_idx == num_rows - 1:
+                ax.set_xlabel('IOI (16th note ticks, log scale)', fontsize=9)
+
+    # Add a single legend for the entire figure
+    from matplotlib.lines import Line2D
+    category_colors = {
+        '1/16': '#E74C3C',  # Red
+        '1/8': '#F39C12',   # Orange
+        '3/16': '#F1C40F',  # Yellow
+        '1/4': '#2ECC71',   # Green
+        '6/16': '#8E44AD',  # Purple
+        '2/4': '#3498DB',   # Blue
+        '4/4': '#2C3E50'    # Dark blue-gray
+    }
+    legend_elements = [Line2D([0], [0], marker='x', color='w', markerfacecolor=color,
+                              markeredgecolor=color, markersize=8, label=cat, linewidth=0)
+                       for cat, color in category_colors.items()]
     plt.tight_layout()
+    plt.subplots_adjust(bottom=0.12)  # Make room for legend at bottom
+    fig.legend(handles=legend_elements, loc='lower center', ncol=7, fontsize=9,
+               framealpha=0.9, bbox_to_anchor=(0.5, 0.02))
 
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_beat_histograms_all_onsets.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_beat_histograms_all_onsets.png'
+    output_png = output_path / f'{track_id}_anchored_beat_histograms_all_onsets.png'
     plt.savefig(output_png, dpi=150, bbox_inches='tight')
     print(f"    Saved: {output_png.name}")
 
     plt.close()
 
-    output_files = {
-        'beat_histogram_all_onsets_pdf': str(output_pdf),
-        'beat_histogram_all_onsets_png': str(output_png)
-    }
-
-    print(f"    ✓ Processed {len(df_ioi)} total inter-onset intervals")
-
-    return output_files
-
-
-def create_simple_ioi_histogram(
-    onsets_file: str,
-    corrected_downbeats_file: str,
-    track_id: str,
-    output_dir: str
-) -> dict:
-    """
-    Create simple IOI histogram from raw onset times.
-
-    Reads ALL onset times from the entire song (not just a snippet) directly
-    from the 4_onsets CSV and calculates IOI as differences between consecutive
-    onsets. Uses tempo from corrected downbeats file to add rhythmic interval
-    reference lines.
-
-    Parameters
-    ----------
-    onsets_file : str
-        Path to the onsets CSV file (4_onsets/{track_id}_onsets.csv).
-        The entire file is read - all onsets from the full song.
-    corrected_downbeats_file : str
-        Path to corrected downbeats file (3_corrected/{track_id}_downbeats_corrected.txt)
-        Used to extract avg_kept_corrected tempo from comments
-    track_id : str
-        Track identifier for plot title
-    output_dir : str
-        Output directory for saving plots
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files and statistics
-    """
-    print(f"\n  [Simple IOI Histogram] Creating simple IOI distribution plot...")
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Read onset times from CSV
-    onsets_path = Path(onsets_file)
-    if not onsets_path.exists():
-        print(f"    ⚠️  Onsets file not found: {onsets_file}")
-        return {}
-
-    df_onsets = pd.read_csv(onsets_path)
-    if df_onsets.empty or 'onset_times' not in df_onsets.columns:
-        print(f"    ⚠️  No onset data found in {onsets_file}")
-        return {}
-
-    onset_times = df_onsets['onset_times'].values
-
-    if len(onset_times) < 2:
-        print(f"    ⚠️  Need at least 2 onsets to calculate IOI")
-        return {}
-
-    # Calculate IOI as simple differences between consecutive onsets (in seconds)
-    ioi_seconds = np.diff(onset_times)
-    ioi_ms = ioi_seconds * 1000  # Convert to milliseconds
-
-    # Get tempo from corrected downbeats file comments
-    bpm = 120.0  # Default
-    corrected_path = Path(corrected_downbeats_file)
-    if corrected_path.exists():
-        with open(corrected_path, 'r') as f:
-            for line in f:
-                if line.startswith('# avg_kept_corrected='):
-                    try:
-                        bpm = float(line.split('=')[1].strip())
-                    except ValueError:
-                        pass
-                    break
-
-    # Calculate tick duration for rhythmic interval lines
-    bar_duration_s = 60.0 / bpm * 4  # 4 beats per bar
-    tick_duration_ms = (bar_duration_s / 16) * 1000  # 16th note in ms
-
-    # Filter to reasonable IOI values (up to 1 bar = 16 ticks)
-    max_ioi_ms = 16 * tick_duration_ms
-    ioi_ms_filtered = ioi_ms[ioi_ms <= max_ioi_ms]
-
-    # Create histogram
-    fig, ax = plt.subplots(1, 1, figsize=(16, 6))
-    fig.suptitle(f'Simple IOI Histogram — {track_id}', fontsize=14, fontweight='bold', y=0.98)
-
-    # Create histogram with automatic binning
-    counts, bins, patches = ax.hist(ioi_ms_filtered, bins=50, color='#3498DB', alpha=0.7,
-                                     edgecolor='black', linewidth=0.5)
-
-    # Formatting
-    ax.set_xlabel('Inter-Onset Interval (ms)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-    ax.set_title(f'{len(ioi_ms)} total intervals ({len(ioi_ms_filtered)} shown ≤1 bar) — Tempo: {bpm:.1f} BPM',
-                fontsize=11, fontweight='bold', pad=10)
-    ax.grid(True, alpha=0.3, axis='y')
-
-    # Add vertical lines at common rhythmic intervals (in ms)
-    rhythmic_intervals = {
-        '1/16': 1 * tick_duration_ms,
-        '1/8': 2 * tick_duration_ms,
-        '3/16': 3 * tick_duration_ms,
-        '1/4': 4 * tick_duration_ms,
-        '6/16': 6 * tick_duration_ms,
-        '2/4': 8 * tick_duration_ms,
-        '4/4': 16 * tick_duration_ms,
-    }
-
-    for label, value_ms in rhythmic_intervals.items():
-        if ax.get_xlim()[0] <= value_ms <= ax.get_xlim()[1]:
-            ax.axvline(x=value_ms, color='red', linestyle='--',
-                      linewidth=1.5, alpha=0.5, label=label)
-
-    # Add legend for rhythmic interval lines
-    ax.legend(loc='upper right', fontsize=9, title='Rhythmic Intervals')
-
-    plt.tight_layout()
-
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_simple_ioi_histogram.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_simple_ioi_histogram.png'
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"    Saved: {output_png.name}")
-
-    plt.close()
-
-    # Save CSV with IOI in milliseconds
-    output_csv = output_path / f'{track_id}_simple_ioi_data.csv'
-    df_ioi_out = pd.DataFrame({
-        'onset1_time_s': onset_times[:-1],
-        'onset2_time_s': onset_times[1:],
-        'ioi_seconds': ioi_seconds,
-        'ioi_ms': ioi_ms
-    })
-    df_ioi_out.to_csv(output_csv, index=False)
-    print(f"    Saved: {output_csv.name}")
-
-    output_files = {
-        'simple_ioi_histogram_pdf': str(output_pdf),
-        'simple_ioi_histogram_png': str(output_png),
-        'simple_ioi_data_csv': str(output_csv)
-    }
-
-    print(f"    ✓ Processed {len(ioi_ms)} inter-onset intervals")
-
-    return output_files
-
-
-def create_simple_ioi_all_crosses(
-    onsets_file: str,
-    corrected_downbeats_file: str,
-    track_id: str,
-    output_dir: str
-) -> dict:
-    """
-    Create simple IOI plot showing all inter-onset intervals as 'x' markers.
-
-    Reads ALL onset times from the entire song (not just a snippet) directly
-    from the 4_onsets CSV and plots each IOI as an 'x' marker on a log2 scale.
-    Uses tempo from corrected downbeats file for rhythmic interval reference lines.
-
-    Parameters
-    ----------
-    onsets_file : str
-        Path to the onsets CSV file (4_onsets/{track_id}_onsets.csv).
-        The entire file is read - all onsets from the full song.
-    corrected_downbeats_file : str
-        Path to corrected downbeats file (3_corrected/{track_id}_downbeats_corrected.txt)
-        Used to extract avg_kept_corrected tempo from comments
-    track_id : str
-        Track identifier for plot title
-    output_dir : str
-        Output directory for saving plots
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files
-    """
-    print(f"\n  [Simple IOI All Crosses] Creating IOI scatter plot...")
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Read onset times from CSV
-    onsets_path = Path(onsets_file)
-    if not onsets_path.exists():
-        print(f"    ⚠️  Onsets file not found: {onsets_file}")
-        return {}
-
-    df_onsets = pd.read_csv(onsets_path)
-    if df_onsets.empty or 'onset_times' not in df_onsets.columns:
-        print(f"    ⚠️  No onset data found in {onsets_file}")
-        return {}
-
-    onset_times = df_onsets['onset_times'].values
-
-    if len(onset_times) < 2:
-        print(f"    ⚠️  Need at least 2 onsets to calculate IOI")
-        return {}
-
-    # Calculate IOI as simple differences between consecutive onsets (in seconds)
-    ioi_seconds = np.diff(onset_times)
-
-    # Get tempo from corrected downbeats file comments
-    bpm = 120.0  # Default
-    corrected_path = Path(corrected_downbeats_file)
-    if corrected_path.exists():
-        with open(corrected_path, 'r') as f:
-            for line in f:
-                if line.startswith('# avg_kept_corrected='):
-                    try:
-                        bpm = float(line.split('=')[1].strip())
-                    except ValueError:
-                        pass
-                    break
-
-    # Calculate tick duration for converting to ticks
-    bar_duration_s = 60.0 / bpm * 4  # 4 beats per bar
-    tick_duration_s = bar_duration_s / 16  # 16th note in seconds
-
-    # Convert IOI to ticks
-    ioi_ticks = ioi_seconds / tick_duration_s
-
-    # Filter to reasonable IOI values (up to 16 ticks = 1 bar)
-    ioi_ticks_filtered = ioi_ticks[ioi_ticks <= 16]
-    # Also filter out very small values (< 0.5 ticks) that would cause log issues
-    ioi_ticks_filtered = ioi_ticks_filtered[ioi_ticks_filtered >= 0.5]
-
-    if len(ioi_ticks_filtered) == 0:
-        print(f"    ⚠️  No valid IOI values after filtering")
-        return {}
-
-    # Convert to log2 scale
-    ioi_log = np.log2(ioi_ticks_filtered)
-
-    # Create plot
-    fig, ax = plt.subplots(1, 1, figsize=(16, 4))
-    fig.suptitle(f'Simple IOI All Crosses — {track_id}', fontsize=14, fontweight='bold', y=0.98)
-
-    # Create jittered y-positions for visibility
-    np.random.seed(42)  # Reproducible jitter
-    y_positions = np.random.uniform(0.3, 0.7, size=len(ioi_ticks_filtered))
-
-    # Plot each IOI as an 'x' marker
-    ax.scatter(ioi_log, y_positions, marker='x', s=50,
-               color='black', alpha=0.5, linewidths=1.5)
-
-    # Formatting with logarithmic x-axis
-    tick_values = [1, 2, 3, 4, 6, 8, 16]
-    tick_positions_log = [np.log2(v) for v in tick_values]
-    tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
-
-    ax.set_xticks(tick_positions_log)
-    ax.set_xticklabels(tick_labels, fontsize=10)
-    ax.set_xlabel('IOI (16th note ticks, log scale)', fontsize=10, fontweight='bold')
-    ax.set_ylabel('Onset Density', fontsize=10, fontweight='bold')
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])  # Hide y-axis ticks (density visualization)
-
-    ax.set_title(f'{len(ioi_ticks_filtered)} intervals (≤1 bar) — Tempo: {bpm:.1f} BPM',
-                fontsize=11, fontweight='bold', pad=10)
-    ax.grid(True, alpha=0.3, axis='x')
-
-    # Add vertical gray grid lines at nominal category positions
-    for tick_log in tick_positions_log:
-        ax.axvline(x=tick_log, color='gray', linestyle=':',
-                   linewidth=0.8, alpha=0.4, zorder=1)
-
-    # Set x-axis limits with padding in log space
-    ax.set_xlim(-0.5, 4.5)  # log2(1) = 0, log2(16) = 4
-
-    plt.tight_layout()
-
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_simple_ioi_all_crosses.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_simple_ioi_all_crosses.png'
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"    Saved: {output_png.name}")
-
-    plt.close()
-
-    output_files = {
-        'simple_ioi_all_crosses_pdf': str(output_pdf),
-        'simple_ioi_all_crosses_png': str(output_png)
-    }
-
-    print(f"    ✓ Processed {len(ioi_ticks_filtered)} inter-onset intervals")
-
-    return output_files
-
-
-def create_snippet_ioi_all_crosses(
-    onsets_file: str,
-    corrected_downbeats_file: str,
-    track_id: str,
-    output_dir: str,
-    snippet_start: float,
-    snippet_duration: float
-) -> dict:
-    """
-    Create snippet IOI plot showing inter-onset intervals as 'x' markers for a time range.
-
-    Reads onset times from the 4_onsets CSV and filters to only onsets within the
-    specified snippet time range. Plots each IOI as an 'x' marker on a log2 scale.
-    Uses tempo from corrected downbeats file for rhythmic interval reference lines.
-
-    Parameters
-    ----------
-    onsets_file : str
-        Path to the onsets CSV file (4_onsets/{track_id}_onsets.csv)
-    corrected_downbeats_file : str
-        Path to corrected downbeats file (3_corrected/{track_id}_downbeats_corrected.txt)
-        Used to extract avg_kept_corrected tempo from comments
-    track_id : str
-        Track identifier for plot title
-    output_dir : str
-        Output directory for saving plots
-    snippet_start : float
-        Start time of the snippet in seconds
-    snippet_duration : float
-        Duration of the snippet in seconds
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files
-    """
-    print(f"\n  [Snippet IOI All Crosses] Creating IOI scatter plot for snippet...")
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Read onset times from CSV
-    onsets_path = Path(onsets_file)
-    if not onsets_path.exists():
-        print(f"    ⚠️  Onsets file not found: {onsets_file}")
-        return {}
-
-    df_onsets = pd.read_csv(onsets_path)
-    if df_onsets.empty or 'onset_times' not in df_onsets.columns:
-        print(f"    ⚠️  No onset data found in {onsets_file}")
-        return {}
-
-    onset_times = df_onsets['onset_times'].values
-
-    # Filter to snippet time range
-    snippet_end = snippet_start + snippet_duration
-    onset_times_snippet = onset_times[(onset_times >= snippet_start) & (onset_times <= snippet_end)]
-
-    if len(onset_times_snippet) < 2:
-        print(f"    ⚠️  Need at least 2 onsets in snippet to calculate IOI")
-        return {}
-
-    # Calculate IOI as simple differences between consecutive onsets (in seconds)
-    ioi_seconds = np.diff(onset_times_snippet)
-
-    # Get tempo from corrected downbeats file comments
-    bpm = 120.0  # Default
-    corrected_path = Path(corrected_downbeats_file)
-    if corrected_path.exists():
-        with open(corrected_path, 'r') as f:
-            for line in f:
-                if line.startswith('# avg_kept_corrected='):
-                    try:
-                        bpm = float(line.split('=')[1].strip())
-                    except ValueError:
-                        pass
-                    break
-
-    # Calculate tick duration for converting to ticks
-    bar_duration_s = 60.0 / bpm * 4  # 4 beats per bar
-    tick_duration_s = bar_duration_s / 16  # 16th note in seconds
-
-    # Convert IOI to ticks
-    ioi_ticks = ioi_seconds / tick_duration_s
-
-    # Filter to reasonable IOI values (up to 16 ticks = 1 bar)
-    ioi_ticks_filtered = ioi_ticks[ioi_ticks <= 16]
-    # Also filter out very small values (< 0.5 ticks) that would cause log issues
-    ioi_ticks_filtered = ioi_ticks_filtered[ioi_ticks_filtered >= 0.5]
-
-    if len(ioi_ticks_filtered) == 0:
-        print(f"    ⚠️  No valid IOI values after filtering")
-        return {}
-
-    # Convert to log2 scale
-    ioi_log = np.log2(ioi_ticks_filtered)
-
-    # Create plot
-    fig, ax = plt.subplots(1, 1, figsize=(16, 4))
-    fig.suptitle(f'Snippet IOI All Crosses — {track_id}', fontsize=14, fontweight='bold', y=0.98)
-
-    # Create jittered y-positions for visibility
-    np.random.seed(42)  # Reproducible jitter
-    y_positions = np.random.uniform(0.3, 0.7, size=len(ioi_ticks_filtered))
-
-    # Plot each IOI as an 'x' marker
-    ax.scatter(ioi_log, y_positions, marker='x', s=50,
-               color='black', alpha=0.5, linewidths=1.5)
-
-    # Formatting with logarithmic x-axis
-    tick_values = [1, 2, 3, 4, 6, 8, 16]
-    tick_positions_log = [np.log2(v) for v in tick_values]
-    tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
-
-    ax.set_xticks(tick_positions_log)
-    ax.set_xticklabels(tick_labels, fontsize=10)
-    ax.set_xlabel('IOI (16th note ticks, log scale)', fontsize=10, fontweight='bold')
-    ax.set_ylabel('Onset Density', fontsize=10, fontweight='bold')
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])  # Hide y-axis ticks (density visualization)
-
-    ax.set_title(f'{len(ioi_ticks_filtered)} intervals (≤1 bar) — Snippet (complete bars): {snippet_start:.1f}s - {snippet_end:.1f}s — Tempo: {bpm:.1f} BPM',
-                fontsize=11, fontweight='bold', pad=10)
-    ax.grid(True, alpha=0.3, axis='x')
-
-    # Add vertical gray grid lines at nominal category positions
-    for tick_log in tick_positions_log:
-        ax.axvline(x=tick_log, color='gray', linestyle=':',
-                   linewidth=0.8, alpha=0.4, zorder=1)
-
-    # Set x-axis limits with padding in log space
-    ax.set_xlim(-0.5, 4.5)  # log2(1) = 0, log2(16) = 4
-
-    plt.tight_layout()
-
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_snippet_ioi_all_crosses.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_snippet_ioi_all_crosses.png'
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"    Saved: {output_png.name}")
-
-    plt.close()
-
-    output_files = {
-        'snippet_ioi_all_crosses_pdf': str(output_pdf),
-        'snippet_ioi_all_crosses_png': str(output_png)
-    }
-
-    print(f"    ✓ Processed {len(ioi_ticks_filtered)} inter-onset intervals from snippet ({len(onset_times_snippet)} onsets)")
-
-    return output_files
-
-
-def create_snippet_ioi_histogram(
-    onsets_file: str,
-    corrected_downbeats_file: str,
-    track_id: str,
-    output_dir: str,
-    snippet_start: float,
-    snippet_duration: float
-) -> dict:
-    """
-    Create snippet IOI histogram showing distribution of inter-onset intervals.
-
-    Reads onset times from the 4_onsets CSV and filters to only onsets within the
-    specified snippet time range (complete bars). Uses tempo from corrected
-    downbeats file for rhythmic interval reference lines.
-
-    Parameters
-    ----------
-    onsets_file : str
-        Path to the onsets CSV file (4_onsets/{track_id}_onsets.csv)
-    corrected_downbeats_file : str
-        Path to corrected downbeats file (3_corrected/{track_id}_downbeats_corrected.txt)
-        Used to extract avg_kept_corrected tempo from comments
-    track_id : str
-        Track identifier for plot title
-    output_dir : str
-        Output directory for saving plots
-    snippet_start : float
-        Start time of the snippet in seconds (usable_start_s from complete bars)
-    snippet_duration : float
-        Duration of the snippet in seconds (usable_duration_s)
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files
-    """
-    print(f"\n  [Snippet IOI Histogram] Creating IOI histogram for snippet...")
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Read onset times from CSV
-    onsets_path = Path(onsets_file)
-    if not onsets_path.exists():
-        print(f"    ⚠️  Onsets file not found: {onsets_file}")
-        return {}
-
-    df_onsets = pd.read_csv(onsets_path)
-    if df_onsets.empty or 'onset_times' not in df_onsets.columns:
-        print(f"    ⚠️  No onset data found in {onsets_file}")
-        return {}
-
-    onset_times = df_onsets['onset_times'].values
-
-    # Filter to snippet time range
-    snippet_end = snippet_start + snippet_duration
-    onset_times_snippet = onset_times[(onset_times >= snippet_start) & (onset_times <= snippet_end)]
-
-    if len(onset_times_snippet) < 2:
-        print(f"    ⚠️  Need at least 2 onsets in snippet to calculate IOI")
-        return {}
-
-    # Calculate IOI as simple differences between consecutive onsets (in seconds)
-    ioi_seconds = np.diff(onset_times_snippet)
-    ioi_ms = ioi_seconds * 1000  # Convert to milliseconds
-
-    # Get tempo from corrected downbeats file comments
-    bpm = 120.0  # Default
-    corrected_path = Path(corrected_downbeats_file)
-    if corrected_path.exists():
-        with open(corrected_path, 'r') as f:
-            for line in f:
-                if line.startswith('# avg_kept_corrected='):
-                    try:
-                        bpm = float(line.split('=')[1].strip())
-                    except ValueError:
-                        pass
-                    break
-
-    # Calculate tick duration for rhythmic interval lines
-    bar_duration_s = 60.0 / bpm * 4  # 4 beats per bar
-    tick_duration_ms = (bar_duration_s / 16) * 1000  # 16th note in ms
-
-    # Filter to reasonable IOI values (up to 1 bar = 16 ticks)
-    max_ioi_ms = 16 * tick_duration_ms
-    ioi_ms_filtered = ioi_ms[ioi_ms <= max_ioi_ms]
-
-    # Create histogram
-    fig, ax = plt.subplots(1, 1, figsize=(16, 6))
-    fig.suptitle(f'Snippet IOI Histogram — {track_id}', fontsize=14, fontweight='bold', y=0.98)
-
-    # Create histogram with automatic binning
-    counts, bins, patches = ax.hist(ioi_ms_filtered, bins=50, color='#3498DB', alpha=0.7,
-                                     edgecolor='black', linewidth=0.5)
-
-    # Formatting
-    ax.set_xlabel('Inter-Onset Interval (ms)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-    ax.set_title(f'{len(ioi_ms)} total intervals ({len(ioi_ms_filtered)} shown ≤1 bar) — Snippet (complete bars): {snippet_start:.1f}s - {snippet_end:.1f}s — Tempo: {bpm:.1f} BPM',
-                fontsize=11, fontweight='bold', pad=10)
-    ax.grid(True, alpha=0.3, axis='y')
-
-    # Add vertical lines at common rhythmic intervals (in ms)
-    rhythmic_intervals = {
-        '1/16': 1 * tick_duration_ms,
-        '1/8': 2 * tick_duration_ms,
-        '3/16': 3 * tick_duration_ms,
-        '1/4': 4 * tick_duration_ms,
-        '6/16': 6 * tick_duration_ms,
-        '2/4': 8 * tick_duration_ms,
-        '4/4': 16 * tick_duration_ms,
-    }
-
-    for label, value_ms in rhythmic_intervals.items():
-        if ax.get_xlim()[0] <= value_ms <= ax.get_xlim()[1]:
-            ax.axvline(x=value_ms, color='red', linestyle='--',
-                      linewidth=1.5, alpha=0.5, label=label)
-
-    # Add legend for rhythmic interval lines
-    ax.legend(loc='upper right', fontsize=9, title='Rhythmic Intervals')
-
-    plt.tight_layout()
-
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_snippet_ioi_histogram.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_snippet_ioi_histogram.png'
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"    Saved: {output_png.name}")
-
-    plt.close()
-
-    # Save CSV with IOI in milliseconds
-    output_csv = output_path / f'{track_id}_snippet_ioi_data.csv'
-    df_ioi_out = pd.DataFrame({
-        'onset1_time_s': onset_times_snippet[:-1],
-        'onset2_time_s': onset_times_snippet[1:],
-        'ioi_seconds': ioi_seconds,
-        'ioi_ms': ioi_ms
-    })
-    df_ioi_out.to_csv(output_csv, index=False)
-    print(f"    Saved: {output_csv.name}")
-
-    output_files = {
-        'snippet_ioi_histogram_pdf': str(output_pdf),
-        'snippet_ioi_histogram_png': str(output_png),
-        'snippet_ioi_data_csv': str(output_csv)
-    }
-
-    print(f"    ✓ Processed {len(ioi_ms)} inter-onset intervals from snippet ({len(onset_times_snippet)} onsets)")
-
-    return output_files
-
-
-def create_simple_beat_histograms(
-    output_dir: str,
-    track_id: str,
-    bpm: float
-) -> dict:
-    """
-    Create simple beat histograms from pre_beat_histogram CSV files.
-
-    Reads the L4, L2, L1 CSV files and creates 3 subplots showing IOI distribution
-    in ticks for each pattern length.
-
-    Parameters
-    ----------
-    output_dir : str
-        Directory containing the pre_beat_histogram CSV files
-    track_id : str
-        Track identifier for plot title
-    bpm : float
-        Tempo in BPM (for reference, not used in plotting)
-
-    Returns
-    -------
-    dict
-        Dictionary with paths to saved files
-    """
-    print(f"\n  [Simple Beat Histograms] Creating simple beat histograms from IOI data...")
-
-    output_path = Path(output_dir)
-
-    # Check if pre_beat_histogram files exist
-    pattern_lengths = [4, 2, 1]
-    csv_files = {}
-
-    for L in pattern_lengths:
-        csv_path = output_path / f'{track_id}_pre_beat_histogram_L{L}.csv'
-        if csv_path.exists():
-            csv_files[L] = csv_path
-        else:
-            print(f"    Warning: {csv_path.name} not found")
-
-    if not csv_files:
-        print(f"    ⚠️  No pre_beat_histogram CSV files found")
-        return {}
-
-    # Create figure with 3 subplots
-    fig, axes = plt.subplots(3, 1, figsize=(16, 12))
-    fig.suptitle(f'Simple Beat Histograms — {track_id}', fontsize=14, fontweight='bold', y=0.995)
-
-    # Define colors for each pattern length
-    colors = ['#2ECC71', '#F39C12', '#9B59B6']  # Green, Orange, Purple
-
-    for idx, (L, color) in enumerate(zip(pattern_lengths, colors)):
-        ax = axes[idx]
-
-        if L not in csv_files:
-            ax.text(0.5, 0.5, f'No data for L={L}',
-                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
-            ax.set_title(f'Pattern Length L={L}', fontsize=11, fontweight='bold')
-            continue
-
-        # Read CSV
-        df = pd.read_csv(csv_files[L])
-
-        if df.empty:
-            ax.text(0.5, 0.5, f'Empty data for L={L}',
-                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
-            ax.set_title(f'Pattern Length L={L}', fontsize=11, fontweight='bold')
-            continue
-
-        # Get IOI values in ticks
-        ioi_values = df['ioi_exact_ticks'].values
-
-        # Create histogram with automatic binning
-        counts, bins, patches = ax.hist(ioi_values, bins=50, color=color, alpha=0.7,
-                                       edgecolor='black', linewidth=0.5)
-
-        # Formatting
-        ax.set_xlabel('IOI (16th note ticks)', fontsize=10, fontweight='bold')
-        ax.set_ylabel('Count', fontsize=10, fontweight='bold')
-        ax.set_title(f'Pattern Length L={L} ({len(df)} intervals) — Mean Tempo: {bpm:.1f} BPM',
-                    fontsize=11, fontweight='bold', pad=10)
-        ax.grid(True, alpha=0.3, axis='y')
-
-        # Add vertical lines at common rhythmic intervals (in ticks)
-        rhythmic_intervals = {
-            '1/16': 1,
-            '1/8': 2,
-            '3/16': 3,
-            '1/4': 4,
-            '6/16': 6,
-            '2/4': 8,
-            '4/4': 16,
-        }
-
-        for label, value_ticks in rhythmic_intervals.items():
-            if ax.get_xlim()[0] <= value_ticks <= ax.get_xlim()[1]:
-                ax.axvline(x=value_ticks, color='red', linestyle='--',
-                          linewidth=1.5, alpha=0.5)
-                # Add text label above the line
-                ax.text(value_ticks, ax.get_ylim()[1] * 0.95, label,
-                       ha='center', va='top', fontsize=8, color='red',
-                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
-
-        print(f"    Pattern Length L={L}: {len(df)} intervals")
-
-    plt.tight_layout()
-
-    # Save plot as PDF
-    output_pdf = output_path / f'{track_id}_simple_beat_histograms.pdf'
-    plt.savefig(output_pdf, bbox_inches='tight')
-    print(f"    Saved: {output_pdf.name}")
-
-    # Save plot as PNG
-    output_png = output_path / f'{track_id}_simple_beat_histograms.png'
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"    Saved: {output_png.name}")
-
-    plt.close()
-
-    output_files = {
-        'simple_beat_histograms_pdf': str(output_pdf),
-        'simple_beat_histograms_png': str(output_png)
-    }
-
-    total_intervals = sum(len(pd.read_csv(csv_files[L])) for L in csv_files.keys())
-    print(f"    ✓ Processed {total_intervals} total inter-onset intervals")
-
-    return output_files
+    return {'png': str(output_png)}
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 4:
+        print('Usage: python anchored_beat_histograms.py <filtered_patterns_dir> <track_id> <output_dir>')
+        print('')
+        print('Arguments:')
+        print('  filtered_patterns_dir: 6.2_filtered_patterns directory')
+        print('  track_id: Track identifier for plot titles')
+        print('  output_dir: 6.7_anchored_beat_histograms directory')
+        sys.exit(1)
+
+    filtered_patterns_dir = sys.argv[1]
+    track_id = sys.argv[2]
+    output_dir = sys.argv[3]
+
+    create_anchored_beat_histograms(filtered_patterns_dir, track_id, output_dir)
+    create_anchored_beat_histograms_all_onsets(filtered_patterns_dir, track_id, output_dir)
