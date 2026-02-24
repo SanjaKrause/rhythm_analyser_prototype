@@ -1303,6 +1303,264 @@ def create_anchored_groove_pulse_beat_histograms_all_onsets(
     return {'png': str(output_png)}
 
 
+def create_anchored_beat_patterns(
+    beat_histograms_csv: str,
+    track_id: str,
+    output_dir: str,
+    binary_threshold: float = 0.5,
+    verbose: bool = True
+) -> Dict:
+    """
+    Create binary beat pattern visualizations from beat histogram data.
+
+    Reads the aggregated beat histograms CSV and creates binary patterns:
+    - onset_strength >= binary_threshold -> bar height 1.0
+    - 0 < onset_strength < binary_threshold -> bar height 0.5
+    - onset_strength == 0 -> no bar
+
+    Layout: 2 rows (L2 patterns top, L4 patterns bottom) x N columns (sections by SecNo)
+
+    Parameters
+    ----------
+    beat_histograms_csv : str
+        Path to the aggregated beat histograms CSV (e.g., {track_id}_anchored_beat_histograms.csv)
+    track_id : str
+        Track identifier for plot title
+    output_dir : str
+        Output directory for saving plots
+    binary_threshold : float
+        Threshold for full vs half pattern level (default 0.5)
+    verbose : bool
+        Whether to print progress messages (default True)
+
+    Returns
+    -------
+    dict
+        Dictionary with paths to saved files
+    """
+    if verbose:
+        print(f"\n  [Anchored Beat Patterns] Creating from beat histograms CSV...")
+
+    csv_path = Path(beat_histograms_csv)
+    if not csv_path.exists():
+        if verbose:
+            print(f"    Error: Beat histograms CSV not found: {beat_histograms_csv}")
+        return {'pdf': None, 'png': None, 'csv': None}
+
+    df = pd.read_csv(csv_path)
+
+    # Get unique section_ids and pattern_lengths
+    all_sec_nos = sorted(df['section_no'].unique())
+    all_pattern_lengths = sorted(df['pattern_length'].unique())
+
+    if verbose:
+        print(f"    Found sections: {all_sec_nos}")
+        print(f"    Found pattern lengths: {['L' + str(pl) for pl in all_pattern_lengths]}")
+
+    num_cols = len(all_sec_nos)
+    num_rows = len(all_pattern_lengths)
+
+    if num_rows == 0 or num_cols == 0:
+        if verbose:
+            print(f"    No data to plot")
+        return {'pdf': None, 'png': None, 'csv': None}
+
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 3 * num_rows), squeeze=False)
+    fig.suptitle(f'Anchored Beat Patterns (Binary: ≥{binary_threshold}=1.0) — {track_id}',
+                 fontsize=14, fontweight='bold', y=0.995)
+
+    # Define colors by pattern length
+    colors = {2: '#F39C12', 4: '#2ECC71'}
+
+    category_order = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+    category_to_ticks = {
+        '1/16': 1, '1/8': 2, '3/16': 3, '1/4': 4,
+        '6/16': 6, '2/4': 8, '4/4': 16
+    }
+
+    # CSV data storage
+    csv_data = []
+
+    for row_idx, pattern_length in enumerate(all_pattern_lengths):
+        for col_idx, sec_no in enumerate(all_sec_nos):
+            ax = axes[row_idx, col_idx]
+
+            # Get data for this section and pattern length
+            section_df = df[(df['section_no'] == sec_no) & (df['pattern_length'] == pattern_length)]
+
+            if len(section_df) == 0:
+                ax.text(0.5, 0.5, f'No L{pattern_length} data\nfor SecNo{sec_no}',
+                       ha='center', va='center', transform=ax.transAxes, fontsize=10)
+                ax.set_title(f'SecNo{sec_no} — L{pattern_length}', fontsize=10, fontweight='bold')
+                continue
+
+            # Get section info from first row
+            section_label = section_df['section_label'].iloc[0]
+            section_id = section_df['section_id'].iloc[0]
+            num_repetitions = section_df['num_repetitions'].iloc[0] if 'num_repetitions' in section_df.columns else None
+            ratio_in_snippet = section_df['ratio_in_snippet'].iloc[0] if 'ratio_in_snippet' in section_df.columns else None
+
+            color = colors.get(pattern_length, '#9B59B6')
+
+            # Build arrays from dataframe
+            onset_strengths = []
+            median_shifts = []
+            iqr_scaleds = []
+            counts = []
+
+            for cat in category_order:
+                cat_row = section_df[section_df['ioi_category'] == cat]
+                if len(cat_row) > 0:
+                    onset_strengths.append(cat_row['onset_strength'].iloc[0])
+                    median_shifts.append(cat_row['median_shift'].iloc[0] if pd.notna(cat_row['median_shift'].iloc[0]) else 0)
+                    iqr_scaleds.append(cat_row['iqr_scaled'].iloc[0] if pd.notna(cat_row['iqr_scaled'].iloc[0]) else 0)
+                    counts.append(cat_row['count'].iloc[0])
+                else:
+                    onset_strengths.append(0)
+                    median_shifts.append(0)
+                    iqr_scaleds.append(0)
+                    counts.append(0)
+
+            onset_strengths = np.array(onset_strengths)
+            median_shifts = np.array(median_shifts)
+            iqr_scaleds = np.array(iqr_scaleds)
+
+            # Create binary pattern values
+            pattern_values = np.zeros(len(category_order))
+            for i in range(len(category_order)):
+                if onset_strengths[i] >= binary_threshold:
+                    pattern_values[i] = 1.0
+                elif onset_strengths[i] > 0:
+                    pattern_values[i] = 0.5
+                else:
+                    pattern_values[i] = 0.0
+
+            # X-axis: log scale positions for IOI categories
+            base_positions_log = np.array([np.log2(category_to_ticks[cat]) for cat in category_order])
+
+            # Calculate shifted positions based on median_shift
+            shifted_positions_log = base_positions_log.copy()
+            for i, cat in enumerate(category_order):
+                nominal_ticks = category_to_ticks[cat]
+                shifted_ticks = nominal_ticks + median_shifts[i]
+                if shifted_ticks > 0:
+                    shifted_positions_log[i] = np.log2(shifted_ticks)
+
+            # Plot bars at shifted positions
+            bar_width = 0.15
+            for i in range(len(category_order)):
+                if pattern_values[i] > 0:
+                    ax.bar(shifted_positions_log[i], pattern_values[i], width=bar_width,
+                          color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
+
+            # Add error bars (IQR scaled)
+            for i in range(len(category_order)):
+                if iqr_scaleds[i] > 0 and pattern_values[i] > 0:
+                    error_bar_y = pattern_values[i] * 0.9
+                    nominal_ticks = category_to_ticks[category_order[i]]
+                    shifted_ticks = nominal_ticks + median_shifts[i]
+                    if shifted_ticks > 0:
+                        log_upper = np.log2(shifted_ticks + iqr_scaleds[i] / 2)
+                        log_lower = np.log2(max(0.1, shifted_ticks - iqr_scaleds[i] / 2))
+                        iqr_log = (log_upper - log_lower) / 2
+                        ax.errorbar(shifted_positions_log[i], error_bar_y,
+                                   xerr=iqr_log, fmt='none',
+                                   ecolor='black', capsize=2, capthick=1, linewidth=1)
+
+            # Add median shift labels on top of bars
+            for i in range(len(category_order)):
+                if pattern_values[i] > 0 and median_shifts[i] != 0:
+                    label_text = f'{median_shifts[i]:.2f}'.replace('0.', '.').replace('-0.', '-.')
+                    ax.text(shifted_positions_log[i], pattern_values[i], label_text,
+                           ha='center', va='bottom', fontsize=6, rotation=0)
+
+            ax.set_ylabel('Pattern Level', fontsize=9, fontweight='bold')
+
+            # Set y-axis limits and ticks
+            ax.set_ylim(0, 1.3)
+            ax.set_yticks([0.5, 1.0])
+
+            # X-axis: IOI categories
+            tick_values = [1, 2, 3, 4, 6, 8, 16]
+            tick_positions_log = [np.log2(v) for v in tick_values]
+            tick_labels = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
+
+            ax.set_xticks(tick_positions_log)
+            ax.set_xticklabels(tick_labels, fontsize=8)
+            ax.set_xlim(-0.5, 4.5)
+
+            # Grid lines at nominal positions
+            for tick_log in tick_positions_log:
+                ax.axvline(x=tick_log, color='gray', linestyle=':', linewidth=0.5, alpha=0.4)
+
+            ax.set_xlabel('IOI Category (16th note ticks)', fontsize=9)
+
+            # Title
+            title = f'SecNo{sec_no} — {section_label} — L{pattern_length}'
+            if num_repetitions:
+                title += f' — {num_repetitions} reps'
+            if ratio_in_snippet:
+                title += f' — {ratio_in_snippet:.1%}'
+            ax.set_title(title, fontsize=10, fontweight='bold', pad=5)
+
+            # Store CSV data
+            for i, cat in enumerate(category_order):
+                csv_data.append({
+                    'section_id': section_id,
+                    'section_label': section_label,
+                    'section_no': sec_no,
+                    'pattern_length': pattern_length,
+                    'num_repetitions': num_repetitions,
+                    'ratio_in_snippet': ratio_in_snippet,
+                    'ioi_category': cat,
+                    'nominal_ticks': category_to_ticks[cat],
+                    'onset_strength': onset_strengths[i],
+                    'pattern_level': pattern_values[i],
+                    'median_shift': median_shifts[i],
+                    'iqr_scaled': iqr_scaleds[i],
+                    'count': counts[i]
+                })
+
+    # Legend
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Patch(facecolor='gray', edgecolor='black', alpha=0.7, label=f'Height 1.0: strength ≥ {binary_threshold}'),
+        Patch(facecolor='gray', edgecolor='black', alpha=0.4, label=f'Height 0.5: 0 < strength < {binary_threshold}'),
+        Line2D([0], [0], color='black', linewidth=1, marker='|', markersize=8, label='Error bar: IQR × 1.5'),
+    ]
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.15)
+    fig.legend(handles=legend_elements, loc='lower center', ncol=3, fontsize=9,
+               framealpha=0.9, bbox_to_anchor=(0.5, 0.02))
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    output_png = output_path / f'{track_id}_anchored_beat_patterns.png'
+    plt.savefig(output_png, dpi=150, bbox_inches='tight')
+    if verbose:
+        print(f"    Saved: {output_png.name}")
+
+    output_pdf = output_path / f'{track_id}_anchored_beat_patterns.pdf'
+    plt.savefig(output_pdf, bbox_inches='tight')
+    if verbose:
+        print(f"    Saved: {output_pdf.name}")
+
+    plt.close()
+
+    # Save CSV
+    if csv_data:
+        output_csv = output_path / f'{track_id}_anchored_beat_patterns.csv'
+        df_csv = pd.DataFrame(csv_data)
+        df_csv.to_csv(output_csv, index=False)
+        if verbose:
+            print(f"    Saved: {output_csv.name}")
+        return {'pdf': str(output_pdf), 'png': str(output_png), 'csv': str(output_csv)}
+
+    return {'pdf': str(output_pdf), 'png': str(output_png), 'csv': None}
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 4:
         print('Usage: python anchored_beat_histograms.py <filtered_patterns_dir> <track_id> <output_dir> [groove_pulse_csv]')
@@ -1320,6 +1578,11 @@ if __name__ == '__main__':
 
     create_anchored_beat_histograms(filtered_patterns_dir, track_id, output_dir)
     create_anchored_beat_histograms_all_onsets(filtered_patterns_dir, track_id, output_dir)
+
+    # Create beat patterns from the aggregated CSV
+    beat_histograms_csv = Path(output_dir) / f'{track_id}_anchored_beat_histograms.csv'
+    if beat_histograms_csv.exists():
+        create_anchored_beat_patterns(str(beat_histograms_csv), track_id, output_dir)
 
     # Run groove pulse filtered versions if groove_pulse_csv is provided
     if len(sys.argv) >= 5:
