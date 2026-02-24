@@ -141,7 +141,7 @@ def discover_anchored_csvs(anchoring_dir: str) -> Dict[int, Dict[int, List[Path]
 def extract_rhythm_histogram_from_anchored(
     csv_path: str,
     pattern_length: int
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Extract rhythm histogram and phase statistics from anchored CSV.
 
@@ -155,11 +155,12 @@ def extract_rhythm_histogram_from_anchored(
     Returns
     -------
     tuple
-        (histogram, median_phases, iqr_16th, raw_iqr_phases) where:
-        - histogram: onset counts per position (ratio of patterns with onset)
+        (histogram, median_phases, iqr_16th, raw_iqr_phases, onset_counts) where:
+        - histogram: onset strength per position (ratio of patterns with onset, 0-1)
         - median_phases: median tick_phase value per position
         - iqr_16th: IQR in 16th note units (for error bars)
         - raw_iqr_phases: raw IQR in tick_phase units
+        - onset_counts: raw count of onsets at each position
     """
     try:
         df = pd.read_csv(csv_path, comment='#')
@@ -169,12 +170,13 @@ def extract_rhythm_histogram_from_anchored(
 
         num_positions = pattern_length * 16
         histogram = np.zeros(num_positions)
+        onset_counts = np.zeros(num_positions, dtype=int)
         median_phases = np.full(num_positions, np.nan)
         iqr_16th = np.full(num_positions, np.nan)
         raw_iqr_phases = np.full(num_positions, np.nan)
 
         if len(df_onsets) == 0:
-            return histogram, median_phases, iqr_16th, raw_iqr_phases
+            return histogram, median_phases, iqr_16th, raw_iqr_phases, onset_counts
 
         # Get unique repetition count (based on bar_number patterns)
         # Each pattern has pattern_length bars, repetitions are bar_number // pattern_length
@@ -196,6 +198,8 @@ def extract_rhythm_histogram_from_anchored(
             pos_df = df_onsets[df_onsets['tick_16th'].values + (df_onsets['bar_number'].values % pattern_length) * 16 == pos]
 
             if len(pos_df) > 0:
+                # Store raw count
+                onset_counts[pos] = len(pos_df)
                 # Onset strength = ratio of patterns that have onset at this position
                 histogram[pos] = len(pos_df) / num_repetitions if num_repetitions > 0 else 0
 
@@ -215,7 +219,7 @@ def extract_rhythm_histogram_from_anchored(
                             raw_iqr_phases[pos] = 0.0
                             iqr_16th[pos] = 0.0
 
-        return histogram, median_phases, iqr_16th, raw_iqr_phases
+        return histogram, median_phases, iqr_16th, raw_iqr_phases, onset_counts
 
     except Exception as e:
         print(f"    Warning: Could not process {csv_path}: {e}")
@@ -324,7 +328,7 @@ def create_anchored_rhythm_histograms(
             mean_section_tempo = metadata.get('mean_section_tempo', None)
 
             # Extract histogram and statistics
-            hist, median_phases, iqr_16th, raw_iqr_phases = extract_rhythm_histogram_from_anchored(
+            hist, median_phases, iqr_16th, raw_iqr_phases, onset_counts = extract_rhythm_histogram_from_anchored(
                 str(csv_path), pattern_length
             )
             num_positions = pattern_length * 16
@@ -428,6 +432,7 @@ def create_anchored_rhythm_histograms(
                     'ratio_in_snippet': ratio_in_snippet,
                     'mean_section_tempo': mean_section_tempo,
                     'position': pos_idx + 1,  # 1-based
+                    'onset_count': int(onset_counts[pos_idx]),
                     'onset_strength': float(hist[pos_idx]),
                     'median_tick_phase': float(median_phases[pos_idx]) if not np.isnan(median_phases[pos_idx]) else None,
                     'iqr_tick_phase': float(raw_iqr_phases[pos_idx]) if not np.isnan(raw_iqr_phases[pos_idx]) else None,
@@ -563,12 +568,14 @@ def create_anchored_groove_pulse_histograms(
 
             # Extract arrays from dataframe
             onset_strength = section_df['onset_strength'].values
+            onset_counts = section_df['onset_count'].values if 'onset_count' in section_df.columns else np.zeros(len(section_df), dtype=int)
             median_phases = section_df['median_tick_phase'].values
             iqr_16th = section_df['iqr_16th'].values
 
             # Apply groove pulse threshold filter
             filtered_mask = onset_strength >= groove_pulse_threshold
             filtered_hist = np.where(filtered_mask, onset_strength, 0)
+            filtered_counts = np.where(filtered_mask, onset_counts, 0)
             filtered_median_phases = np.where(filtered_mask, median_phases, np.nan)
             filtered_iqr_16th = np.where(filtered_mask, iqr_16th, np.nan)
 
@@ -666,6 +673,8 @@ def create_anchored_groove_pulse_histograms(
                     'ratio_in_snippet': ratio_in_snippet,
                     'mean_section_tempo': mean_section_tempo,
                     'position': pos_idx + 1,
+                    'onset_count_original': int(onset_counts[pos_idx]),
+                    'onset_count_filtered': int(filtered_counts[pos_idx]),
                     'onset_strength_original': float(onset_strength[pos_idx]),
                     'onset_strength_filtered': float(filtered_hist[pos_idx]),
                     'median_tick_phase': float(filtered_median_phases[pos_idx]) if not np.isnan(filtered_median_phases[pos_idx]) else None,
