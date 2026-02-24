@@ -136,10 +136,13 @@ def check_condition(ratios: list, condition_letter: str) -> bool:
         count = sum(1 for r in ratios if r > 0.30)
         return count >= 2
     elif condition_letter == 'h':
-        # 1 section > 30% AND 1 section > 40%
-        has_30 = any(r > 0.30 for r in ratios)
-        has_40 = any(r > 0.40 for r in ratios)
-        return has_30 and has_40
+        # 1 section > 30% AND a different section > 40%
+        # Need at least one > 40%, and at least one OTHER section > 30%
+        sections_above_40 = [r for r in ratios if r > 0.40]
+        sections_above_30 = [r for r in ratios if r > 0.30]
+        # Must have at least 2 sections > 30% total (since >40 implies >30)
+        # AND at least one must be > 40%
+        return len(sections_above_40) >= 1 and len(sections_above_30) >= 2
     elif condition_letter == 'j':
         # No section > 30%
         return all(r <= 0.30 for r in ratios)

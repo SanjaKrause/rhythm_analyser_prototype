@@ -35,7 +35,8 @@
 26. [Step 6.6: Anchored Rhythm Histograms](#step-66-anchored-rhythm-histograms)
 27. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
 28. [Step 20: Snippet Ratio Batch Analysis](#step-20-snippet-ratio-batch-analysis)
-29. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+29. [Step 6.8: Anchored Rhythm Statistics](#step-68-anchored-rhythm-statistics)
+30. [Complete Pipeline Architecture](#complete-pipeline-architecture)
 30. [Data Dependencies](#data-dependencies)
 31. [Legend](#legend)
 32. [Notes](#notes)
@@ -2993,6 +2994,55 @@ python snippet_ratio_diagrams.py /path/to/batch/output
 # After batch processing completes
 from batch_analysis.snippet_ratio_diagrams import create_snippet_ratio_diagrams
 create_snippet_ratio_diagrams(Path(args.output_dir))
+```
+
+---
+
+## Step 6.8: Anchored Rhythm Statistics
+
+**Purpose**: Calculate aggregate microtiming and pulse metrics per section from anchored rhythm histogram data.
+
+**Input**:
+- `6.6_anchored_rhythm_histograms/{track_id}_anchored_rhythm_histograms.csv`
+- `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv`
+
+**Output**: `6.8_anchored_statistics/{track_id}_anchored_rhythm_statistics.csv`
+
+### Metrics Calculated
+
+For each section (section_id = SecNo{N}_{label}_L{pattern_length}):
+
+| Metric | Description | Calculation |
+|--------|-------------|-------------|
+| `microtiming_degree` | Average deviation from grid | Mean of `abs(median_tick_phase)` across all positions |
+| `microtiming_complexity` | Variability of timing | Mean of `iqr_16th` across all positions |
+| `pulse_strength` | Beat emphasis | Mean of `onset_strength` at beat positions (1, 5, 9, 13, ...) |
+| `groove_pulse_strength` | Filtered pulse emphasis | Mean of `onset_strength_filtered` (where > 0) |
+
+### Understanding median_tick_phase
+
+The `median_tick_phase` represents the deviation from the quantized grid position:
+
+- `0.0` = exactly on grid (on the 16th note)
+- `+0.25` = 25% of a 16th note late
+- `-0.25` = 25% of a 16th note early
+- `+0.5` or `-0.5` = halfway between two 16th notes
+
+### Output CSV Columns
+
+```csv
+section_id,sec_no,section_label,pattern_length,num_repetitions,ratio_in_snippet,mean_section_tempo,microtiming_degree,microtiming_complexity,pulse_strength,groove_pulse_strength
+SecNo1_verse_L2,1,verse,2,3,0.5997,101.0,0.0917,0.0761,0.9583,0.8333
+SecNo2_verse_L2,2,verse,2,5,0.4003,101.04,0.1177,0.1369,0.8500,0.6667
+```
+
+### Script Location
+
+**Script**: `loop_extractor/batch_analysis/anchored_rhythm_statistics.py`
+
+**Standalone Usage**:
+```bash
+python anchored_rhythm_statistics.py /path/to/track "track_id"
 ```
 
 ---

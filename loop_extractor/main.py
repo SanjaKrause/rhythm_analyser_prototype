@@ -1280,6 +1280,22 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not calculate aggregate rhythm statistics: {e}")
 
+                # Calculate anchored rhythm statistics (per-section statistics from 6.6 data)
+                try:
+                    from batch_analysis import anchored_rhythm_statistics
+
+                    anchored_rhythm_statistics.anchored_statistics_for_track(
+                        track_root,
+                        track_id
+                    )
+
+                    if verbose:
+                        print(f"  ✓ Anchored rhythm statistics calculated (6.8)")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not calculate anchored rhythm statistics: {e}")
+
     except Exception as e:
         error_msg = f"Step 6.7 failed: {e}"
         results['errors'].append(error_msg)
