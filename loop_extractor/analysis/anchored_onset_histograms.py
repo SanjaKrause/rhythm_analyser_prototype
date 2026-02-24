@@ -212,20 +212,53 @@ def plot_onsets_per_pattern_subplot(ax: plt.Axes, section_data: Dict[str, Any]) 
         ax2.set_xticklabels([pattern_global_bars.get(p, '') for p in pattern_nums], fontsize=7)
         ax2.set_xlabel('Global Bars', fontsize=8)
 
-    # Add horizontal lines for Tukey thresholds (if available in metadata)
+    # Add horizontal lines for filtering thresholds
+    # For filtered data (6.2): thresholds from metadata
+    # For unfiltered data (6.1): calculate thresholds on-the-fly based on n_reps
     filtering_method = str(metadata.get('filtering_method', ''))
 
-    if 'Tukey' in filtering_method:
-        lower_bound = metadata.get('filter_lower_bound')
-        upper_bound = metadata.get('filter_upper_bound')
-        median_val = metadata.get('filter_median')
+    if filtering_method:
+        # Use thresholds from metadata (filtered 6.2 data)
+        if 'Tukey' in filtering_method:
+            lower_bound = metadata.get('filter_lower_bound')
+            upper_bound = metadata.get('filter_upper_bound')
+            median_val = metadata.get('filter_median')
 
-        if lower_bound is not None:
+            if lower_bound is not None:
+                ax.axhline(y=lower_bound, color='red', linestyle=':', linewidth=1.2, alpha=0.8)
+            if upper_bound is not None:
+                ax.axhline(y=upper_bound, color='red', linestyle=':', linewidth=1.2, alpha=0.8)
+            if median_val is not None:
+                ax.axhline(y=median_val, color='green', linestyle='-', linewidth=1.2, alpha=0.8)
+    elif len(onset_counts) >= 2:
+        # Calculate thresholds on-the-fly for unfiltered data (6.1)
+        # Use hybrid approach: Tukey for n_reps > 2, running mean for n_reps <= 2
+        n_reps = len(onset_counts)
+        no_of_repetitions_TH = 2
+        running_mean_threshold = 0.5  # Same as filter_anchored_patterns.py
+
+        if n_reps > no_of_repetitions_TH:
+            # TUKEY METHOD: IQR-based bounds
+            onset_counts_array = np.array(onset_counts)
+            q1 = np.percentile(onset_counts_array, 25)
+            median_val = np.median(onset_counts_array)
+            q3 = np.percentile(onset_counts_array, 75)
+            iqr = q3 - q1
+            iqr_multiplier = 1.5
+            lower_bound = q1 - (iqr_multiplier * iqr)
+            upper_bound = q3 + (iqr_multiplier * iqr)
+
             ax.axhline(y=lower_bound, color='red', linestyle=':', linewidth=1.2, alpha=0.8)
-        if upper_bound is not None:
             ax.axhline(y=upper_bound, color='red', linestyle=':', linewidth=1.2, alpha=0.8)
-        if median_val is not None:
             ax.axhline(y=median_val, color='green', linestyle='-', linewidth=1.2, alpha=0.8)
+        else:
+            # RUNNING MEAN METHOD: threshold * mean (first pattern always kept)
+            # Show threshold line based on mean of all patterns
+            mean_onsets = np.mean(onset_counts)
+            threshold_line = running_mean_threshold * mean_onsets
+
+            ax.axhline(y=threshold_line, color='orange', linestyle=':', linewidth=1.2, alpha=0.8)
+            ax.axhline(y=mean_onsets, color='green', linestyle='-', linewidth=1.2, alpha=0.8)
 
     # Build title
     sec_num = section_data['sec_num']

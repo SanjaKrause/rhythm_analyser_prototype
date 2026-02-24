@@ -1,13 +1,54 @@
 #!/usr/bin/env python3
 """
-Anchored Beat Histograms - Create beat-level IOI visualizations from section-anchored data.
+Anchored Beat Histograms - IOI Analysis and Visualization
 
-This module reads section-anchored CSV files from 6.2_filtered_patterns and calculates
-inter-onset intervals (IOI) between consecutive onsets, categorizing them by duration
-(4/4, 2/4, 1/4, 3/16, 1/8, 6/16, 1/16).
+Create beat-level inter-onset interval (IOI) visualizations from section-anchored data.
+This module calculates IOIs between consecutive onsets and categorizes them by duration.
 
-Input: 6.2_filtered_patterns/SecNoX_LY_label_ratio_anchored.csv files
-Output: 6.7_anchored_beat_histograms/ with IOI CSVs per section and combined histogram plots
+Input:
+    6.2_filtered_patterns/SecNoX_LY_label_ratio_anchored.csv files
+    6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv
+
+Output (6.7_anchored_beat_histograms/):
+    Per-section files:
+        SecNo{N}_L{L}_{label}_{ratio}_ioi_data.csv - Raw IOI data
+        SecNo{N}_L{L}_{label}_{ratio}_beat_histogram_stats.csv - IOI statistics
+        SecNo{N}_L{L}_{label}_{ratio}_groove_pulse_ioi_data.csv - Groove pulse filtered IOIs
+
+    Aggregated files:
+        {track_id}_anchored_beat_histograms.csv - All sections combined
+        {track_id}_anchored_beat_histograms.png - IOI histogram visualization
+        {track_id}_anchored_beat_histograms_all_onsets.png - IOI scatter plot
+        {track_id}_anchored_beat_patterns.png/pdf/csv - Binary beat patterns
+
+    Groove pulse filtered:
+        {track_id}_groove_pulse_ioi_data.csv - Aggregated groove pulse IOIs
+        {track_id}_groove_pulse_beat_histograms.csv - Groove pulse histogram stats
+        {track_id}_groove_pulse_beat_histograms.png - Groove pulse histograms
+        {track_id}_groove_pulse_beat_histograms_all_onsets.png - Groove pulse scatter
+
+IOI Categories:
+    | Ticks | Category | Musical Value     |
+    |-------|----------|-------------------|
+    | ≥16   | 4/4      | Whole note        |
+    | ≥8    | 2/4      | Half note         |
+    | ≥6    | 6/16     | Dotted quarter    |
+    | ≥4    | 1/4      | Quarter note      |
+    | ≥3    | 3/16     | Dotted eighth     |
+    | ≥2    | 1/8      | Eighth note       |
+    | ≥1    | 1/16     | Sixteenth note    |
+
+Key Metrics per IOI Category:
+    - onset_strength: Relative frequency (count / max_count)
+    - passes_threshold: Whether onset_strength >= 10%
+    - median_ioi: Median IOI value in ticks
+    - median_shift: Deviation from nominal (median_ioi - nominal_ticks)
+    - iqr_scaled: Interquartile range × 1.5 (timing variability)
+
+Groove Pulse Filtering:
+    Filters IOIs to only include intervals where BOTH onset positions are
+    rhythmically significant (pass the groove pulse threshold in Step 6.6).
+    This reveals the core rhythmic skeleton of the beat pattern.
 
 Environment: Base (numpy, pandas, matplotlib)
 """

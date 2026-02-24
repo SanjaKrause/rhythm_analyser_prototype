@@ -1,17 +1,39 @@
 #!/usr/bin/env python3
 """
-Anchored Rhythm Statistics
+Anchored Statistics (Rhythm + Beat)
 
-Calculate summary statistics from section-anchored rhythm histogram CSVs.
-Creates aggregate metrics per section for pattern lengths L=2 and L=4.
+Calculate summary statistics from section-anchored data:
+1. Rhythm Statistics (from 6.6): Position-based microtiming and pulse metrics
+2. Beat Statistics (from 6.7): IOI-based microtiming and pulse metrics
 
-Input: 6.6_anchored_rhythm_histograms/{track_id}_anchored_rhythm_histograms.csv
-       6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv
+Input:
+    6.6_anchored_rhythm_histograms/{track_id}_anchored_rhythm_histograms.csv
+    6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv
+    6.7_anchored_beat_histograms/{track_id}_anchored_beat_histograms.csv
+    6.7_anchored_beat_histograms/{track_id}_groove_pulse_beat_histograms.csv
 
-Output: 6.8_anchored_statistics/{track_id}_anchored_rhythm_statistics.csv
+Output:
+    6.8_anchored_statistics/{track_id}_anchored_rhythm_statistics.csv
+    6.8_anchored_statistics/{track_id}_anchored_beat_statistics.csv
+
+Rhythm Statistics Metrics (per section):
+    - microtiming_degree: Mean of abs(median_tick_phase) - average deviation from grid
+    - microtiming_complexity: Mean of iqr_16th - timing variability
+    - pulse_strength: Mean onset_strength at beat positions (1, 5, 9, 13, ...)
+    - groove_pulse_strength: Mean onset_strength_filtered where > 0
+
+Beat Statistics Metrics (per section):
+    - num_ioi_categories: Count of IOI categories passing threshold (≥10%)
+    - total_ioi_count: Total IOI events from passing categories
+    - ioi_microtiming_degree: Mean of abs(median_shift) for passing categories
+    - ioi_microtiming_complexity: Mean of iqr_scaled for passing categories
+    - groove_ioi_pulse_strength: Mean onset_strength from groove pulse beat histograms
 
 Usage:
     python anchored_rhythm_statistics.py <track_root_folder> <track_id>
+
+Example:
+    python anchored_rhythm_statistics.py /path/to/449_Track_Name "449_Track_Name"
 """
 
 import sys

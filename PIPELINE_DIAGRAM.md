@@ -35,7 +35,7 @@
 26. [Step 6.6: Anchored Rhythm Histograms](#step-66-anchored-rhythm-histograms)
 27. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
 28. [Step 20: Snippet Ratio Batch Analysis](#step-20-snippet-ratio-batch-analysis)
-29. [Step 6.8: Anchored Rhythm Statistics](#step-68-anchored-rhythm-statistics)
+29. [Step 6.8: Anchored Statistics](#step-68-anchored-statistics)
 30. [Complete Pipeline Architecture](#complete-pipeline-architecture)
 30. [Data Dependencies](#data-dependencies)
 31. [Legend](#legend)
@@ -2867,18 +2867,33 @@ The `mean_section_tempo` column allows downstream analysis to correlate rhythm p
 
 ## Step 6.7: Anchored Beat Histograms (IOI Analysis)
 
-Step 6.7 creates **inter-onset interval (IOI) analysis** from the filtered section-anchored patterns, showing the distribution and timing of rhythmic note values.
+Step 6.7 creates **inter-onset interval (IOI) analysis** from the filtered section-anchored patterns, showing the distribution and timing of rhythmic note values. It also creates **groove pulse filtered** versions that only include IOIs between rhythmically significant positions.
 
-**Dependencies:** Step 6.2 (Filtered Patterns)
+**Dependencies:**
+- Step 6.2 (Filtered Patterns)
+- Step 6.6 (Anchored Rhythm Histograms - for groove pulse filtering)
 
-**Input:** `6.2_filtered_patterns/` folder containing:
-- `SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Filtered anchored phase data
+**Input:**
+- `6.2_filtered_patterns/SecNo{N}_L{L}_{label}_{ratio}_anchored.csv` - Filtered anchored phase data
+- `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv` - Groove pulse positions
 
 **Output:** `6.7_anchored_beat_histograms/` folder containing:
-- `SecNo{N}_L{L}_{label}_{ratio}_ioi_data.csv` - IOI data per section (with full metadata header)
-- `SecNo{N}_L{L}_{label}_{ratio}_ioi_stats.csv` - IOI statistics per section
-- `{track_id}_anchored_beat_histograms.png` - Combined IOI histogram visualization
-- `{track_id}_anchored_beat_histograms_all_onsets.png` - Scatter plot of all IOIs
+
+| File | Description |
+|------|-------------|
+| `SecNo{N}_L{L}_{label}_{ratio}_ioi_data.csv` | IOI data per section (with full metadata header) |
+| `SecNo{N}_L{L}_{label}_{ratio}_beat_histogram_stats.csv` | IOI statistics per section |
+| `{track_id}_anchored_beat_histograms.csv` | Aggregated IOI histogram data for all sections |
+| `{track_id}_anchored_beat_histograms.png` | Combined IOI histogram visualization |
+| `{track_id}_anchored_beat_histograms_all_onsets.png` | Scatter plot of all IOIs |
+| `{track_id}_anchored_beat_patterns.png` | Binary beat pattern visualization |
+| `{track_id}_anchored_beat_patterns.pdf` | PDF version of beat patterns |
+| `{track_id}_anchored_beat_patterns.csv` | Beat pattern data |
+| `SecNo{N}_L{L}_{label}_{ratio}_groove_pulse_ioi_data.csv` | Groove pulse filtered IOI data |
+| `{track_id}_groove_pulse_ioi_data.csv` | Aggregated groove pulse IOI data |
+| `{track_id}_groove_pulse_beat_histograms.csv` | Aggregated groove pulse beat histogram stats |
+| `{track_id}_groove_pulse_beat_histograms.png` | Groove pulse filtered IOI histograms |
+| `{track_id}_groove_pulse_beat_histograms_all_onsets.png` | Groove pulse IOI scatter plot |
 
 ### IOI Categories
 
@@ -2894,6 +2909,13 @@ Inter-onset intervals are categorized by their duration in 16th notes:
 | ≥2 | 1/8 | Eighth note |
 | ≥1 | 1/16 | Sixteenth note |
 
+### Pulse Threshold Filtering
+
+IOI categories are filtered using a **pulse threshold** (default 10%):
+- Categories with `onset_strength >= 0.1` pass the threshold
+- The `passes_threshold` flag indicates which categories are rhythmically significant
+- Beat statistics (Step 6.8) only use categories that pass the threshold
+
 ### IOI Data CSV Format
 
 Each IOI CSV preserves the full metadata header from Step 6.2 and contains:
@@ -2903,22 +2925,73 @@ section_label,pattern_length,no_of_repetitions,ratio_in_snippet,onset1_bar,onset
 chorus,2,3,0.5438,0,0,0,0.0,70.774,0,4,4,-0.0199,71.355,4,-0.0199,3.98,0.580,1/4,1
 ```
 
+### Aggregated Beat Histograms CSV Format
+
+The `{track_id}_anchored_beat_histograms.csv` contains per-category statistics for all sections:
+
+```csv
+section_id,section_label,section_no,pattern_length,num_repetitions,ratio_in_snippet,ioi_category,nominal_ticks,count,onset_strength,passes_threshold,median_ioi,median_shift,iqr_shift,iqr_scaled
+SecNo1_verse_L2,verse,1,2,3,0.5997,1/8,2,33,1.0,True,2.029,0.029,0.166,0.249
+```
+
+| Column | Description |
+|--------|-------------|
+| `onset_strength` | Relative frequency (count / max_count) |
+| `passes_threshold` | Whether onset_strength >= 10% |
+| `median_ioi` | Median IOI value in ticks |
+| `median_shift` | Deviation from nominal (median_ioi - nominal_ticks) |
+| `iqr_scaled` | Interquartile range × 1.5 (variability measure) |
+
 ### Visualizations
 
 #### 1. Anchored Beat Histograms
 
-Combined stacked bar chart showing IOI category distribution per section:
-- One subplot per section/pattern length
-- Bars colored by IOI category (1/4, 1/8, etc.)
-- Shows relative frequency of each rhythmic duration
+Combined bar chart showing IOI category distribution per section:
+- One subplot per section/pattern length (rows = L2/L4, columns = sections)
+- Bar height = onset strength (relative frequency)
+- Bar position shifted by median_shift (shows timing deviation)
+- Error bars show IQR × 1.5 (timing variability)
+- Red horizontal line at 10% threshold
+- Text labels show median_shift values
 
 #### 2. All Onsets Scatter Plot
 
 Scatter plot showing individual IOI values:
-- X-axis: onset position in pattern (tick)
-- Y-axis: IOI duration (ticks)
+- X-axis: IOI duration (log scale, ticks)
+- Y-axis: Random jitter for visibility
 - Points colored by IOI category
-- Shows timing variability at each position
+- Shows timing distribution for each duration class
+
+#### 3. Binary Beat Patterns
+
+Simplified pattern visualization:
+- Bar height 1.0: onset_strength ≥ 50%
+- Bar height 0.5: 0 < onset_strength < 50%
+- No bar: onset_strength = 0
+- Error bars show timing variability (IQR)
+- Labels show median_shift
+
+### Groove Pulse Filtering
+
+The groove pulse filtered versions only include IOIs where **both** onset positions are rhythmically significant (pass the groove pulse threshold in Step 6.6):
+
+1. Load groove pulse positions from `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv`
+2. Filter to positions where `onset_strength_filtered > 0`
+3. For each IOI, check if both onset1 and onset2 positions are in the groove set
+4. Only include IOIs where both positions pass
+
+This reveals the **core rhythmic skeleton** of the beat pattern.
+
+### Script Location
+
+**Script**: `loop_extractor/utils/anchored_beat_histograms.py`
+
+**Key Functions**:
+- `create_anchored_beat_histograms()` - Main IOI histogram generation
+- `create_anchored_beat_histograms_all_onsets()` - IOI scatter plots
+- `create_anchored_beat_patterns()` - Binary beat pattern visualization
+- `create_anchored_groove_pulse_beat_histograms()` - Groove pulse filtered histograms
+- `create_anchored_groove_pulse_beat_histograms_all_onsets()` - Groove pulse scatter plots
 
 ---
 
@@ -2998,17 +3071,29 @@ create_snippet_ratio_diagrams(Path(args.output_dir))
 
 ---
 
-## Step 6.8: Anchored Rhythm Statistics
+## Step 6.8: Anchored Statistics
 
-**Purpose**: Calculate aggregate microtiming and pulse metrics per section from anchored rhythm histogram data.
+**Purpose**: Calculate aggregate microtiming and pulse metrics per section from both:
+1. **Rhythm histogram data** (position-based, from Step 6.6)
+2. **Beat histogram data** (IOI-based, from Step 6.7)
+
+**Dependencies:**
+- Step 6.6 (Anchored Rhythm Histograms)
+- Step 6.7 (Anchored Beat Histograms)
 
 **Input**:
 - `6.6_anchored_rhythm_histograms/{track_id}_anchored_rhythm_histograms.csv`
 - `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv`
+- `6.7_anchored_beat_histograms/{track_id}_anchored_beat_histograms.csv`
+- `6.7_anchored_beat_histograms/{track_id}_groove_pulse_beat_histograms.csv`
 
-**Output**: `6.8_anchored_statistics/{track_id}_anchored_rhythm_statistics.csv`
+**Output**: `6.8_anchored_statistics/` folder containing:
+- `{track_id}_anchored_rhythm_statistics.csv` - Position-based metrics (from 6.6)
+- `{track_id}_anchored_beat_statistics.csv` - IOI-based metrics (from 6.7)
 
-### Metrics Calculated
+---
+
+### Rhythm Statistics (from 6.6 data)
 
 For each section (section_id = SecNo{N}_{label}_L{pattern_length}):
 
@@ -3019,7 +3104,7 @@ For each section (section_id = SecNo{N}_{label}_L{pattern_length}):
 | `pulse_strength` | Beat emphasis | Mean of `onset_strength` at beat positions (1, 5, 9, 13, ...) |
 | `groove_pulse_strength` | Filtered pulse emphasis | Mean of `onset_strength_filtered` (where > 0) |
 
-### Understanding median_tick_phase
+#### Understanding median_tick_phase
 
 The `median_tick_phase` represents the deviation from the quantized grid position:
 
@@ -3028,7 +3113,7 @@ The `median_tick_phase` represents the deviation from the quantized grid positio
 - `-0.25` = 25% of a 16th note early
 - `+0.5` or `-0.5` = halfway between two 16th notes
 
-### Output CSV Columns
+#### Rhythm Statistics Output CSV Columns
 
 ```csv
 section_id,sec_no,section_label,pattern_length,num_repetitions,ratio_in_snippet,mean_section_tempo,microtiming_degree,microtiming_complexity,pulse_strength,groove_pulse_strength
@@ -3036,14 +3121,66 @@ SecNo1_verse_L2,1,verse,2,3,0.5997,101.0,0.0917,0.0761,0.9583,0.8333
 SecNo2_verse_L2,2,verse,2,5,0.4003,101.04,0.1177,0.1369,0.8500,0.6667
 ```
 
+---
+
+### Beat Statistics (from 6.7 data)
+
+For each section (section_id = SecNo{N}_{label}_L{pattern_length}):
+
+| Metric | Description | Calculation |
+|--------|-------------|-------------|
+| `num_ioi_categories` | Number of active IOI categories | Count of categories passing threshold |
+| `total_ioi_count` | Total IOI events | Sum of counts from passing categories |
+| `ioi_microtiming_degree` | Average IOI deviation from nominal | Mean of `abs(median_shift)` for passing categories |
+| `ioi_microtiming_complexity` | Variability of IOI timing | Mean of `iqr_scaled` for passing categories |
+| `groove_ioi_pulse_strength` | IOI pulse emphasis | Mean of `onset_strength` from groove pulse beat histograms |
+
+#### Understanding median_shift
+
+The `median_shift` represents the deviation of the median IOI from its nominal duration:
+
+- `0.0` = exactly the nominal duration (e.g., exactly 2 ticks for 1/8 notes)
+- `+0.05` = 5% of a 16th note longer than nominal (slightly laid back)
+- `-0.05` = 5% of a 16th note shorter than nominal (slightly rushed)
+
+#### Beat Statistics Output CSV Columns
+
+```csv
+section_id,sec_no,section_label,pattern_length,num_repetitions,ratio_in_snippet,num_ioi_categories,total_ioi_count,ioi_microtiming_degree,ioi_microtiming_complexity,groove_ioi_pulse_strength
+SecNo1_verse_L2,1,verse,2,3,0.5997,3,43,0.0619,0.1637,0.4343
+SecNo2_verse_L2,2,verse,2,5,0.4003,2,60,0.0440,0.2347,0.5882
+```
+
+---
+
+### Comparison: Rhythm vs Beat Statistics
+
+| Aspect | Rhythm Statistics | Beat Statistics |
+|--------|-------------------|-----------------|
+| **Data Source** | Position-based (where onsets land) | Duration-based (how long between onsets) |
+| **Microtiming Metric** | `median_tick_phase` deviation | `median_shift` from nominal IOI |
+| **Complexity Metric** | `iqr_16th` (position variability) | `iqr_scaled` (duration variability) |
+| **Pulse Metric** | Beat position strength | IOI category strength |
+| **Use Case** | Analyze timing feel at each grid position | Analyze rhythmic duration patterns |
+
+---
+
 ### Script Location
 
 **Script**: `loop_extractor/batch_analysis/anchored_rhythm_statistics.py`
+
+**Key Functions**:
+- `calculate_section_statistics()` - Calculate rhythm statistics from 6.6 data
+- `calculate_beat_section_statistics()` - Calculate beat statistics from 6.7 data
+- `anchored_statistics_for_track()` - Generate rhythm statistics CSV
+- `anchored_beat_statistics_for_track()` - Generate beat statistics CSV
 
 **Standalone Usage**:
 ```bash
 python anchored_rhythm_statistics.py /path/to/track "track_id"
 ```
+
+This will generate both `_anchored_rhythm_statistics.csv` and `_anchored_beat_statistics.csv`.
 
 ---
 

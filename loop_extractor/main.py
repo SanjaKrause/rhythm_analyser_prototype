@@ -17,11 +17,12 @@ Complete pipeline for music microtiming analysis and loop extraction:
 6.1. Section anchoring (anchor onsets to SongFormer sections with FlexStart)
 6.2. Filter anchored patterns (Tukey IQR outlier removal)
 6.5. Raster plots
-6.6. Microtiming plots / Anchored rhythm histograms
-6.7. Rhythm histograms / Anchored beat histograms
+6.6. Microtiming plots
+6.7. Rhythm histograms
 6.8. Full song histograms
-7. RMS histogram analysis (commented out) STEP 7: ANCHORED RHYTHM HISTOGRAMS
-7.1. Anchored beat histograms (IOI analysis from filtered patterns)
+7. Anchored rhythm histograms (per-section position histograms from 6.1 data)
+7.1. Anchored beat histograms (per-section IOI histograms from filtered patterns)
+7.2. Anchored statistics (rhythm + beat statistics from 6.6 and 6.7 data)
 8. Audio example generation
 9. LEPA data export
 10. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
@@ -1280,35 +1281,6 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not calculate aggregate rhythm statistics: {e}")
 
-                # Calculate anchored rhythm statistics (per-section statistics from 6.6 data)
-                try:
-                    from batch_analysis import anchored_rhythm_statistics
-
-                    anchored_rhythm_statistics.anchored_statistics_for_track(
-                        track_root,
-                        track_id
-                    )
-
-                    if verbose:
-                        print(f"  ✓ Anchored rhythm statistics calculated (6.8)")
-
-                except Exception as e:
-                    if verbose:
-                        print(f"  ! Warning: Could not calculate anchored rhythm statistics: {e}")
-
-                # Calculate anchored beat statistics (per-section statistics from 6.7 data)
-                try:
-                    anchored_rhythm_statistics.anchored_beat_statistics_for_track(
-                        track_root,
-                        track_id
-                    )
-
-                    if verbose:
-                        print(f"  ✓ Anchored beat statistics calculated (6.8)")
-
-                except Exception as e:
-                    if verbose:
-                        print(f"  ! Warning: Could not calculate anchored beat statistics: {e}")
 
     except Exception as e:
         error_msg = f"Step 6.7 failed: {e}"
@@ -1492,6 +1464,62 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 7.1 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 7.2: ANCHORED STATISTICS (requires 6.6 and 6.7 data from Steps 7 & 7.1)
+    # ========================================================================
+    try:
+        if daw_ready:
+            if verbose:
+                print("\n[7.2] Anchored statistics - SKIPPED (DAW ready mode)")
+            results['steps_completed'].append('anchored_statistics_skipped_daw')
+        elif not paths['comprehensive_csv'].exists():
+            if verbose:
+                print("\n[7.2] Anchored statistics - SKIPPED (no comprehensive CSV)")
+            results['steps_completed'].append('anchored_statistics_skipped')
+        else:
+            if verbose:
+                print("\n[7.2] Calculating anchored statistics...")
+
+            track_root = paths['comprehensive_csv'].parent.parent
+
+            # Calculate anchored rhythm statistics (per-section statistics from 6.6 data)
+            try:
+                from batch_analysis import anchored_rhythm_statistics
+
+                anchored_rhythm_statistics.anchored_statistics_for_track(
+                    track_root,
+                    track_id
+                )
+
+                if verbose:
+                    print(f"  ✓ Anchored rhythm statistics calculated")
+
+            except Exception as e:
+                if verbose:
+                    print(f"  ! Warning: Could not calculate anchored rhythm statistics: {e}")
+
+            # Calculate anchored beat statistics (per-section statistics from 6.7 data)
+            try:
+                anchored_rhythm_statistics.anchored_beat_statistics_for_track(
+                    track_root,
+                    track_id
+                )
+
+                if verbose:
+                    print(f"  ✓ Anchored beat statistics calculated")
+
+            except Exception as e:
+                if verbose:
+                    print(f"  ! Warning: Could not calculate anchored beat statistics: {e}")
+
+            results['steps_completed'].append('anchored_statistics')
+
+    except Exception as e:
+        error_msg = f"Step 7.2 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
@@ -2359,6 +2387,16 @@ Environment:
             print("Install required packages: pip install matplotlib numpy")
         except Exception as e:
             print(f"\n⚠️  Snippet ratio diagrams failed: {e}")
+
+        # Step 21: Repetitions per section analysis
+        try:
+            from batch_analysis.repetitions_per_section import create_repetitions_diagrams
+            create_repetitions_diagrams(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  Repetitions per section skipped: {ie}")
+            print("Install required packages: pip install matplotlib numpy")
+        except Exception as e:
+            print(f"\n⚠️  Repetitions per section failed: {e}")
 
         # Exit with error code if any files failed
         if batch_results['failed']:
