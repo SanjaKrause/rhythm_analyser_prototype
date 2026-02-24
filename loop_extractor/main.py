@@ -1296,6 +1296,20 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ! Warning: Could not calculate anchored rhythm statistics: {e}")
 
+                # Calculate anchored beat statistics (per-section statistics from 6.7 data)
+                try:
+                    anchored_rhythm_statistics.anchored_beat_statistics_for_track(
+                        track_root,
+                        track_id
+                    )
+
+                    if verbose:
+                        print(f"  ✓ Anchored beat statistics calculated (6.8)")
+
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not calculate anchored beat statistics: {e}")
+
     except Exception as e:
         error_msg = f"Step 6.7 failed: {e}"
         results['errors'].append(error_msg)
@@ -1438,6 +1452,38 @@ def run_complete_pipeline(
                 track_id=track_id,
                 output_dir=str(beat_hist_dir)
             )
+
+            # Create binary beat patterns from aggregated CSV
+            aggregated_csv = beat_hist_dir / f'{track_id}_anchored_beat_histograms.csv'
+            if aggregated_csv.exists():
+                pattern_results = anchored_beat_histograms.create_anchored_beat_patterns(
+                    beat_histograms_csv=str(aggregated_csv),
+                    track_id=track_id,
+                    output_dir=str(beat_hist_dir)
+                )
+                if verbose:
+                    print(f"    Created {pattern_results.get('plots_created', 0)} beat pattern plots")
+
+            # Create groove pulse beat histograms (filtered by groove positions from 6.6)
+            groove_pulse_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_groove_pulse_histograms.csv'
+            if groove_pulse_csv.exists():
+                groove_beat_results = anchored_beat_histograms.create_anchored_groove_pulse_beat_histograms(
+                    filtered_patterns_dir=str(filtered_dir),
+                    track_id=track_id,
+                    output_dir=str(beat_hist_dir),
+                    groove_pulse_csv=str(groove_pulse_csv)
+                )
+                if verbose:
+                    print(f"    Created {groove_beat_results.get('plots_created', 0)} groove pulse beat histogram plots")
+
+                groove_beat_results_all = anchored_beat_histograms.create_anchored_groove_pulse_beat_histograms_all_onsets(
+                    filtered_patterns_dir=str(filtered_dir),
+                    track_id=track_id,
+                    output_dir=str(beat_hist_dir),
+                    groove_pulse_csv=str(groove_pulse_csv)
+                )
+                if verbose:
+                    print(f"    Created {groove_beat_results_all.get('plots_created', 0)} groove pulse scatter plots")
 
         results['steps_completed'].append('anchored_beat_histograms')
 
