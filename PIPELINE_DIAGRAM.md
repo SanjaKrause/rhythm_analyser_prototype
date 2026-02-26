@@ -2754,13 +2754,26 @@ The filtering process removes pattern repetitions that are outliers based on ons
 
 ### CSV Metadata Updates
 
-Filtered CSVs preserve all Step 6.1 metadata (including `mean_section_tempo`) and add filtering info:
+Filtered CSVs preserve most Step 6.1 metadata with key modifications:
+
+1. **Renamed fields:**
+   - `mean_section_tempo` → `mean_section_tempo_before_filter` (original value from all patterns)
+   - `no_of_repetitions` → `no_of_repetitions_before` (original count)
+
+2. **New fields added:**
+   - `used_section_start` - Start time of the first kept pattern (seconds)
+   - `used_section_end` - End time of the last kept pattern (seconds)
+   - `mean_section_tempo` - Recalculated from kept patterns only
+   - `no_of_repetitions` - Count of kept patterns
+
+**Important:** `used_section_start` and `used_section_end` represent the outer time boundaries of kept patterns. They do NOT indicate whether patterns in between were removed - only the first and last pattern boundaries are shown.
 
 ```
 # section_label=chorus
-# section_start_absolute=96.124000
-# ... (all 6.1 metadata preserved)
-# mean_section_tempo=102.97
+# section_start_absolute=96.124000      (original SongFormer section start)
+# section_duration=15.642000            (original SongFormer section duration)
+# mean_section_tempo_before_filter=102.97   (tempo from ALL patterns)
+# ... (other 6.1 metadata preserved)
 # filtering_method=Tukey (IQR multiplier=1.5)
 # no_of_repetitions_before=8
 # patterns_kept=6
@@ -2768,9 +2781,12 @@ Filtered CSVs preserve all Step 6.1 metadata (including `mean_section_tempo`) an
 # bars_kept=12
 # bars_kept_indices=40;41;44;45;...
 # no_of_repetitions=6
+# used_section_start=96.180000          (first kept pattern start)
+# used_section_end=108.450000           (last kept pattern end)
+# mean_section_tempo=103.24             (tempo from KEPT patterns only)
 ```
 
-The data columns (`local_tempo`, `pattern_index`, etc.) are also preserved from Step 6.1.
+The data columns (`local_tempo`, `pattern_index`, etc.) are preserved from Step 6.1, with `pattern_index` now explicitly included in the output.
 
 ### Visualization: Onsets Per Pattern
 

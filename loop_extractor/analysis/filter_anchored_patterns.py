@@ -249,15 +249,37 @@ def filter_anchored_csv(
     removed_filter_patterns = len(removed_by_filter)
     removed_filter_bars = len(removed_filter_bar_numbers)
 
-    # Drop the temporary loop_index column from filtered data
+    # Drop the temporary loop_index column (pattern_index already exists from input)
     df_filtered = df_filtered.drop(columns=['loop_index'])
+
+    # Calculate used_section_start, used_section_end, and mean_section_tempo from kept patterns
+    # These reflect the actual time span and tempo of kept patterns only
+    used_section_start = None
+    used_section_end = None
+    mean_section_tempo_filtered = None
+
+    if not df_filtered.empty and 'pattern_start_time' in df_filtered.columns and 'pattern_end_time' in df_filtered.columns:
+        # Get min pattern_start_time (first kept pattern's start)
+        used_section_start = df_filtered['pattern_start_time'].min()
+        # Get max pattern_end_time (last kept pattern's end)
+        used_section_end = df_filtered['pattern_end_time'].max()
+
+    if not df_filtered.empty and 'local_tempo' in df_filtered.columns and 'pattern_index' in df_filtered.columns:
+        # Calculate mean tempo from unique patterns (one local_tempo per pattern)
+        unique_tempos = df_filtered.groupby('pattern_index')['local_tempo'].first().dropna()
+        if len(unique_tempos) > 0:
+            mean_section_tempo_filtered = float(np.mean(unique_tempos))
 
     # Write combined metadata (original + filtering) then CSV data
     with open(output_csv, 'w') as f:
-        # Write original metadata first (rename no_of_repetitions to no_of_repetitions_before)
+        # Write original metadata first
+        # - Rename no_of_repetitions to no_of_repetitions_before
+        # - Rename mean_section_tempo to mean_section_tempo_before_filter
         for key, value in original_metadata.items():
             if key == 'no_of_repetitions':
                 f.write(f"# no_of_repetitions_before={value}\n")
+            elif key == 'mean_section_tempo':
+                f.write(f"# mean_section_tempo_before_filter={value}\n")
             else:
                 f.write(f"# {key}={value}\n")
 
@@ -290,6 +312,19 @@ def filter_anchored_csv(
 
         # Write final repetition count (after filtering)
         f.write(f"# no_of_repetitions={kept_patterns}\n")
+
+        # Write used section time range from kept patterns
+        # NOTE: used_section_start and used_section_end represent the time span from
+        # the first kept pattern's start to the last kept pattern's end. They do NOT
+        # indicate whether patterns in between were removed - only the outer boundaries.
+        if used_section_start is not None:
+            f.write(f"# used_section_start={used_section_start:.6f}\n")
+        if used_section_end is not None:
+            f.write(f"# used_section_end={used_section_end:.6f}\n")
+
+        # Write recalculated mean tempo from kept patterns only
+        if mean_section_tempo_filtered is not None:
+            f.write(f"# mean_section_tempo={mean_section_tempo_filtered:.2f}\n")
 
         # Write the CSV content
         df_filtered.to_csv(f, index=False)
