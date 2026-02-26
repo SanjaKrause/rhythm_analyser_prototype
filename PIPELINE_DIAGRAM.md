@@ -36,11 +36,13 @@
 27. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
 28. [Step 20: Snippet Ratio Batch Analysis](#step-20-snippet-ratio-batch-analysis)
 29. [Step 6.8: Anchored Statistics](#step-68-anchored-statistics)
-30. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-30. [Data Dependencies](#data-dependencies)
-31. [Legend](#legend)
-32. [Notes](#notes)
-33. [TODO](#todo)
+30. [Step 21: Repetitions Per Section](#step-21-repetitions-per-section)
+31. [Step 22: Collect Data](#step-22-collect-data)
+32. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+33. [Data Dependencies](#data-dependencies)
+34. [Legend](#legend)
+35. [Notes](#notes)
+36. [TODO](#todo)
 
 ---
 
@@ -3181,6 +3183,210 @@ python anchored_rhythm_statistics.py /path/to/track "track_id"
 ```
 
 This will generate both `_anchored_rhythm_statistics.csv` and `_anchored_beat_statistics.csv`.
+
+---
+
+## Step 21: Repetitions Per Section
+
+**Purpose**: Analyze the distribution of pattern repetitions across sections at various `ratio_in_snippet` thresholds.
+
+**Dependencies:**
+- Step 6.6 (Anchored Rhythm Histograms)
+
+**Input**:
+- `6.6_anchored_rhythm_histograms/{track_id}_anchored_rhythm_histograms.csv` (unfiltered, from 6.1)
+- `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_rhythm_histograms.csv` (filtered, from 6.2)
+
+**Output**: `snippet_ratio_batch_analysis/` folder containing:
+- `repetitions_per_section_unfiltered.csv` - Raw data (before filtering)
+- `repetitions_per_section_unfiltered.png/.pdf` - Plots (before filtering)
+- `repetitions_per_section_filtered.csv` - Raw data (after filtering)
+- `repetitions_per_section_filtered.png/.pdf` - Plots (after filtering)
+
+---
+
+### Plot Structure
+
+Creates a 5×2 grid of histograms:
+- **Rows**: 5 ratio thresholds (>40%, >50%, >60%, >70%, >80%)
+- **Columns**: 2 pattern lengths (L2: 2-bar, L4: 4-bar)
+
+Each subplot shows:
+- **X-axis**: Number of repetitions
+- **Y-axis (left)**: Repetition Strength (normalized to max count)
+- **Y-axis (right)**: Actual count
+- **n=**: Number of sections meeting the threshold
+
+---
+
+### Key Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `Tukey (>2)` | Sections with more than 2 repetitions (suitable for Tukey mean analysis) |
+| `Running (≤2)` | Sections with 1-2 repetitions (only running mean applicable) |
+
+---
+
+### Script Location
+
+**Script**: `loop_extractor/batch_analysis/repetitions_per_section.py`
+
+**Standalone Usage**:
+```bash
+python repetitions_per_section.py /path/to/batch/output
+```
+
+---
+
+## Step 22: Collect Data
+
+**Purpose**: Aggregate all analysis data from multiple tracks into structured CSVs for machine learning and statistical analysis.
+
+**Dependencies:**
+- Step 6.6 (Anchored Rhythm Histograms)
+- Step 6.7 (Anchored Beat Histograms)
+- Step 6.8 (Anchored Statistics)
+
+**Input** (per track):
+- `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_rhythm_histograms.csv`
+- `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_groove_pulse_histograms.csv`
+- `6.6_anchored_rhythm_histograms/{track_id}_filtered_anchored_rhythm_patterns.csv`
+- `6.7_anchored_beat_histograms/{track_id}_anchored_beat_histograms.csv`
+- `6.7_anchored_beat_histograms/{track_id}_groove_pulse_beat_histograms.csv`
+- `6.7_anchored_beat_histograms/{track_id}_anchored_beat_patterns.csv`
+- `6.8_anchored_statistics/{track_id}_anchored_rhythm_statistics.csv`
+- `6.8_anchored_statistics/{track_id}_anchored_beat_statistics.csv`
+
+**Output**: `22_collected_data/` folder containing:
+- `L2_ratio50.csv` - L=2 sections with ratio_in_snippet > 50%
+- `L2_ratio70.csv` - L=2 sections with ratio_in_snippet > 70%
+- `L4_ratio50.csv` - L=4 sections with ratio_in_snippet > 50%
+- `L4_ratio70.csv` - L=4 sections with ratio_in_snippet > 70%
+
+---
+
+### CSV Column Structure
+
+Each row represents one section from one track. Columns are organized as follows:
+
+#### Metadata Columns (7)
+
+| Column | Description |
+|--------|-------------|
+| `song_id` | Numeric ID extracted from track folder name |
+| `song_name` | Song name extracted from track folder |
+| `sec_no` | Section number within the song |
+| `section_label` | Section label (verse, chorus, etc.) |
+| `num_repetitions` | Number of pattern repetitions in section |
+| `ratio_in_snippet` | Fraction of section within snippet boundaries |
+| `mean_section_tempo` | Average tempo in BPM for the section |
+
+---
+
+#### Rhythm Histogram (RH) - Position-Based (L×16 positions each)
+
+| Column Group | Source | Description |
+|--------------|--------|-------------|
+| `RH_str_0` ... `RH_str_N` | `onset_strength` | Normalized onset strength at each 16th note position |
+| `RH_med_0` ... `RH_med_N` | `median_tick_phase` | Median phase deviation from grid (0 = on grid) |
+| `RH_iqr_0` ... `RH_iqr_N` | `iqr_16th` | IQR of phase deviations (timing variability) |
+
+*N = 31 for L2 (32 positions), N = 63 for L4 (64 positions)*
+
+---
+
+#### Groove Pulse (GP) - Filtered Rhythm Histogram (L×16 positions each)
+
+| Column Group | Source | Description |
+|--------------|--------|-------------|
+| `GP_str_0` ... `GP_str_N` | `onset_strength_filtered` | Onset strength filtered by groove pulse threshold |
+| `GP_med_0` ... `GP_med_N` | `median_tick_phase` | Median phase at groove pulse positions |
+| `GP_iqr_0` ... `GP_iqr_N` | `iqr_16th` | IQR at groove pulse positions |
+
+---
+
+#### Rhythm Pattern (RP) - Binary Pattern (L×16 positions each)
+
+| Column Group | Source | Description |
+|--------------|--------|-------------|
+| `RP_str_0` ... `RP_str_N` | `pattern_value` | Binary pattern value (0, 0.5, or 1.0 based on groove pulse threshold) |
+| `RP_med_0` ... `RP_med_N` | `median_tick_phase` | Median phase at pattern positions |
+| `RP_iqr_0` ... `RP_iqr_N` | `iqr_16th` | IQR at pattern positions |
+
+---
+
+#### Beat Histogram (BH) - IOI Categories (7 categories each)
+
+| Column Group | Source | Description |
+|--------------|--------|-------------|
+| `BH_str_1/16` ... `BH_str_3/4` | `onset_strength` | Normalized strength per IOI category |
+| `BH_med_1/16` ... `BH_med_3/4` | `median_shift` | Median deviation from nominal IOI duration |
+| `BH_iqr_1/16` ... `BH_iqr_3/4` | `iqr_scaled` | IQR of IOI deviations |
+
+**IOI Categories**: `1/16`, `1/8`, `3/16`, `1/4`, `3/8`, `1/2`, `3/4`
+
+---
+
+#### Groove Pulse Beat (GPB) - Filtered IOI Categories (7 categories each)
+
+| Column Group | Source | Description |
+|--------------|--------|-------------|
+| `GPB_str_1/16` ... `GPB_str_3/4` | `onset_strength` | IOI strength filtered by groove pulse |
+| `GPB_med_1/16` ... `GPB_med_3/4` | `median_shift` | Median shift at groove pulse IOIs |
+| `GPB_iqr_1/16` ... `GPB_iqr_3/4` | `iqr_scaled` | IQR at groove pulse IOIs |
+
+---
+
+#### Beat Pattern (BP) - Binary IOI Pattern (7 categories each)
+
+| Column Group | Source | Description |
+|--------------|--------|-------------|
+| `BP_str_1/16` ... `BP_str_3/4` | `pattern_level` | Binary pattern value (0, 0.5, or 1.0 based on threshold) |
+| `BP_med_1/16` ... `BP_med_3/4` | `median_shift` | Median shift at pattern IOIs |
+| `BP_iqr_1/16` ... `BP_iqr_3/4` | `iqr_scaled` | IQR at pattern IOIs |
+
+---
+
+#### Rhythm Statistics (4 columns)
+
+| Column | Source | Description |
+|--------|--------|-------------|
+| `microtiming_degree` | 6.8 rhythm stats | Average absolute phase deviation |
+| `microtiming_complexity` | 6.8 rhythm stats | Mean IQR across positions |
+| `pulse_strength` | 6.8 rhythm stats | Beat position emphasis |
+| `groove_pulse_strength` | 6.8 rhythm stats | Filtered pulse emphasis |
+
+---
+
+#### Beat Statistics (4 columns)
+
+| Column | Source | Description |
+|--------|--------|-------------|
+| `ioi_microtiming_degree` | 6.8 beat stats | Average absolute IOI deviation |
+| `ioi_microtiming_complexity` | 6.8 beat stats | Mean IQR across IOI categories |
+| `groove_ioi_pulse_strength` | 6.8 beat stats | IOI pulse emphasis from groove pulse |
+| `total_ioi_count` | 6.8 beat stats | Total number of IOI events |
+
+---
+
+### Total Column Count
+
+| Pattern Length | Calculation | Total Columns |
+|----------------|-------------|---------------|
+| L2 (32 positions) | 7 + (32×3)×3 + (7×3)×3 + 4 + 4 | **366** |
+| L4 (64 positions) | 7 + (64×3)×3 + (7×3)×3 + 4 + 4 | **654** |
+
+---
+
+### Script Location
+
+**Script**: `loop_extractor/batch_analysis/collect_data.py`
+
+**Standalone Usage**:
+```bash
+python collect_data.py /path/to/batch/output
+```
 
 ---
 

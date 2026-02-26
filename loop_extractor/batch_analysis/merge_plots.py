@@ -865,6 +865,69 @@ def merge_plots(output_dir: Path):
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
+    # 32. Merge groove pulse beat histograms (PNG files in 6.7_anchored_beat_histograms folder)
+    print('\nLooking for groove pulse beat histograms...')
+    groove_pulse_pngs = []
+    for track_dir in track_dirs:
+        groove_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_groove_pulse_beat_histograms.png'
+        if groove_png.exists():
+            groove_pulse_pngs.append(groove_png)
+            print(f'  Found groove pulse beat histogram: {track_dir.name}')
+
+    if groove_pulse_pngs:
+        print(f'\nConverting and merging {len(groove_pulse_pngs)} groove pulse beat histogram PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(groove_pulse_pngs):
+            temp_pdf = temp_dir / f'groove_pulse_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_groove_pulse_beat_histograms.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 33. Merge groove pulse beat histograms all onsets (PNG files in 6.7_anchored_beat_histograms folder)
+    print('\nLooking for groove pulse beat histograms (all onsets)...')
+    groove_pulse_all_pngs = []
+    for track_dir in track_dirs:
+        groove_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_groove_pulse_beat_histograms_all_onsets.png'
+        if groove_png.exists():
+            groove_pulse_all_pngs.append(groove_png)
+            print(f'  Found groove pulse beat histogram (all onsets): {track_dir.name}')
+
+    if groove_pulse_all_pngs:
+        print(f'\nConverting and merging {len(groove_pulse_all_pngs)} groove pulse beat histogram (all onsets) PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(groove_pulse_all_pngs):
+            temp_pdf = temp_dir / f'groove_pulse_all_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_groove_pulse_beat_histograms_all_onsets.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 34. Merge anchored beat patterns (PNG files in 6.7_anchored_beat_histograms folder)
+    print('\nLooking for anchored beat patterns...')
+    beat_pattern_pngs = []
+    for track_dir in track_dirs:
+        pattern_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_anchored_beat_patterns.png'
+        if pattern_png.exists():
+            beat_pattern_pngs.append(pattern_png)
+            print(f'  Found anchored beat pattern: {track_dir.name}')
+
+    if beat_pattern_pngs:
+        print(f'\nConverting and merging {len(beat_pattern_pngs)} anchored beat pattern PNGs...')
+        merger = PdfMerger()
+        for i, png in enumerate(beat_pattern_pngs):
+            temp_pdf = temp_dir / f'beat_pattern_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+        output_pdf = batch_dir / 'all_anchored_beat_patterns.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
     # Clean up temporary files at the end
     if temp_dir.exists():
         try:

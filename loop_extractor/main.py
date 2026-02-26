@@ -2398,6 +2398,15 @@ Environment:
         except Exception as e:
             print(f"\n⚠️  Repetitions per section failed: {e}")
 
+        # Step 22: Collect aggregated data
+        try:
+            from batch_analysis.collect_data import create_collected_data
+            create_collected_data(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  Collect data skipped: {ie}")
+        except Exception as e:
+            print(f"\n⚠️  Collect data failed: {e}")
+
         # Exit with error code if any files failed
         if batch_results['failed']:
             sys.exit(1)
