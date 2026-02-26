@@ -32,17 +32,18 @@
 23. [Step 14: Yodfat Rhythmic Complexity](#step-14-yodfat-rhythmic-complexity)
 24. [Step 6.1: Section Anchoring Analysis](#step-61-section-anchoring-analysis)
 25. [Step 6.2: Filtered Patterns](#step-62-filtered-patterns)
-26. [Step 6.6: Anchored Rhythm Histograms](#step-66-anchored-rhythm-histograms)
-27. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
-28. [Step 20: Snippet Ratio Batch Analysis](#step-20-snippet-ratio-batch-analysis)
-29. [Step 6.8: Anchored Statistics](#step-68-anchored-statistics)
-30. [Step 21: Repetitions Per Section](#step-21-repetitions-per-section)
-31. [Step 22: Collect Data](#step-22-collect-data)
-32. [Complete Pipeline Architecture](#complete-pipeline-architecture)
-33. [Data Dependencies](#data-dependencies)
-34. [Legend](#legend)
-35. [Notes](#notes)
-36. [TODO](#todo)
+26. [Step 11.1: Section Extraction](#step-111-section-extraction)
+27. [Step 6.6: Anchored Rhythm Histograms](#step-66-anchored-rhythm-histograms)
+28. [Step 6.7: Anchored Beat Histograms (IOI Analysis)](#step-67-anchored-beat-histograms-ioi-analysis)
+29. [Step 20: Snippet Ratio Batch Analysis](#step-20-snippet-ratio-batch-analysis)
+30. [Step 6.8: Anchored Statistics](#step-68-anchored-statistics)
+31. [Step 21: Repetitions Per Section](#step-21-repetitions-per-section)
+32. [Step 22: Collect Data](#step-22-collect-data)
+33. [Complete Pipeline Architecture](#complete-pipeline-architecture)
+34. [Data Dependencies](#data-dependencies)
+35. [Legend](#legend)
+36. [Notes](#notes)
+37. [TODO](#todo)
 
 ---
 
@@ -2794,6 +2795,57 @@ Shows a bar chart of onset counts per pattern repetition:
 - Bars colored by status (kept vs filtered)
 - Horizontal line at median
 - Shaded region showing IQR bounds
+
+---
+
+## Step 11.1: Section Extraction
+
+Step 11.1 extracts audio segments from the original audio file based on the **filtered pattern boundaries** from Step 6.2. This creates individual WAV files for each section that can be used for listening, further analysis, or export.
+
+**Dependencies:** Step 6.2 (Filtered Patterns), Original audio file
+
+**Input:**
+- `6.2_filtered_patterns/` folder containing filtered anchored CSVs with `used_section_start` and `used_section_end` metadata
+- Original audio file (WAV/MP3/FLAC)
+
+**Output:** `9.1_sections/` folder containing:
+- `SecNo{N}_L{L}_{label}_{ratio}_section.wav` - Extracted audio segment per section
+
+### How It Works
+
+1. **Read Metadata**: Parse `used_section_start` and `used_section_end` from each filtered CSV
+2. **Extract Audio**: Cut the corresponding time range from the original audio
+3. **Apply Fades**: Add short fade in/out (default 50ms) for smooth playback
+4. **Save WAV**: Write to 44.1kHz stereo WAV file
+
+### Output File Naming
+
+Output files mirror the input CSV naming with `_section.wav` suffix:
+
+```
+Input:  SecNo1_L4_chorus_0.1344_anchored.csv
+Output: SecNo1_L4_chorus_0.1344_section.wav
+```
+
+### Usage
+
+```bash
+# Command line
+python -m loop_extractor.analysis.extract_sections <filtered_dir> <audio_path> [output_dir]
+
+# Example
+python -m loop_extractor.analysis.extract_sections \
+    ./6.2_filtered_patterns \
+    ./original_track.wav \
+    ./9.1_sections
+```
+
+### Notes
+
+- Sections with `used_section_start`/`used_section_end` metadata only (requires Step 6.2 with new metadata)
+- Duration reflects **kept patterns only** (not original SongFormer section)
+- Fade duration matches Step 4.5 snippet creation (50ms)
+- Audio preserves original stereo/mono format
 
 ---
 
