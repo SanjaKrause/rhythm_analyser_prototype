@@ -27,7 +27,9 @@ Complete pipeline for music microtiming analysis and loop extraction:
 9. LEPA data export
 10. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
 11. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
+11.1. Section extraction (extract audio sections from filtered pattern boundaries)
 13. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
+13.1. Pironio section metrics (pulse clarity for each extracted section)
 14. Spotify audio features (danceability, energy, valence, tempo, etc.)
 15. Yodfat rhythmic complexity analysis
 
@@ -77,7 +79,7 @@ config = config_module.config
 # Import all pipeline modules
 from stem_separation import spleeter_interface
 from beat_detection import transformer
-from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring
+from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections
 from utils import audio_export, raster_plots, midi_export, microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
@@ -1923,6 +1925,49 @@ def run_complete_pipeline(
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
+    # STEP 11.1: SECTION EXTRACTION
+    # ========================================================================
+    try:
+        sections_dir = paths['sections_dir']
+        filtered_dir = paths['filtered_patterns_dir']
+
+        # Check if sections already exist
+        existing_sections = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
+
+        if skip_existing and len(existing_sections) > 0:
+            if verbose:
+                print(f"\n[11.1] Section extraction - SKIPPED ({len(existing_sections)} exist)")
+            results['steps_completed'].append('section_extraction_skipped')
+        elif not filtered_dir.exists():
+            if verbose:
+                print("\n[11.1] Section extraction - SKIPPED (no filtered patterns)")
+            results['steps_completed'].append('section_extraction_no_input')
+        else:
+            if verbose:
+                print("\n[11.1] Extracting sections from filtered patterns...")
+
+            extracted = extract_sections.extract_all_sections(
+                filtered_dir=filtered_dir,
+                audio_path=Path(audio_file),
+                output_dir=sections_dir,
+                fade_duration=0.05,  # 50ms fade in/out
+                sr=44100,
+                verbose=verbose
+            )
+
+            results['sections_extracted'] = len(extracted)
+            results['steps_completed'].append('section_extraction')
+
+            if verbose:
+                print(f"  ✓ Extracted {len(extracted)} sections")
+
+    except Exception as e:
+        error_msg = f"Step 11.1 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
     # STEP 13: PIRONIO PULSE CLARITY METRICS
     # ========================================================================
     try:
@@ -1960,6 +2005,62 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 13 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
+    # STEP 13.1: PIRONIO SECTION METRICS
+    # ========================================================================
+    try:
+        sections_dir = paths['sections_dir']
+        pironio_sections_json = paths['pironio_dir'] / f'{track_id}_pironio_sections.json'
+
+        # Check if sections exist
+        section_wavs = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
+
+        if skip_existing and pironio_sections_json.exists():
+            if verbose:
+                print("\n[13.1] Pironio section metrics - SKIPPED (exists)")
+            results['steps_completed'].append('pironio_sections_skipped')
+        elif len(section_wavs) == 0:
+            if verbose:
+                print("\n[13.1] Pironio section metrics - SKIPPED (no sections)")
+            results['steps_completed'].append('pironio_sections_no_input')
+        else:
+            if verbose:
+                print(f"\n[13.1] Computing Pironio metrics for {len(section_wavs)} sections...")
+
+            # Run via subprocess (requires madmom in new_beatnet_env)
+            import subprocess
+            run_script = Path(__file__).parent / "run_pironio.py"
+
+            cmd = [
+                config.BEAT_DETECTION_PYTHON,
+                str(run_script),
+                '--sections-dir', str(sections_dir),
+                '--output-dir', str(paths['pironio_dir']),
+                '--track-id', track_id
+            ]
+
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=not verbose,
+                text=True
+            )
+
+            if not verbose and result.stdout:
+                print(result.stdout)
+
+            results['pironio_sections_json'] = str(pironio_sections_json)
+            results['steps_completed'].append('pironio_sections')
+
+            if verbose:
+                print(f"  ✓ Computed Pironio metrics for {len(section_wavs)} sections")
+
+    except Exception as e:
+        error_msg = f"Step 13.1 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")

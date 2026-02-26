@@ -2323,6 +2323,69 @@ For the example above:
 
 ---
 
+## Step 12.1: Pironio Section Metrics
+
+Step 12.1 computes Pironio pulse clarity metrics for each **individual section** extracted in Step 11.1, allowing per-section analysis of rhythmic clarity.
+
+**Dependencies:** Step 11.1 (Section Extraction)
+
+**Input:** `9.1_sections/` folder containing section WAV files
+
+**Output:** `12.1_pironio_sections/{track_id}_pironio_sections.json`
+
+### How It Works
+
+1. Finds all `*_section.wav` files in `9.1_sections/`
+2. Computes all 8 Pironio metrics for each section
+3. Saves combined results as JSON with metrics per section
+
+### Usage
+
+```bash
+# Run via command line
+python -m loop_extractor.run_pironio \
+    --sections-dir ./9.1_sections \
+    --track-id "182_That's What I Like - Bruno Mars" \
+    --output-dir ./12.1_pironio_sections
+```
+
+### Example Output
+
+```json
+{
+  "track_id": "182_That's What I Like - Bruno Mars",
+  "model": "downbeat",
+  "sections": {
+    "SecNo1_L4_chorus_0.1344": {
+      "audio_file": "SecNo1_L4_chorus_0.1344_section.wav",
+      "metrics": {
+        "viterbi_max": -2.45,
+        "viterbi_entropy": 8.92,
+        "peak_average": 0.61,
+        "RNN_entropy": 1.18,
+        "DBN_entropy": 0.65,
+        "neurons_cross_correlation": 1250000.5,
+        "cell_states_precision": 12.3,
+        "autocorrelation_periodicity": 0.12
+      },
+      "errors": []
+    },
+    "SecNo2_L4_chorus_0.5040": {
+      ...
+    }
+  }
+}
+```
+
+### Notes
+
+- Section metrics allow comparing pulse clarity across different parts of a song
+- Sections may have different clarity due to arrangement (verse vs chorus)
+- Processing time scales with number of sections (~30-60s per section for full metrics)
+- Use `--fast-only` to skip slow RNN internal metrics
+
+---
+
 ## Step 2.5: SongFormer Music Structure Analysis
 
 Step 2.5 runs **SongFormer**, a state-of-the-art music structure segmentation model, to detect section boundaries and labels (intro, verse, chorus, bridge, etc.) with ~70% boundary detection accuracy at 0.5s tolerance.

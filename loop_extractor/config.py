@@ -254,7 +254,10 @@ class Config:
             # Step 11: Drum transcription
             'drumtranscriber_dir': track_dir / '11_drumtranscriber',
 
-            # Step 12: Pironio pulse clarity
+            # Step 11.1: Section extraction
+            'sections_dir': track_dir / '9.1_sections',
+
+            # Step 12/13: Pironio pulse clarity (includes section metrics)
             'pironio_dir': track_dir / '12_pironio',
 
             # Step 13: Spotify analysis
