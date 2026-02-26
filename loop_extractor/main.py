@@ -32,6 +32,7 @@ Complete pipeline for music microtiming analysis and loop extraction:
 13.1. Pironio section metrics (pulse clarity for each extracted section)
 14. Spotify audio features (danceability, energy, valence, tempo, etc.)
 15. Yodfat rhythmic complexity analysis
+15.1. Yodfat section analysis (rhythmic complexity for each extracted section)
 
 Environment: loop_extractor_main
 Subprocess: new_beatnet_env (for beat detection only)
@@ -2182,6 +2183,47 @@ def run_complete_pipeline(
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
+    # STEP 15.1: YODFAT SECTION ANALYSIS
+    # ========================================================================
+    try:
+        sections_dir = paths['sections_dir']
+        yodfat_sections_json = paths['yodfat_dir'] / f'{track_id}_yodfat_sections.json'
+
+        # Check if sections exist
+        section_wavs = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
+
+        if skip_existing and yodfat_sections_json.exists():
+            if verbose:
+                print("\n[15.1] Yodfat section analysis - SKIPPED (exists)")
+            results['steps_completed'].append('yodfat_sections_skipped')
+        elif len(section_wavs) == 0:
+            if verbose:
+                print("\n[15.1] Yodfat section analysis - SKIPPED (no sections)")
+            results['steps_completed'].append('yodfat_sections_no_input')
+        else:
+            if verbose:
+                print(f"\n[15.1] Computing Yodfat metrics for {len(section_wavs)} sections...")
+
+            yodfat_section_results = yodfat_analysis.run_yodfat_section_analysis(
+                sections_dir=str(sections_dir),
+                output_dir=str(paths['yodfat_dir']),
+                track_id=track_id,
+                verbose=verbose
+            )
+
+            results['yodfat_sections_json'] = yodfat_section_results.get('output_json')
+            results['steps_completed'].append('yodfat_sections')
+
+            if verbose:
+                print(f"  ✓ Computed Yodfat metrics for {len(section_wavs)} sections")
+
+    except Exception as e:
+        error_msg = f"Step 15.1 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
     # SUMMARY
     # ========================================================================
     if verbose:
@@ -2501,8 +2543,10 @@ Environment:
 
         # Step 22: Collect aggregated data
         try:
-            from batch_analysis.collect_data import create_collected_data
+            from batch_analysis.collect_data import create_collected_data, collect_pironio_yodfat_data, collect_spotify_data
             create_collected_data(Path(args.output_dir))
+            collect_pironio_yodfat_data(Path(args.output_dir))
+            collect_spotify_data(Path(args.output_dir))
         except ImportError as ie:
             print(f"\n⚠️  Collect data skipped: {ie}")
         except Exception as e:

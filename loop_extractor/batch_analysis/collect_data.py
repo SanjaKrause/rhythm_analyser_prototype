@@ -52,7 +52,7 @@ Input:
     6.8_anchored_statistics/{track_id}_anchored_rhythm_statistics.csv
     6.8_anchored_statistics/{track_id}_anchored_beat_statistics.csv
 
-Output (in 22_collected_data/):
+Output (in collected_data/):
     - L2_ratio50.csv
     - L2_ratio70.csv
     - L4_ratio50.csv
@@ -586,7 +586,7 @@ def create_collected_data(output_dir: Path):
     track_dirs = sorted([
         d for d in output_dir.iterdir()
         if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis',
-                                          'snippet_ratio_batch_analysis', '22_collected_data']
+                                          'snippet_ratio_batch_analysis', 'collected_data']
     ])
 
     if not track_dirs:
@@ -596,7 +596,7 @@ def create_collected_data(output_dir: Path):
     print(f"Found {len(track_dirs)} track directories")
 
     # Create output directory
-    collected_dir = output_dir / '22_collected_data'
+    collected_dir = output_dir / 'collected_data'
     collected_dir.mkdir(parents=True, exist_ok=True)
 
     # Process each combination of pattern_length and ratio_threshold
@@ -634,6 +634,403 @@ def create_collected_data(output_dir: Path):
     print("=" * 80)
 
 
+def parse_section_id(section_id: str) -> Dict:
+    """
+    Parse section_id to extract sec_no, pattern_length, section_label, ratio.
+    Example: SecNo1_L4_chorus_0.1344 -> {sec_no: 1, pattern_length: 4, section_label: 'chorus', ratio: 0.1344}
+    """
+    import re
+    match = re.match(r'SecNo(\d+)_L(\d+)_([^_]+)_([0-9.]+)', section_id)
+    if match:
+        return {
+            'sec_no': int(match.group(1)),
+            'pattern_length': int(match.group(2)),
+            'section_label': match.group(3),
+            'ratio_in_snippet': float(match.group(4))
+        }
+    return {'sec_no': 0, 'pattern_length': 0, 'section_label': '', 'ratio_in_snippet': 0.0}
+
+
+def read_pironio_sections(json_path: Path) -> Dict[str, Dict]:
+    """Read Pironio section metrics from JSON."""
+    sections = {}
+    try:
+        import json
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        for section_id, section_data in data.get('sections', {}).items():
+            metrics = section_data.get('metrics', {})
+            if metrics:  # Only include if metrics exist
+                sections[section_id] = metrics
+    except Exception as e:
+        print(f"    Warning: Could not read {json_path}: {e}")
+    return sections
+
+
+def read_yodfat_sections(json_path: Path) -> Dict[str, Dict]:
+    """Read Yodfat section metrics from JSON."""
+    sections = {}
+    try:
+        import json
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        for section_id, section_data in data.get('sections', {}).items():
+            metrics = section_data.get('metrics', {})
+            if metrics:  # Only include if metrics exist
+                sections[section_id] = metrics
+    except Exception as e:
+        print(f"    Warning: Could not read {json_path}: {e}")
+    return sections
+
+
+def read_pironio_snippet(json_path: Path) -> Dict:
+    """Read Pironio snippet (full track) metrics from JSON."""
+    try:
+        import json
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('metrics', {})
+    except Exception as e:
+        print(f"    Warning: Could not read {json_path}: {e}")
+    return {}
+
+
+def read_yodfat_snippet(json_path: Path) -> Dict:
+    """Read Yodfat snippet (full track) metrics from JSON."""
+    try:
+        import json
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('metrics', {})
+    except Exception as e:
+        print(f"    Warning: Could not read {json_path}: {e}")
+    return {}
+
+
+# Pironio metrics columns (5 fast metrics - slow metrics often have errors)
+PIRONIO_METRICS = [
+    'viterbi_max', 'viterbi_entropy', 'peak_average', 'RNN_entropy', 'DBN_entropy',
+    'neurons_cross_correlation', 'cell_states_precision', 'autocorrelation_periodicity'
+]
+
+# Yodfat metrics columns (15 metrics)
+YODFAT_METRICS = [
+    'tempo', 'duration', 'n_beats',
+    'onscc_quart_avg', 'onscc_quart_std', 'onscc_quart_lag_avg', 'onscc_quart_lag_med', 'onscc_quart_lag_std',
+    'onscc_half_avg', 'onscc_half_std', 'onscc_half_lag_avg', 'onscc_half_lag_med', 'onscc_half_lag_std',
+    'onscc_bar_avg', 'onscc_bar_std', 'onscc_bar_lag_avg', 'onscc_bar_lag_med', 'onscc_bar_lag_std'
+]
+
+
+def collect_pironio_yodfat_data(output_dir: Path):
+    """
+    Collect Pironio and Yodfat section data into CSVs.
+
+    Creates (filtered by ratio threshold 50% and 70%):
+    - pironio_sections_L2_ratio50.csv, pironio_sections_L2_ratio70.csv
+    - pironio_sections_L4_ratio50.csv, pironio_sections_L4_ratio70.csv
+    - yodfat_sections_L2_ratio50.csv, yodfat_sections_L2_ratio70.csv
+    - yodfat_sections_L4_ratio50.csv, yodfat_sections_L4_ratio70.csv
+    - pironio_snippet.csv (full snippet Pironio metrics per track)
+    - yodfat_snippet.csv (full snippet Yodfat metrics per track)
+    """
+    print("\n" + "=" * 80)
+    print("COLLECTING PIRONIO & YODFAT DATA")
+    print("=" * 80)
+
+    # Find all track directories
+    track_dirs = sorted([
+        d for d in output_dir.iterdir()
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis',
+                                          'snippet_ratio_batch_analysis', 'collected_data']
+    ])
+
+    if not track_dirs:
+        print('No track directories found!')
+        return
+
+    print(f"Found {len(track_dirs)} track directories")
+
+    # Create output directory
+    collected_dir = output_dir / 'collected_data'
+    collected_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect section data by pattern length
+    pironio_sections = {2: [], 4: []}
+    yodfat_sections = {2: [], 4: []}
+
+    # Collect snippet data
+    pironio_snippets = []
+    yodfat_snippets = []
+
+    for track_dir in track_dirs:
+        track_name = track_dir.name
+        song_id = extract_song_id(track_name)
+        song_name = extract_song_name(track_name)
+
+        # Pironio section file
+        pironio_sections_file = track_dir / '12_pironio' / f'{track_name}_pironio_sections.json'
+        if pironio_sections_file.exists():
+            sections = read_pironio_sections(pironio_sections_file)
+            for section_id, metrics in sections.items():
+                parsed = parse_section_id(section_id)
+                pl = parsed['pattern_length']
+                if pl in [2, 4]:
+                    row = {
+                        'song_id': song_id,
+                        'song_name': song_name,
+                        'sec_no': parsed['sec_no'],
+                        'section_label': parsed['section_label'],
+                        'ratio_in_snippet': parsed['ratio_in_snippet'],
+                    }
+                    for metric in PIRONIO_METRICS:
+                        row[f'PIR_{metric}'] = metrics.get(metric, '')
+                    pironio_sections[pl].append(row)
+
+        # Yodfat section file
+        yodfat_sections_file = track_dir / '14_yodfat' / f'{track_name}_yodfat_sections.json'
+        if yodfat_sections_file.exists():
+            sections = read_yodfat_sections(yodfat_sections_file)
+            for section_id, metrics in sections.items():
+                parsed = parse_section_id(section_id)
+                pl = parsed['pattern_length']
+                if pl in [2, 4]:
+                    row = {
+                        'song_id': song_id,
+                        'song_name': song_name,
+                        'sec_no': parsed['sec_no'],
+                        'section_label': parsed['section_label'],
+                        'ratio_in_snippet': parsed['ratio_in_snippet'],
+                    }
+                    for metric in YODFAT_METRICS:
+                        row[f'YOD_{metric}'] = metrics.get(metric, '')
+                    yodfat_sections[pl].append(row)
+
+        # Pironio snippet file (full track)
+        pironio_snippet_file = track_dir / '12_pironio' / f'{track_name}_pironio_metrics.json'
+        if pironio_snippet_file.exists():
+            metrics = read_pironio_snippet(pironio_snippet_file)
+            if metrics:
+                row = {'song_id': song_id, 'song_name': song_name}
+                for metric in PIRONIO_METRICS:
+                    row[f'PIR_{metric}'] = metrics.get(metric, '')
+                pironio_snippets.append(row)
+
+        # Yodfat snippet file (full track)
+        yodfat_snippet_file = track_dir / '14_yodfat' / f'{track_name}_yodfat_metrics.json'
+        if yodfat_snippet_file.exists():
+            metrics = read_yodfat_snippet(yodfat_snippet_file)
+            if metrics:
+                row = {'song_id': song_id, 'song_name': song_name}
+                for metric in YODFAT_METRICS:
+                    row[f'YOD_{metric}'] = metrics.get(metric, '')
+                yodfat_snippets.append(row)
+
+    # Write Pironio section CSVs (filtered by ratio threshold)
+    for pl in [2, 4]:
+        for ratio_th in RATIO_THRESHOLDS:
+            rows = [r for r in pironio_sections[pl] if r['ratio_in_snippet'] >= ratio_th]
+            if rows:
+                rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
+                headers = ['song_id', 'song_name', 'sec_no', 'section_label', 'ratio_in_snippet'] + \
+                          [f'PIR_{m}' for m in PIRONIO_METRICS]
+                output_file = collected_dir / f'pironio_sections_L{pl}_ratio{int(ratio_th*100)}.csv'
+                with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"  ✓ Saved {output_file.name}: {len(rows)} sections")
+
+    # Write Yodfat section CSVs (filtered by ratio threshold)
+    for pl in [2, 4]:
+        for ratio_th in RATIO_THRESHOLDS:
+            rows = [r for r in yodfat_sections[pl] if r['ratio_in_snippet'] >= ratio_th]
+            if rows:
+                rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
+                headers = ['song_id', 'song_name', 'sec_no', 'section_label', 'ratio_in_snippet'] + \
+                          [f'YOD_{m}' for m in YODFAT_METRICS]
+                output_file = collected_dir / f'yodfat_sections_L{pl}_ratio{int(ratio_th*100)}.csv'
+                with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"  ✓ Saved {output_file.name}: {len(rows)} sections")
+
+    # Write Pironio snippet CSV
+    if pironio_snippets:
+        pironio_snippets.sort(key=lambda x: int(x['song_id']))
+        headers = ['song_id', 'song_name'] + [f'PIR_{m}' for m in PIRONIO_METRICS]
+        output_file = collected_dir / 'pironio_snippet.csv'
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(pironio_snippets)
+        print(f"  ✓ Saved {output_file.name}: {len(pironio_snippets)} tracks")
+
+    # Write Yodfat snippet CSV
+    if yodfat_snippets:
+        yodfat_snippets.sort(key=lambda x: int(x['song_id']))
+        headers = ['song_id', 'song_name'] + [f'YOD_{m}' for m in YODFAT_METRICS]
+        output_file = collected_dir / 'yodfat_snippet.csv'
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(yodfat_snippets)
+        print(f"  ✓ Saved {output_file.name}: {len(yodfat_snippets)} tracks")
+
+    print("\n✓ Pironio & Yodfat data collection complete!")
+
+
+# Spotify audio features to collect
+SPOTIFY_FEATURES = [
+    'danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness',
+    'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo',
+    'duration_ms', 'time_signature'
+]
+
+# Path to Spotify audio features JSON
+SPOTIFY_FEATURES_PATH = Path(__file__).parent.parent.parent / 'groove-data' / 'spotify' / 'spotify_audio_features.json'
+
+
+def load_spotify_features() -> Dict[str, Dict]:
+    """Load Spotify audio features from JSON file."""
+    import json
+    if not SPOTIFY_FEATURES_PATH.exists():
+        print(f"  Warning: Spotify features file not found: {SPOTIFY_FEATURES_PATH}")
+        return {}
+
+    with open(SPOTIFY_FEATURES_PATH, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # Convert to dict keyed by song_id (string)
+    features = {}
+    for song_id, song_data in data.items():
+        audio_features = song_data.get('audio_features', [])
+        if audio_features and len(audio_features) > 0:
+            features[song_id] = audio_features[0]  # Take first result
+    return features
+
+
+def collect_spotify_data(output_dir: Path):
+    """
+    Collect Spotify audio features into CSVs.
+
+    Creates:
+    - spotify_L2_ratio50.csv, spotify_L2_ratio70.csv (songs with L2 sections meeting ratio)
+    - spotify_L4_ratio50.csv, spotify_L4_ratio70.csv (songs with L4 sections meeting ratio)
+    - spotify_all.csv (all songs in dataset)
+    """
+    print("\n" + "=" * 80)
+    print("COLLECTING SPOTIFY AUDIO FEATURES")
+    print("=" * 80)
+
+    # Load Spotify features
+    spotify_features = load_spotify_features()
+    if not spotify_features:
+        print("  No Spotify features loaded, skipping...")
+        return
+
+    print(f"  Loaded Spotify features for {len(spotify_features)} songs")
+
+    # Find all track directories
+    track_dirs = sorted([
+        d for d in output_dir.iterdir()
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis',
+                                          'snippet_ratio_batch_analysis', 'collected_data']
+    ])
+
+    if not track_dirs:
+        print('No track directories found!')
+        return
+
+    # Create output directory
+    collected_dir = output_dir / 'collected_data'
+    collected_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect song_ids that have sections meeting each criteria
+    # Key: (pattern_length, ratio_threshold) -> set of song_ids
+    songs_by_criteria = {(2, 0.50): set(), (2, 0.70): set(), (4, 0.50): set(), (4, 0.70): set()}
+    all_song_ids = set()
+
+    for track_dir in track_dirs:
+        track_name = track_dir.name
+        song_id = extract_song_id(track_name)
+        all_song_ids.add(song_id)
+
+        # Check Pironio sections file to get section info
+        pironio_sections_file = track_dir / '12_pironio' / f'{track_name}_pironio_sections.json'
+        yodfat_sections_file = track_dir / '14_yodfat' / f'{track_name}_yodfat_sections.json'
+
+        # Try to get sections from either file
+        sections_file = pironio_sections_file if pironio_sections_file.exists() else yodfat_sections_file
+
+        if sections_file.exists():
+            try:
+                import json
+                with open(sections_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                for section_id in data.get('sections', {}).keys():
+                    parsed = parse_section_id(section_id)
+                    pl = parsed['pattern_length']
+                    ratio = parsed['ratio_in_snippet']
+
+                    if pl in [2, 4]:
+                        for ratio_th in RATIO_THRESHOLDS:
+                            if ratio >= ratio_th:
+                                songs_by_criteria[(pl, ratio_th)].add(song_id)
+            except Exception as e:
+                print(f"    Warning: Could not read {sections_file.name}: {e}")
+
+    # Write Spotify CSVs for each L/ratio combination
+    headers = ['song_id', 'song_name'] + [f'SP_{f}' for f in SPOTIFY_FEATURES]
+
+    for pl in [2, 4]:
+        for ratio_th in RATIO_THRESHOLDS:
+            song_ids = songs_by_criteria[(pl, ratio_th)]
+            rows = []
+
+            for song_id in sorted(song_ids, key=int):
+                if song_id in spotify_features:
+                    features = spotify_features[song_id]
+                    row = {'song_id': song_id, 'song_name': ''}
+                    for feat in SPOTIFY_FEATURES:
+                        row[f'SP_{feat}'] = features.get(feat, '')
+                    rows.append(row)
+
+            if rows:
+                output_file = collected_dir / f'spotify_L{pl}_ratio{int(ratio_th*100)}.csv'
+                with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"  ✓ Saved {output_file.name}: {len(rows)} songs")
+
+    # Write spotify_all.csv with all songs
+    rows = []
+    # Filter to only numeric song_ids
+    valid_song_ids = [sid for sid in all_song_ids if sid.isdigit()]
+    for song_id in sorted(valid_song_ids, key=int):
+        if song_id in spotify_features:
+            features = spotify_features[song_id]
+            row = {'song_id': song_id, 'song_name': ''}
+            for feat in SPOTIFY_FEATURES:
+                row[f'SP_{feat}'] = features.get(feat, '')
+            rows.append(row)
+
+    if rows:
+        output_file = collected_dir / 'spotify_all.csv'
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"  ✓ Saved {output_file.name}: {len(rows)} songs")
+
+    print("\n✓ Spotify data collection complete!")
+
+
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print('Usage: python collect_data.py /path/to/batch/output')
@@ -647,3 +1044,5 @@ if __name__ == '__main__':
         sys.exit(1)
 
     create_collected_data(output_dir)
+    collect_pironio_yodfat_data(output_dir)
+    collect_spotify_data(output_dir)

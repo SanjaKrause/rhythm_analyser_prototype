@@ -300,6 +300,152 @@ def run_yodfat_analysis(
     return results
 
 
+def run_yodfat_section_analysis(
+    sections_dir: str,
+    output_dir: str,
+    track_id: str,
+    verbose: bool = True
+) -> Dict[str, Any]:
+    """
+    Run Yodfat rhythmic complexity analysis on all section WAV files.
+
+    Parameters
+    ----------
+    sections_dir : str
+        Path to 9.1_sections directory containing section WAV files
+    output_dir : str
+        Output directory for results (14_yodfat)
+    track_id : str
+        Track identifier for output files
+    verbose : bool
+        Print progress messages
+
+    Returns
+    -------
+    dict
+        Results dictionary with metrics for each section
+    """
+    sections_path = Path(sections_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Find all section WAV files (not macOS ._ files)
+    section_wavs = sorted([
+        f for f in sections_path.glob('*_section.wav')
+        if not f.name.startswith('._')
+    ])
+
+    results = {
+        'track_id': track_id,
+        'sections': {},
+        'errors': []
+    }
+
+    if verbose:
+        print(f"\n[Step 15.1: Yodfat Section Analysis]")
+        print(f"  Input: {sections_path.name}")
+        print(f"  Found {len(section_wavs)} section files")
+
+    for wav_path in section_wavs:
+        # Extract section ID from filename
+        # e.g., SecNo1_L4_chorus_0.1344_section.wav -> SecNo1_L4_chorus_0.1344
+        section_id = wav_path.stem.replace('_section', '')
+
+        if verbose:
+            print(f"\n  Processing: {section_id}")
+
+        try:
+            # Load audio
+            y, sr = librosa.load(str(wav_path))
+            y, _ = librosa.effects.trim(y)
+            hop_length = 512
+
+            # Harmonic/Percussive separation
+            D = librosa.stft(y)
+            gc.collect()
+            harm, perc = librosa.decompose.hpss(D)
+            gc.collect()
+            y_percussive = librosa.istft(perc)
+            gc.collect()
+
+            # Beat tracking on percussive signal
+            tempo, beat_frames = librosa.beat.beat_track(y=y_percussive, sr=sr)
+
+            # Handle tempo being an array in newer librosa versions
+            if isinstance(tempo, np.ndarray):
+                tempo = float(tempo[0]) if len(tempo) > 0 else 120.0
+            else:
+                tempo = float(tempo)
+
+            track_duration = len(y) / sr
+
+            # Onset envelope extraction
+            oenv = librosa.onset.onset_strength(y=y_percussive, sr=sr, hop_length=hop_length)
+
+            # Calculate cross-correlation for each segment length
+            quart_metrics = compute_segment_cc(oenv, beat_frames, seg_length=1,
+                                               tempo=tempo, sr=sr, hop_length=hop_length)
+            half_metrics = compute_segment_cc(oenv, beat_frames, seg_length=2,
+                                              tempo=tempo, sr=sr, hop_length=hop_length)
+            bar_metrics = compute_segment_cc(oenv, beat_frames, seg_length=4,
+                                             tempo=tempo, sr=sr, hop_length=hop_length)
+
+            # Store section metrics
+            results['sections'][section_id] = {
+                'audio_file': wav_path.name,
+                'metrics': {
+                    'tempo': tempo,
+                    'duration': track_duration,
+                    'n_beats': len(beat_frames),
+                    'onscc_quart_avg': quart_metrics['avg'],
+                    'onscc_quart_std': quart_metrics['std'],
+                    'onscc_quart_lag_avg': quart_metrics['lag_avg'],
+                    'onscc_quart_lag_med': quart_metrics['lag_med'],
+                    'onscc_quart_lag_std': quart_metrics['lag_std'],
+                    'onscc_half_avg': half_metrics['avg'],
+                    'onscc_half_std': half_metrics['std'],
+                    'onscc_half_lag_avg': half_metrics['lag_avg'],
+                    'onscc_half_lag_med': half_metrics['lag_med'],
+                    'onscc_half_lag_std': half_metrics['lag_std'],
+                    'onscc_bar_avg': bar_metrics['avg'],
+                    'onscc_bar_std': bar_metrics['std'],
+                    'onscc_bar_lag_avg': bar_metrics['lag_avg'],
+                    'onscc_bar_lag_med': bar_metrics['lag_med'],
+                    'onscc_bar_lag_std': bar_metrics['lag_std'],
+                },
+                'errors': []
+            }
+
+            if verbose:
+                print(f"    Tempo: {tempo:.1f} BPM, Duration: {track_duration:.1f}s, Beats: {len(beat_frames)}")
+                print(f"    CC avg - quart: {quart_metrics['avg']:.4f}, half: {half_metrics['avg']:.4f}, bar: {bar_metrics['avg']:.4f}")
+
+        except Exception as e:
+            error_msg = f"{section_id}: {str(e)}"
+            results['sections'][section_id] = {
+                'audio_file': wav_path.name,
+                'metrics': {},
+                'errors': [error_msg]
+            }
+            if verbose:
+                print(f"    ERROR: {error_msg}")
+
+    # Save combined results
+    output_json = output_path / f"{track_id}_yodfat_sections.json"
+    with open(output_json, 'w') as f:
+        json.dump(results, f, indent=2)
+
+    results['output_json'] = str(output_json)
+
+    if verbose:
+        total_sections = len(results['sections'])
+        total_errors = sum(len(s['errors']) for s in results['sections'].values())
+        print(f"\n  Saved: {output_json.name}")
+        print(f"  Processed {total_sections} sections ({total_errors} errors)")
+
+    return results
+
+
 if __name__ == "__main__":
     import argparse
 
