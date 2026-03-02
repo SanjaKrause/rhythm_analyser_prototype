@@ -95,6 +95,35 @@ def extract_song_name(track_name: str) -> str:
     return match.group(1) if match else track_name
 
 
+def read_time_signature(track_dir: Path, track_name: str) -> int:
+    """
+    Read time_signature from the downbeats_corrected file.
+
+    Looks for 3_corrected/{track_name}_downbeats_corrected.txt and reads
+    the # time_signature=N line from the header.
+
+    Returns time_signature as int (e.g., 4 for 4/4 time), or 0 if not found.
+    """
+    corrected_file = track_dir / '3_corrected' / f'{track_name}_downbeats_corrected.txt'
+
+    if not corrected_file.exists():
+        return 0
+
+    try:
+        with open(corrected_file, 'r') as f:
+            for line in f:
+                if line.startswith('# time_signature='):
+                    value = line.split('=')[1].strip()
+                    return int(value)
+                # Stop after header comments
+                if not line.startswith('#'):
+                    break
+    except Exception:
+        pass
+
+    return 0
+
+
 def read_rhythm_histogram_data(csv_path: Path, pattern_length: int) -> Dict[str, Dict]:
     """
     Read filtered rhythm histogram data and organize by section.
@@ -372,7 +401,7 @@ def build_column_headers(pattern_length: int) -> List[str]:
     # Metadata columns
     headers.extend([
         'song_id', 'song_name', 'sec_no', 'section_label',
-        'num_repetitions', 'ratio_in_snippet', 'mean_section_tempo'
+        'num_repetitions', 'ratio_in_snippet', 'mean_section_tempo', 'time_signature'
     ])
 
     # Rhythm Histogram (RH) - L*16 positions
@@ -478,6 +507,7 @@ def collect_section_data(
 
     song_id = extract_song_id(track_name)
     song_name = extract_song_name(track_name)
+    time_signature = read_time_signature(track_dir, track_name)
 
     for section_id, rh_section in rh_data.items():
         ratio = rh_section.get('ratio_in_snippet', 0)
@@ -496,6 +526,7 @@ def collect_section_data(
         row['num_repetitions'] = rh_section.get('num_repetitions', 0)
         row['ratio_in_snippet'] = ratio
         row['mean_section_tempo'] = rh_section.get('mean_section_tempo', 0)
+        row['time_signature'] = time_signature
 
         # Rhythm Histogram (RH)
         rh_positions = rh_section.get('positions', {})
