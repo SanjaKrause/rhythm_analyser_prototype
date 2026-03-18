@@ -2842,19 +2842,21 @@ def calculate_section_double_anchored_phases(
         # Store reference onset info for this segment
         # Use backwards-compatible column names: ref_ms/ref_phase for start (same as single anchoring)
         # Add ref_ms_end/ref_phase_end for end offset (new for double anchoring)
+        # Only add if start_onset was found (consistent with single anchor mode behavior)
         segment_bar_duration = corrected_duration / pattern_len
-        ref_onsets.append({
-            'bar_number': segment_idx * pattern_len,
-            'bar_number_global': segment_start,
-            'ref_ms': start_offset * 1000.0,              # Start offset (backwards compatible)
-            'ref_phase': start_offset / segment_bar_duration if segment_bar_duration > 0 else 0.0,
-            'ref_ms_end': end_offset * 1000.0,            # End offset (new for double anchoring)
-            'ref_phase_end': end_offset / segment_bar_duration if segment_bar_duration > 0 else 0.0,
-            'bar_duration': segment_bar_duration,
-            'ref_onset_time': start_onset,                # Start onset time (backwards compatible)
-            'ref_onset_time_end': end_onset,              # End onset time (new for double anchoring)
-            'anchoring_mode': anchoring_mode
-        })
+        if start_onset is not None:
+            ref_onsets.append({
+                'bar_number': segment_idx * pattern_len,
+                'bar_number_global': segment_start,
+                'ref_ms': start_offset * 1000.0,              # Start offset (backwards compatible)
+                'ref_phase': start_offset / segment_bar_duration if segment_bar_duration > 0 else 0.0,
+                'ref_ms_end': end_offset * 1000.0,            # End offset (new for double anchoring)
+                'ref_phase_end': end_offset / segment_bar_duration if segment_bar_duration > 0 else 0.0,
+                'bar_duration': segment_bar_duration,
+                'ref_onset_time': start_onset,                # Start onset time (backwards compatible)
+                'ref_onset_time_end': end_onset,              # End onset time (new for double anchoring)
+                'anchoring_mode': anchoring_mode
+            })
 
         # Process all bars in this L-bar segment
         for bar_offset in range(pattern_len):

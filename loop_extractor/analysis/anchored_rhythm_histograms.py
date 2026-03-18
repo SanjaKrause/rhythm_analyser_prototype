@@ -372,9 +372,11 @@ def create_anchored_rhythm_histograms(
             ax.set_ylim(0, max_strength * 1.2)
 
             # Add secondary y-axis for counts
+            # Scale proportionally to left axis: if max_strength = 0.5 and num_repetitions = 4,
+            # the right axis should show 0 to 2 (= 0.5 * 4), not 0 to 4
             ax2 = ax.twinx()
             max_count = num_repetitions if num_repetitions > 0 else 1
-            ax2.set_ylim(0, max_count * 1.2)
+            ax2.set_ylim(0, max_strength * max_count * 1.2)
             ax2.set_ylabel('Count', fontsize=9, fontweight='bold', color='gray')
             ax2.tick_params(axis='y', labelcolor='gray')
 
@@ -616,9 +618,11 @@ def create_anchored_groove_pulse_histograms(
             ax.set_ylim(0, max(max_strength * 1.2, 1.0))
 
             # Add secondary y-axis for counts
+            # Scale proportionally to left axis: if max_strength = 0.5 and num_repetitions = 4,
+            # the right axis should show 0 to 2 (= 0.5 * 4), not 0 to 4
             ax2 = ax.twinx()
             max_count = num_repetitions if num_repetitions > 0 else 1
-            ax2.set_ylim(0, max_count * 1.2)
+            ax2.set_ylim(0, max_strength * max_count * 1.2)
             ax2.set_ylabel('Count', fontsize=9, fontweight='bold', color='gray')
             ax2.tick_params(axis='y', labelcolor='gray')
 

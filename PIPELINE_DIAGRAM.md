@@ -3687,6 +3687,27 @@ python collect_data.py /path/to/batch/output
 
 ---
 
+### Investigate Double-Anchoring Fallback to Single Anchoring
+
+**Issue:** When double anchoring mode is enabled but no end onset is found for a segment, the code falls back to single anchoring (using the start offset for both ends). This fallback behavior needs investigation to ensure it's working correctly and producing valid results.
+
+**Current behavior:**
+- Double anchoring searches for both start and end onsets near segment boundaries
+- If no end onset found: `end_offset = start_offset` and `anchoring_mode = 'single'` (fallback)
+- If no start onset found: segment is now skipped entirely (fix applied)
+
+**Investigation needed:**
+- Verify the fallback produces correct grid times
+- Check if tempo estimation is accurate when using single offset for both boundaries
+- Consider whether segments with fallback should be flagged or handled differently
+- Review if there are edge cases where fallback causes timing issues
+
+**Related files:**
+- `loop_extractor/analysis/anchoring.py` (lines 2822-2832): Fallback logic
+- Reference onsets CSV: `anchoring_mode` column indicates 'single' or 'double'
+
+---
+
 ### Groove Pulse Clicks - Boundary Filtering Issue
 
 **Issue:** The end boundary filtering for groove pulse clicks is not working correctly in some cases. The last click sometimes appears after the pattern end boundary in the visualization.
@@ -3895,3 +3916,11 @@ section_id = f"{sec_no_part}_{section_label}_L{l_val}"
 - `loop_extractor/batch_analysis/collect_data.py` - `read_bass_pitch_data()` function (lines 447-487)
 
 **STATUS: FIXED** (2026-03-18)
+
+---
+
+### Update MacBook
+
+**Task:** Update macOS to latest version (postponed for overnight calculations)
+
+**Priority:** Low - run after batch processing is complete
