@@ -106,6 +106,7 @@ def run_complete_pipeline(
     manual_duration: Optional[float] = None,
     export_format: str = 'wav',
     reuse_existing: bool = False,  # Reuse existing stems/beats/songformer, skip steps 1-4.5, 5.5
+    all_stems: bool = False,  # Run onset/grid analysis for all 5 stems
     verbose: bool = True
 ) -> dict:
     """
@@ -485,56 +486,70 @@ def run_complete_pipeline(
         # Don't raise - continue with pipeline
 
     # ========================================================================
-    # STEP 5: ONSET DETECTION
+    # STEP 5: ONSET DETECTION (for each stem)
     # ========================================================================
-    try:
-        # Determine onset file path
-        if onset_file is None:
-            onset_file = paths['onsets_file']
+    # Determine which stems to process
+    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    results['onset_stems'] = onset_stems
+    results['onset_files'] = {}
 
-        if reuse_existing and Path(onset_file).exists():
+    for stem in onset_stems:
+        try:
+            # Get stem-specific paths
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+
+            # Create stem output directory
+            stem_paths['onsets_dir'].mkdir(parents=True, exist_ok=True)
+
+            stem_onset_file = stem_paths['onsets_file']
+
+            if skip_existing and Path(stem_onset_file).exists():
+                if verbose:
+                    print(f"\n[5] Onset detection ({stem}) - SKIPPED (exists)")
+                results['steps_completed'].append(f'onset_detection_{stem}_skipped')
+                results['onset_files'][stem] = str(stem_onset_file)
+            else:
+                if verbose:
+                    print(f"\n[5] Onset detection from {stem} stem...")
+
+                # Detect onsets from stem
+                stem_wav = paths['stems_dir'] / f'{stem}.wav'
+
+                if not stem_wav.exists():
+                    raise FileNotFoundError(f"{stem.capitalize()} stem not found: {stem_wav}")
+
+                onsets, onset_file_path = onset_detection.detect_and_save_onsets(
+                    str(stem_wav),
+                    str(stem_onset_file),
+                    hop_length=512,
+                    backtrack=False,
+                    delta=0.12,
+                    refine_onsets=False,
+                    min_interval_s=0.15,
+                    sr=22050
+                )
+
+                results['onset_files'][stem] = str(onset_file_path)
+                results[f'num_onsets_{stem}'] = len(onsets)
+                results['steps_completed'].append(f'onset_detection_{stem}')
+
+                if verbose:
+                    print(f"  ✓ Detected {len(onsets)} onsets")
+                    print(f"  ✓ Saved to: {onset_file_path}")
+
+        except Exception as e:
+            error_msg = f"Step 5 ({stem}) failed: {e}"
+            results['errors'].append(error_msg)
             if verbose:
-                print("\n[5] Onset detection - SKIPPED (reuse existing)")
-            results['steps_completed'].append('onset_detection_skipped')
-        elif skip_existing and Path(onset_file).exists():
-            if verbose:
-                print("\n[5] Onset detection - SKIPPED (exists)")
-            results['steps_completed'].append('onset_detection_skipped')
-        else:
-            if verbose:
-                print("\n[5] Onset detection from drum stem...")
+                print(f"  ✗ ERROR: {e}")
+            # Continue with other stems instead of raising
+            continue
 
-            # Detect onsets from drum stem (created in Step 1)
-            drum_stem = paths['stems_dir'] / 'drums.wav'
-
-            if not drum_stem.exists():
-                raise FileNotFoundError(f"Drum stem not found: {drum_stem}")
-
-            onsets, onset_file_path = onset_detection.detect_and_save_onsets(
-                str(drum_stem),
-                str(onset_file),
-                hop_length=512,
-                backtrack=False,
-                delta=0.12,
-                refine_onsets=False,
-                min_interval_s=0.15,
-                sr=22050
-            )
-
-            results['onset_file'] = str(onset_file_path)
-            results['num_onsets'] = len(onsets)
-            results['steps_completed'].append('onset_detection')
-
-            if verbose:
-                print(f"  ✓ Detected {len(onsets)} onsets")
-                print(f"  ✓ Saved to: {onset_file_path}")
-
-    except Exception as e:
-        error_msg = f"Step 5 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
-        raise
+    # For backwards compatibility, set onset_file to drums onset file
+    if 'drums' in results['onset_files']:
+        onset_file = results['onset_files']['drums']
+    elif onset_file is None:
+        onset_file = paths['onsets_file']  # Legacy path
 
     # ========================================================================
     # STEP 5.1: DRUM TRANSCRIPTION (if using drumtranscriber onset mode)
@@ -839,192 +854,329 @@ def run_complete_pipeline(
         # Don't raise - continue to RMS if we have the CSV from before
 
     # ========================================================================
-    # STEP 6.1: SECTION ANCHORING
+    # STEP 6 (additional stems): RASTER/GRID CALCULATIONS FOR OTHER STEMS
     # ========================================================================
-    try:
-        # Check if SongFormer sections exist
-        sf_overlapping_csv = paths['songformer_dir'] / 'SF_overlapping_sections.csv'
-        sf_timings_csv = paths['songformer_dir'] / 'SF_snippet_timings.csv'
+    # Process additional stems (skip drums, already processed above)
+    results['comprehensive_csvs'] = {'drums': str(paths['comprehensive_csv'])}
 
-        if daw_ready:
-            if verbose:
-                print("\n[6.1] Section anchoring - SKIPPED (DAW ready mode)")
-            results['steps_completed'].append('anchoring_skipped_daw')
-        elif not sf_overlapping_csv.exists() or not sf_timings_csv.exists():
-            if verbose:
-                print("\n[6.1] Section anchoring - SKIPPED (no SongFormer sections)")
-            results['steps_completed'].append('anchoring_skipped_no_sections')
-        elif not paths['corrected_downbeats_file'].exists():
-            if verbose:
-                print("\n[6.1] Section anchoring - SKIPPED (no corrected downbeats)")
-            results['steps_completed'].append('anchoring_skipped_no_downbeats')
-        else:
-            # Check if anchoring already exists
-            anchoring_dir = paths['anchoring_dir']
-            anchoring_exists = anchoring_dir.exists() and any(anchoring_dir.glob('*.csv'))
+    for stem in onset_stems:
+        if stem == 'drums':
+            continue  # Already processed above
 
-            if skip_existing and anchoring_exists:
+        try:
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            stem_paths['grid_dir'].mkdir(parents=True, exist_ok=True)
+
+            stem_onset_file = results['onset_files'].get(stem)
+            if not stem_onset_file or not Path(stem_onset_file).exists():
                 if verbose:
-                    print("\n[6.1] Section anchoring - SKIPPED (exists)")
-                results['steps_completed'].append('anchoring_skipped')
+                    print(f"\n[6] Grid calculations ({stem}) - SKIPPED (no onset file)")
+                continue
+
+            if skip_existing and stem_paths['comprehensive_csv'].exists():
+                if verbose:
+                    print(f"\n[6] Grid calculations ({stem}) - SKIPPED (exists)")
+                results['comprehensive_csvs'][stem] = str(stem_paths['comprehensive_csv'])
+                continue
+
+            if verbose:
+                print(f"\n[6] Raster/grid calculations ({stem})...")
+
+            # Load snippet offset (same as drums)
+            if manual_start is not None:
+                snippet_offset = manual_start
+            elif snippet_offset_file and Path(snippet_offset_file).exists():
+                snippet_offset = raster.load_snippet_offset(snippet_offset_file, track_id)
+            elif config.OVERVIEW_CSV.exists():
+                snippet_offset = raster.load_snippet_offset(str(config.OVERVIEW_CSV), track_id)
             else:
+                snippet_offset = 0.0
+
+            # Create comprehensive CSV for this stem
+            snippet_dur = manual_duration if manual_duration is not None else 30.0
+            df_comp = raster.create_comprehensive_csv(
+                str(paths['corrected_downbeats_file']),
+                str(stem_onset_file),
+                pattern_lengths,
+                snippet_offset,
+                str(stem_paths['comprehensive_csv']),
+                snippet_duration=snippet_dur
+            )
+
+            results['comprehensive_csvs'][stem] = str(stem_paths['comprehensive_csv'])
+            results['steps_completed'].append(f'raster_{stem}')
+
+            if verbose:
+                print(f"  ✓ Comprehensive CSV created for {stem}")
+
+        except Exception as e:
+            error_msg = f"Step 6 ({stem}) failed: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR ({stem}): {e}")
+            continue
+
+    # ========================================================================
+    # STEP 6.1-6.4: SECTION ANCHORING (for all stems)
+    # ========================================================================
+    # Check if SongFormer sections exist (common for all stems)
+    sf_overlapping_csv = paths['songformer_dir'] / 'SF_overlapping_sections.csv'
+    sf_timings_csv = paths['songformer_dir'] / 'SF_snippet_timings.csv'
+
+    # Track which stems were successfully processed (for downstream steps)
+    processed_stems = []
+
+    if daw_ready:
+        if verbose:
+            print("\n[6.1] Section anchoring - SKIPPED (DAW ready mode)")
+        results['steps_completed'].append('anchoring_skipped_daw')
+    elif not sf_overlapping_csv.exists() or not sf_timings_csv.exists():
+        if verbose:
+            print("\n[6.1] Section anchoring - SKIPPED (no SongFormer sections)")
+        results['steps_completed'].append('anchoring_skipped_no_sections')
+    elif not paths['corrected_downbeats_file'].exists():
+        if verbose:
+            print("\n[6.1] Section anchoring - SKIPPED (no corrected downbeats)")
+        results['steps_completed'].append('anchoring_skipped_no_downbeats')
+    else:
+        # Loop through all stems for anchoring
+        # IMPORTANT: drums must be first (defined in config.STEMS) because other stems
+        # use drum anchoring as reference
+        onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+        results['anchoring_files'] = {}
+        results['anchoring_filtered_files'] = {}
+
+        # Track drum filtered directory for use by other stems
+        drum_filtered_dir = None
+
+        for stem in onset_stems:
+            try:
+                stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+                anchoring_dir = stem_paths['anchoring_dir']
+                filtered_dir = stem_paths['filtered_patterns_dir']
+                stem_onset_file = stem_paths['onsets_file']
+
+                # Check if onset file exists for this stem
+                if not stem_onset_file.exists():
+                    if verbose:
+                        print(f"\n[6.1] Section anchoring ({stem}) - SKIPPED (no onset file)")
+                    continue
+
+                # ================================================================
+                # DRUMS: Full anchoring + filtering pipeline
+                # ================================================================
+                if stem == 'drums':
+                    # Check if anchoring already exists
+                    anchoring_exists = anchoring_dir.exists() and any(anchoring_dir.glob('*.csv'))
+
+                    if skip_existing and anchoring_exists:
+                        if verbose:
+                            print(f"\n[6.1] Section anchoring ({stem}) - SKIPPED (exists)")
+                        # Still add to processed_stems so downstream steps can run
+                        processed_stems.append(stem)
+                        drum_filtered_dir = filtered_dir
+                        continue
+
+                    if verbose:
+                        print(f"\n[6.1] Section anchoring ({stem})...")
+
+                    anchoring_results = anchoring.run_anchoring(
+                        corrected_downbeats_file=str(paths['corrected_downbeats_file']),
+                        onset_file=str(stem_onset_file),
+                        songformer_sections_csv=str(sf_overlapping_csv),
+                        snippet_timings_csv=str(sf_timings_csv),
+                        output_dir=str(anchoring_dir),
+                        pattern_lengths=[1, 2, 4],
+                        anchoring_mode=anchoring_mode,
+                        verbose=verbose
+                    )
+
+                    results['anchoring_files'][stem] = anchoring_results
+                    processed_stems.append(stem)
+
+                    if verbose:
+                        num_files = len(anchoring_results)
+                        print(f"  ✓ Section anchoring ({stem}) completed: {num_files} files created")
+
+                    # Generate section anchoring plots
+                    from analysis import plots_anchoring
+                    plots_anchoring.create_all_anchoring_plots(
+                        anchoring_dir=str(anchoring_dir),
+                        track_id=track_id
+                    )
+
+                    # ================================================================
+                    # STEP 6.2: FILTER ANCHORED PATTERNS (drums only)
+                    # ================================================================
+                    if verbose:
+                        print(f"\n[6.2] Filtering anchored patterns ({stem})...")
+
+                    from analysis.filter_anchored_patterns import filter_all_anchored_patterns
+                    filter_results = filter_all_anchored_patterns(
+                        anchoring_dir=anchoring_dir,
+                        output_dir=filtered_dir,
+                        iqr_multiplier=config.IQR_MULTIPLIER_TUKEY,
+                        threshold=config.RUNNING_MEAN_THRESHOLD,
+                        no_of_repetitions_TH=config.NO_OF_REPETITIONS_TH,
+                        verbose=verbose
+                    )
+
+                    results['anchoring_filtered_files'][stem] = filter_results
+                    drum_filtered_dir = filtered_dir
+
+                    if verbose:
+                        print(f"  ✓ Filtering ({stem}) completed: {len(filter_results)} files filtered")
+
+                # ================================================================
+                # OTHER STEMS: Apply drum anchoring (no independent anchoring/filtering)
+                # ================================================================
+                else:
+                    # Check if drum filtered patterns exist
+                    if drum_filtered_dir is None or not drum_filtered_dir.exists():
+                        if verbose:
+                            print(f"\n[6.1-6.2] {stem} - SKIPPED (no drum anchoring available)")
+                        continue
+
+                    # Check if filtered patterns already exist for this stem
+                    filtered_exists = filtered_dir.exists() and any(filtered_dir.glob('*.csv'))
+
+                    if skip_existing and filtered_exists:
+                        if verbose:
+                            print(f"\n[6.1-6.2] {stem} - SKIPPED (exists)")
+                        processed_stems.append(stem)
+                        continue
+
+                    if verbose:
+                        print(f"\n[6.1-6.2] Applying drum anchoring to {stem}...")
+
+                    from analysis.apply_drum_anchoring import apply_drum_anchoring_to_stem
+                    stem_filter_results = apply_drum_anchoring_to_stem(
+                        drum_filtered_dir=drum_filtered_dir,
+                        stem_onset_file=stem_onset_file,
+                        output_dir=filtered_dir,
+                        stem_name=stem,
+                        verbose=verbose,
+                        stems_dir=paths['stems_dir']
+                    )
+
+                    results['anchoring_filtered_files'][stem] = stem_filter_results
+                    processed_stems.append(stem)
+
+                    if verbose:
+                        print(f"  ✓ Applied drum anchoring to {stem}: {len(stem_filter_results)} files created")
+
+                # ================================================================
+                # STEP 6.3: PLOT FILTERED PATTERNS RASTER (all stems)
+                # ================================================================
                 if verbose:
-                    print("\n[6.1] Section anchoring...")
+                    print(f"\n[6.3] Plotting filtered patterns raster ({stem})...")
 
-                # Get onset file
-                if onset_file is None:
-                    onset_file = paths['onsets_file']
-
-                if not Path(onset_file).exists():
-                    raise FileNotFoundError(f"Onset file not found: {onset_file}")
-
-                anchoring_results = anchoring.run_anchoring(
-                    corrected_downbeats_file=str(paths['corrected_downbeats_file']),
-                    onset_file=str(onset_file),
-                    songformer_sections_csv=str(sf_overlapping_csv),
-                    snippet_timings_csv=str(sf_timings_csv),
-                    output_dir=str(anchoring_dir),
-                    pattern_lengths=[1, 2, 4],
-                    anchoring_mode=anchoring_mode,
-                    verbose=verbose
-                )
-
-                results['anchoring_files'] = anchoring_results
-                results['steps_completed'].append('anchoring')
-
-                if verbose:
-                    num_files = len(anchoring_results)
-                    print(f"  ✓ Section anchoring completed: {num_files} files created")
-
-                # Generate section anchoring plots
                 from analysis import plots_anchoring
-                plots_anchoring.create_all_anchoring_plots(
-                    anchoring_dir=str(anchoring_dir),
-                    track_id=track_id
-                )
-
-                # ================================================================
-                # STEP 6.2: FILTER ANCHORED PATTERNS
-                # ================================================================
-                if verbose:
-                    print("\n[6.2] Filtering anchored patterns...")
-
-                from analysis.filter_anchored_patterns import filter_all_anchored_patterns
-                filtered_dir = paths['filtered_patterns_dir']
-                filter_results = filter_all_anchored_patterns(
-                    anchoring_dir=anchoring_dir,
-                    output_dir=filtered_dir,
-                    iqr_multiplier=config.IQR_MULTIPLIER_TUKEY,
-                    threshold=config.RUNNING_MEAN_THRESHOLD,
-                    no_of_repetitions_TH=config.NO_OF_REPETITIONS_TH,
-                    verbose=verbose
-                )
-
-                results['anchoring_filtered_files'] = filter_results
-                results['anchoring_filtered_dir'] = str(filtered_dir)
-                results['steps_completed'].append('anchoring_filtering')
-
-                if verbose:
-                    print(f"  ✓ Filtering completed: {len(filter_results)} files filtered")
-
-                # ================================================================
-                # STEP 6.3: PLOT FILTERED PATTERNS RASTER
-                # ================================================================
-                if verbose:
-                    print("\n[6.3] Plotting filtered patterns raster...")
-
                 plots_anchoring.create_all_anchoring_plots(
                     anchoring_dir=str(filtered_dir),
                     track_id=track_id
                 )
 
-                results['steps_completed'].append('filtered_patterns_plot')
-
                 if verbose:
-                    print(f"  ✓ Filtered patterns raster plot created")
+                    print(f"  ✓ Filtered patterns raster plot ({stem}) created")
 
                 # ================================================================
-                # STEP 6.4: ONSET HISTOGRAMS
+                # STEP 6.4: ONSET HISTOGRAMS (all stems)
                 # ================================================================
                 if verbose:
-                    print("\n[6.4] Creating onset histograms...")
+                    print(f"\n[6.4] Creating onset histograms ({stem})...")
 
                 from analysis import anchored_onset_histograms
 
-                # Create histograms for unfiltered patterns (output to 6.1 folder)
-                histogram_results_unfiltered = anchored_onset_histograms.create_combined_onset_histograms(
-                    filtered_dir=str(anchoring_dir),
-                    output_dir=str(anchoring_dir),
-                    track_id=track_id,
-                    verbose=verbose
-                )
+                # For drums: create histograms for both unfiltered and filtered
+                if stem == 'drums':
+                    anchored_onset_histograms.create_combined_onset_histograms(
+                        filtered_dir=str(anchoring_dir),
+                        output_dir=str(anchoring_dir),
+                        track_id=track_id,
+                        verbose=verbose
+                    )
 
                 # Create histograms for filtered patterns (output to 6.2 folder)
-                histogram_results_filtered = anchored_onset_histograms.create_combined_onset_histograms(
+                anchored_onset_histograms.create_combined_onset_histograms(
                     filtered_dir=str(filtered_dir),
                     output_dir=str(filtered_dir),
                     track_id=track_id,
                     verbose=verbose
                 )
 
-                results['onset_histogram_files'] = {
-                    'unfiltered': histogram_results_unfiltered,
-                    'filtered': histogram_results_filtered
-                }
-                results['steps_completed'].append('onset_histograms')
-
                 if verbose:
-                    print(f"  ✓ Onset histograms created (unfiltered + filtered)")
+                    if stem == 'drums':
+                        print(f"  ✓ Onset histograms ({stem}) created (unfiltered + filtered)")
+                    else:
+                        print(f"  ✓ Onset histograms ({stem}) created (filtered)")
 
-    except Exception as e:
-        error_msg = f"Step 6.1/6.2/6.3/6.4 failed: {e}"
-        results['errors'].append(error_msg)
+            except Exception as e:
+                error_msg = f"Step 6.1/6.2/6.3/6.4 failed for {stem}: {e}"
+                results['errors'].append(error_msg)
+                if verbose:
+                    print(f"  ✗ ERROR ({stem}): {e}")
+                continue
+
+        # Mark steps as completed if at least one stem was processed
+        if results['anchoring_files'] or results['anchoring_filtered_files']:
+            results['steps_completed'].append('anchoring')
+            results['steps_completed'].append('anchoring_filtering')
+            results['steps_completed'].append('filtered_patterns_plot')
+            results['steps_completed'].append('onset_histograms')
+
+    # ========================================================================
+    # STEP 6.5: RASTER PLOTS (for all stems)
+    # ========================================================================
+    if daw_ready:
         if verbose:
-            print(f"  ✗ ERROR: {e}")
-        # Don't raise - continue to raster plots
+            print("\n[6.5] Raster plots - SKIPPED (DAW ready mode)")
+        results['steps_completed'].append('raster_plots_skipped_daw')
+    else:
+        onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+        raster_created = False
 
-    # ========================================================================
-    # STEP 6.5: RASTER PLOTS
-    # ========================================================================
-    try:
-        if daw_ready:
-            if verbose:
-                print("\n[6.5] Raster plots - SKIPPED (DAW ready mode)")
-            results['steps_completed'].append('raster_plots_skipped_daw')
-        elif not paths['comprehensive_csv'].exists():
-            if verbose:
-                print("\n[6.5] Raster plots - SKIPPED (no comprehensive CSV)")
-            results['steps_completed'].append('raster_plots_skipped')
-        else:
-            # Check if raster plots already exist
-            grid_output_dir = paths['comprehensive_csv'].parent
-            raster_files_exist = (grid_output_dir / f'{track_id}_raster_comparison.png').exists()
+        for stem in onset_stems:
+            try:
+                stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+                comprehensive_csv = stem_paths['comprehensive_csv']
 
-            if skip_existing and raster_files_exist:
+                if not comprehensive_csv.exists():
+                    if verbose:
+                        print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (no comprehensive CSV)")
+                    continue
+
+                grid_output_dir = comprehensive_csv.parent
+                raster_files_exist = (grid_output_dir / f'{track_id}_raster_comparison.png').exists()
+
+                if skip_existing and raster_files_exist:
+                    if verbose:
+                        print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (exists)")
+                    continue
+
                 if verbose:
-                    print("\n[6.5] Raster plots - SKIPPED (exists)")
-                results['steps_completed'].append('raster_plots_skipped')
-            else:
-                if verbose:
-                    print("\n[6.5] Generating raster plots...")
+                    print(f"\n[6.5] Generating raster plots ({stem})...")
 
                 raster_plots.create_all_plots(
-                    str(paths['comprehensive_csv']),
+                    str(comprehensive_csv),
                     str(grid_output_dir),
                     track_id
                 )
 
-                results['steps_completed'].append('raster_plots')
+                raster_created = True
 
                 if verbose:
-                    print(f"  ✓ Raster plots created")
+                    print(f"  ✓ Raster plots ({stem}) created")
 
-    except Exception as e:
-        error_msg = f"Step 6.5 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
-        # Don't raise - continue to microtiming plots
+            except Exception as e:
+                error_msg = f"Step 6.5 failed for {stem}: {e}"
+                results['errors'].append(error_msg)
+                if verbose:
+                    print(f"  ✗ ERROR ({stem}): {e}")
+                continue
+
+        if raster_created:
+            results['steps_completed'].append('raster_plots')
 
     # ========================================================================
     # STEP 6.6: MICROTIMING PLOTS
@@ -1219,7 +1371,8 @@ def run_complete_pipeline(
                     from utils import beat_histograms
 
                     # Create 5.7_beat_histograms folder
-                    track_root = paths['comprehensive_csv'].parent.parent
+                    # comprehensive_csv is at 5_grid/drums/track_comprehensive_phases.csv
+                    track_root = paths['comprehensive_csv'].parent.parent.parent
                     beat_output_dir = track_root / '5.7_beat_histograms'
                     beat_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1309,7 +1462,9 @@ def run_complete_pipeline(
                 try:
                     from batch_analysis import aggregate_statistics_rhythm_hist
 
-                    track_root = paths['comprehensive_csv'].parent.parent
+                    # comprehensive_csv is at 5_grid/drums/track_comprehensive_phases.csv
+                    # So .parent.parent.parent gets to track root
+                    track_root = paths['comprehensive_csv'].parent.parent.parent
 
                     aggregate_statistics_rhythm_hist.aggregate_statistics_for_track(
                         track_root,
@@ -1351,7 +1506,8 @@ def run_complete_pipeline(
             from utils import full_histograms
 
             # Create 5.8_full_histograms folder (same track_root as beat_histograms)
-            track_root = paths['comprehensive_csv'].parent.parent
+            # comprehensive_csv is at 5_grid/drums/track_comprehensive_phases.csv
+            track_root = paths['comprehensive_csv'].parent.parent.parent
             full_hist_output_dir = track_root / '5.8_full_histograms'
             full_hist_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1381,29 +1537,45 @@ def run_complete_pipeline(
         # Don't raise - continue to RMS analysis
 
     # ========================================================================
-    # STEP 7: ANCHORED RHYTHM HISTOGRAMS
+    # STEP 7: ANCHORED RHYTHM HISTOGRAMS (for all stems)
     # ========================================================================
-    try:
-        if verbose:
-            print("\n[7] Creating anchored rhythm histograms...")
+    from analysis import anchored_rhythm_histograms
 
-        from analysis import anchored_rhythm_histograms
+    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    rhythm_hist_created = False
 
-        # Output folder for anchored rhythm histograms
-        rhythm_hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
-        rhythm_hist_dir.mkdir(parents=True, exist_ok=True)
+    # Store rhythm_hist_dir per stem for use in Step 7.1
+    stem_rhythm_hist_dirs = {}
 
-        # Create for unfiltered patterns (from 6.1_anchoring, output to 6.6_anchored_rhythm_histograms)
-        if anchoring_dir.exists():
-            rhythm_results_unfiltered = anchored_rhythm_histograms.create_anchored_rhythm_histograms(
-                anchoring_dir=str(anchoring_dir),
-                output_dir=str(rhythm_hist_dir),
-                track_id=track_id,
-                verbose=verbose
-            )
+    for stem in onset_stems:
+        try:
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            anchoring_dir = stem_paths['anchoring_dir']
+            filtered_dir = stem_paths['filtered_patterns_dir']
+            rhythm_hist_dir = stem_paths['rhythm_histograms_dir']
 
-        # Create for filtered patterns (from 6.2_filtered_patterns, output to 6.6_anchored_rhythm_histograms)
-        if filtered_dir.exists():
+            # Check if filtered patterns exist for this stem
+            if not filtered_dir.exists() or not any(filtered_dir.glob('*.csv')):
+                if verbose:
+                    print(f"\n[7] Anchored rhythm histograms ({stem}) - SKIPPED (no filtered patterns)")
+                continue
+
+            if verbose:
+                print(f"\n[7] Creating anchored rhythm histograms ({stem})...")
+
+            rhythm_hist_dir.mkdir(parents=True, exist_ok=True)
+            stem_rhythm_hist_dirs[stem] = rhythm_hist_dir
+
+            # Create for unfiltered patterns (from 6.1_anchoring)
+            if anchoring_dir.exists():
+                anchored_rhythm_histograms.create_anchored_rhythm_histograms(
+                    anchoring_dir=str(anchoring_dir),
+                    output_dir=str(rhythm_hist_dir),
+                    track_id=track_id,
+                    verbose=verbose
+                )
+
+            # Create for filtered patterns (from 6.2_filtered_patterns)
             rhythm_results_filtered = anchored_rhythm_histograms.create_anchored_rhythm_histograms(
                 anchoring_dir=str(filtered_dir),
                 output_dir=str(rhythm_hist_dir),
@@ -1422,46 +1594,62 @@ def run_complete_pipeline(
 
                 # Create rhythm patterns from the groove pulse CSV
                 if groove_pulse_results and groove_pulse_results.get('csv'):
-                    rhythm_patterns_results = anchored_rhythm_histograms.create_anchored_rhythm_patterns(
+                    anchored_rhythm_histograms.create_anchored_rhythm_patterns(
                         groove_pulse_csv=groove_pulse_results['csv'],
                         track_id=track_id + '_filtered',
                         output_dir=str(rhythm_hist_dir),
                         verbose=verbose
                     )
 
+            rhythm_hist_created = True
+
+            if verbose:
+                print(f"  ✓ Anchored rhythm histograms ({stem}) created")
+
+        except Exception as e:
+            error_msg = f"Step 7 failed for {stem}: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR ({stem}): {e}")
+            continue
+
+    if rhythm_hist_created:
         results['steps_completed'].append('anchored_rhythm_histograms')
 
-        if verbose:
-            print(f"  ✓ Anchored rhythm histograms created")
-
-    except Exception as e:
-        error_msg = f"Step 7 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
-
     # ========================================================================
-    # STEP 7.1: ANCHORED BEAT HISTOGRAMS
+    # STEP 7.1: ANCHORED BEAT HISTOGRAMS (for all stems)
     # ========================================================================
-    try:
-        if verbose:
-            print("\n[7.1] Creating anchored beat histograms...")
+    from utils import anchored_beat_histograms
 
-        from utils import anchored_beat_histograms
+    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    beat_hist_created = False
 
-        # Output folder for anchored beat histograms
-        beat_hist_dir = track_dir / '6.7_anchored_beat_histograms'
-        beat_hist_dir.mkdir(parents=True, exist_ok=True)
+    for stem in onset_stems:
+        try:
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            filtered_dir = stem_paths['filtered_patterns_dir']
+            beat_hist_dir = stem_paths['beat_histograms_dir']
+            rhythm_hist_dir = stem_paths['rhythm_histograms_dir']
 
-        # Create from filtered patterns (6.2_filtered_patterns -> 6.7_anchored_beat_histograms)
-        if filtered_dir.exists():
-            beat_results = anchored_beat_histograms.create_anchored_beat_histograms(
+            # Check if filtered patterns exist for this stem
+            if not filtered_dir.exists() or not any(filtered_dir.glob('*.csv')):
+                if verbose:
+                    print(f"\n[7.1] Anchored beat histograms ({stem}) - SKIPPED (no filtered patterns)")
+                continue
+
+            if verbose:
+                print(f"\n[7.1] Creating anchored beat histograms ({stem})...")
+
+            beat_hist_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create from filtered patterns (6.2_filtered_patterns -> 6.7_anchored_beat_histograms)
+            anchored_beat_histograms.create_anchored_beat_histograms(
                 filtered_patterns_dir=str(filtered_dir),
                 track_id=track_id,
                 output_dir=str(beat_hist_dir)
             )
 
-            beat_results_all = anchored_beat_histograms.create_anchored_beat_histograms_all_onsets(
+            anchored_beat_histograms.create_anchored_beat_histograms_all_onsets(
                 filtered_patterns_dir=str(filtered_dir),
                 track_id=track_id,
                 output_dir=str(beat_hist_dir)
@@ -1499,72 +1687,91 @@ def run_complete_pipeline(
                 if verbose:
                     print(f"    Created {groove_beat_results_all.get('plots_created', 0)} groove pulse scatter plots")
 
+            beat_hist_created = True
+
+            if verbose:
+                print(f"  ✓ Anchored beat histograms ({stem}) created")
+
+        except Exception as e:
+            error_msg = f"Step 7.1 failed for {stem}: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR ({stem}): {e}")
+            continue
+
+    if beat_hist_created:
         results['steps_completed'].append('anchored_beat_histograms')
 
-        if verbose:
-            print(f"  ✓ Anchored beat histograms created")
-
-    except Exception as e:
-        error_msg = f"Step 7.1 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
-
     # ========================================================================
-    # STEP 7.2: ANCHORED STATISTICS (requires 6.6 and 6.7 data from Steps 7 & 7.1)
+    # STEP 7.2: ANCHORED STATISTICS (for all stems)
     # ========================================================================
-    try:
-        if daw_ready:
-            if verbose:
-                print("\n[7.2] Anchored statistics - SKIPPED (DAW ready mode)")
-            results['steps_completed'].append('anchored_statistics_skipped_daw')
-        elif not paths['comprehensive_csv'].exists():
-            if verbose:
-                print("\n[7.2] Anchored statistics - SKIPPED (no comprehensive CSV)")
-            results['steps_completed'].append('anchored_statistics_skipped')
-        else:
-            if verbose:
-                print("\n[7.2] Calculating anchored statistics...")
+    if daw_ready:
+        if verbose:
+            print("\n[7.2] Anchored statistics - SKIPPED (DAW ready mode)")
+        results['steps_completed'].append('anchored_statistics_skipped_daw')
+    else:
+        from batch_analysis import anchored_rhythm_statistics
 
-            track_root = paths['comprehensive_csv'].parent.parent
+        onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+        stats_created = False
 
-            # Calculate anchored rhythm statistics (per-section statistics from 6.6 data)
+        for stem in onset_stems:
             try:
-                from batch_analysis import anchored_rhythm_statistics
+                stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+                rhythm_hist_dir = stem_paths['rhythm_histograms_dir']
+                beat_hist_dir = stem_paths['beat_histograms_dir']
 
-                anchored_rhythm_statistics.anchored_statistics_for_track(
-                    track_root,
-                    track_id
-                )
+                # Check if rhythm histograms exist for this stem
+                rhythm_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_rhythm_histograms.csv'
+                if not rhythm_csv.exists():
+                    if verbose:
+                        print(f"\n[7.2] Anchored statistics ({stem}) - SKIPPED (no rhythm histograms)")
+                    continue
 
                 if verbose:
-                    print(f"  ✓ Anchored rhythm statistics calculated")
+                    print(f"\n[7.2] Calculating anchored statistics ({stem})...")
+
+                # Output directory for statistics (stem-specific)
+                stats_dir = track_dir / '6.8_anchored_statistics' / stem
+                stats_dir.mkdir(parents=True, exist_ok=True)
+
+                # Calculate anchored rhythm statistics
+                try:
+                    anchored_rhythm_statistics.anchored_statistics_for_track_stem(
+                        rhythm_hist_dir=rhythm_hist_dir,
+                        stats_dir=stats_dir,
+                        track_id=track_id
+                    )
+                    if verbose:
+                        print(f"  ✓ Anchored rhythm statistics ({stem}) calculated")
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not calculate anchored rhythm statistics ({stem}): {e}")
+
+                # Calculate anchored beat statistics
+                try:
+                    anchored_rhythm_statistics.anchored_beat_statistics_for_track_stem(
+                        beat_hist_dir=beat_hist_dir,
+                        stats_dir=stats_dir,
+                        track_id=track_id
+                    )
+                    if verbose:
+                        print(f"  ✓ Anchored beat statistics ({stem}) calculated")
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! Warning: Could not calculate anchored beat statistics ({stem}): {e}")
+
+                stats_created = True
 
             except Exception as e:
+                error_msg = f"Step 7.2 failed for {stem}: {e}"
+                results['errors'].append(error_msg)
                 if verbose:
-                    print(f"  ! Warning: Could not calculate anchored rhythm statistics: {e}")
+                    print(f"  ✗ ERROR ({stem}): {e}")
+                continue
 
-            # Calculate anchored beat statistics (per-section statistics from 6.7 data)
-            try:
-                anchored_rhythm_statistics.anchored_beat_statistics_for_track(
-                    track_root,
-                    track_id
-                )
-
-                if verbose:
-                    print(f"  ✓ Anchored beat statistics calculated")
-
-            except Exception as e:
-                if verbose:
-                    print(f"  ! Warning: Could not calculate anchored beat statistics: {e}")
-
+        if stats_created:
             results['steps_completed'].append('anchored_statistics')
-
-    except Exception as e:
-        error_msg = f"Step 7.2 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
     # STEP 7 (OLD): RMS ANALYSIS - COMMENTED OUT FOR FUTURE REFERENCE
@@ -1965,26 +2172,32 @@ def run_complete_pipeline(
             print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
-    # STEP 11.1: SECTION EXTRACTION
+    # STEP 11.1: SECTION EXTRACTION (for all stems)
     # ========================================================================
-    try:
-        sections_dir = paths['sections_dir']
-        filtered_dir = paths['filtered_patterns_dir']
+    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    sections_extracted = False
+    results['sections_extracted'] = {}
 
-        # Check if sections already exist
-        existing_sections = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
+    for stem in onset_stems:
+        try:
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            sections_dir = stem_paths['sections_dir']
+            filtered_dir = stem_paths['filtered_patterns_dir']
 
-        if skip_existing and len(existing_sections) > 0:
+            # Check if sections already exist
+            existing_sections = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
+
+            if skip_existing and len(existing_sections) > 0:
+                if verbose:
+                    print(f"\n[11.1] Section extraction ({stem}) - SKIPPED ({len(existing_sections)} exist)")
+                continue
+            elif not filtered_dir.exists() or not any(filtered_dir.glob('*.csv')):
+                if verbose:
+                    print(f"\n[11.1] Section extraction ({stem}) - SKIPPED (no filtered patterns)")
+                continue
+
             if verbose:
-                print(f"\n[11.1] Section extraction - SKIPPED ({len(existing_sections)} exist)")
-            results['steps_completed'].append('section_extraction_skipped')
-        elif not filtered_dir.exists():
-            if verbose:
-                print("\n[11.1] Section extraction - SKIPPED (no filtered patterns)")
-            results['steps_completed'].append('section_extraction_no_input')
-        else:
-            if verbose:
-                print("\n[11.1] Extracting sections from filtered patterns...")
+                print(f"\n[11.1] Extracting sections from filtered patterns ({stem})...")
 
             extracted = extract_sections.extract_all_sections(
                 filtered_dir=filtered_dir,
@@ -1995,17 +2208,21 @@ def run_complete_pipeline(
                 verbose=verbose
             )
 
-            results['sections_extracted'] = len(extracted)
-            results['steps_completed'].append('section_extraction')
+            results['sections_extracted'][stem] = len(extracted)
+            sections_extracted = True
 
             if verbose:
-                print(f"  ✓ Extracted {len(extracted)} sections")
+                print(f"  ✓ Extracted {len(extracted)} sections ({stem})")
 
-    except Exception as e:
-        error_msg = f"Step 11.1 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
+        except Exception as e:
+            error_msg = f"Step 11.1 failed for {stem}: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR ({stem}): {e}")
+            continue
+
+    if sections_extracted:
+        results['steps_completed'].append('section_extraction')
 
     # ========================================================================
     # STEP 13: PIRONIO PULSE CLARITY METRICS
@@ -2359,6 +2576,8 @@ Environment:
                        help='Minimize output')
     parser.add_argument('--reuse-existing', action='store_true',
                        help='Reuse existing stems, beats, and SongFormer files. Skips steps 1-4.5 and 5.5 (pattern detection). Useful for re-running analysis with different onset/anchoring parameters.')
+    parser.add_argument('--all-stems', action='store_true',
+                       help='Run onset detection and downstream analysis for all 5 stems (vocals, drums, bass, piano, other). Default: drums only.')
 
     args = parser.parse_args()
 
@@ -2476,6 +2695,7 @@ Environment:
                     manual_duration=args.manual_duration,
                     export_format=args.export_format,
                     reuse_existing=args.reuse_existing,
+                    all_stems=args.all_stems,
                     verbose=not args.quiet
                 )
 
@@ -2566,13 +2786,25 @@ Environment:
         print(f"\nBatch results saved to: {batch_results_file}")
         print("=" * 80)
 
-        # Merge all plot PDFs
+        # Detect available stems for batch analysis
+        from batch_analysis.collect_data import detect_available_stems
+        batch_track_dirs = sorted([
+            d for d in Path(args.output_dir).iterdir()
+            if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis',
+                                              'snippet_ratio_batch_analysis', 'collected_data']
+        ])
+        available_stems = detect_available_stems(batch_track_dirs) if batch_track_dirs else ['drums']
+        print(f"\nDetected stems for batch analysis: {available_stems}")
+
+        # Merge all plot PDFs (per stem)
         try:
             from batch_analysis.merge_plots import merge_plots
             print("\n" + "=" * 80)
             print("MERGING PLOTS")
             print("=" * 80)
-            merge_plots(Path(args.output_dir))
+            for stem in available_stems:
+                print(f"\n--- Merging plots for {stem} ---")
+                merge_plots(Path(args.output_dir), stem=stem)
         except ImportError as ie:
             print(f"\n⚠️  PDF merging skipped: {ie}")
             print("Install required packages: pip install PyPDF2 Pillow reportlab")
@@ -2609,30 +2841,36 @@ Environment:
         except Exception as e:
             print(f"\n⚠️  LEPA data export failed: {e}")
 
-        # Create snippet ratio diagrams (section coverage analysis)
+        # Create snippet ratio diagrams (section coverage analysis) - per stem
         try:
             from batch_analysis.snippet_ratio_diagrams import create_snippet_ratio_diagrams
-            create_snippet_ratio_diagrams(Path(args.output_dir))
+            for stem in available_stems:
+                print(f"\n--- Snippet ratio diagrams for {stem} ---")
+                create_snippet_ratio_diagrams(Path(args.output_dir), stem=stem)
         except ImportError as ie:
             print(f"\n⚠️  Snippet ratio diagrams skipped: {ie}")
             print("Install required packages: pip install matplotlib numpy")
         except Exception as e:
             print(f"\n⚠️  Snippet ratio diagrams failed: {e}")
 
-        # Step 21: Repetitions per section analysis
+        # Step 21: Repetitions per section analysis - per stem
         try:
             from batch_analysis.repetitions_per_section import create_repetitions_diagrams
-            create_repetitions_diagrams(Path(args.output_dir))
+            for stem in available_stems:
+                print(f"\n--- Repetitions per section for {stem} ---")
+                create_repetitions_diagrams(Path(args.output_dir), stem=stem)
         except ImportError as ie:
             print(f"\n⚠️  Repetitions per section skipped: {ie}")
             print("Install required packages: pip install matplotlib numpy")
         except Exception as e:
             print(f"\n⚠️  Repetitions per section failed: {e}")
 
-        # Step 22: Collect aggregated data
+        # Step 22: Collect aggregated data - per stem
         try:
             from batch_analysis.collect_data import create_collected_data, collect_pironio_yodfat_data, collect_spotify_data
-            create_collected_data(Path(args.output_dir))
+            for stem in available_stems:
+                create_collected_data(Path(args.output_dir), stem=stem)
+            # Pironio/Yodfat and Spotify are not stem-specific
             collect_pironio_yodfat_data(Path(args.output_dir))
             collect_spotify_data(Path(args.output_dir))
         except ImportError as ie:
@@ -2669,6 +2907,7 @@ Environment:
             manual_duration=args.manual_duration,
             export_format=args.export_format,
             reuse_existing=args.reuse_existing,
+            all_stems=args.all_stems,
             verbose=not args.quiet
         )
 

@@ -235,10 +235,15 @@ def create_anchoring_plot(
         total_bars += n_bars
 
         # Load reference onsets if available
+        # Reference onsets define the anchoring grid (shared across stems from drums)
         ref_file = csv_file.parent / csv_file.name.replace('_anchored.csv', '_reference_onsets.csv')
         ref_onsets = None
         if ref_file.exists():
-            ref_onsets = pd.read_csv(ref_file, encoding='utf-8', encoding_errors='replace')
+            ref_df = pd.read_csv(ref_file, encoding='utf-8', encoding_errors='replace')
+            # Only use if it has the required columns for plotting reference circles
+            required_cols = ['bar_number', 'ref_ms', 'ref_phase']
+            if all(col in ref_df.columns for col in required_cols):
+                ref_onsets = ref_df
 
         section_data.append({
             'csv_file': csv_file,

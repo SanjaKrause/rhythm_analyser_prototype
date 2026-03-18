@@ -61,7 +61,7 @@ def png_to_pdf(png_path: Path, pdf_path: Path):
     c.save()
 
 
-def merge_plots(output_dir: Path):
+def merge_plots(output_dir: Path, stem: str = 'drums'):
     """
     Merge all plot PDFs from track folders into combined PDFs.
 
@@ -69,10 +69,16 @@ def merge_plots(output_dir: Path):
     ----------
     output_dir : Path
         The batch output directory containing individual track folders
+    stem : str
+        Stem to collect plots for (default: 'drums')
     """
-    # Create batch_analysis folder
+    # Create batch_analysis folder (stem-specific for stem-related plots)
     batch_dir = output_dir / 'batch_analysis'
     batch_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stem-specific output folder for anchored plots
+    stem_batch_dir = batch_dir / stem
+    stem_batch_dir.mkdir(parents=True, exist_ok=True)
 
     # Get all track directories (exclude batch_analysis and any other special folders)
     track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']])
@@ -633,11 +639,11 @@ def merge_plots(output_dir: Path):
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 23. Merge section anchoring raster plots (PNG files in 6.1_anchoring folder)
-    print('\nLooking for section anchoring raster plots...')
+    # 23. Merge section anchoring raster plots (PNG files in 6.1_anchoring/{stem} folder)
+    print(f'\nLooking for section anchoring raster plots ({stem})...')
     section_anchoring_pngs = []
     for track_dir in track_dirs:
-        anchoring_png = track_dir / '6.1_anchoring' / f'{track_dir.name}_section_anchoring_raster.png'
+        anchoring_png = track_dir / '6.1_anchoring' / stem / f'{track_dir.name}_section_anchoring_raster.png'
         if anchoring_png.exists():
             section_anchoring_pngs.append(anchoring_png)
             print(f'  Found section anchoring raster: {track_dir.name}')
@@ -651,17 +657,17 @@ def merge_plots(output_dir: Path):
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
 
-        output_pdf = batch_dir / 'all_section_anchoring_raster.pdf'
+        output_pdf = stem_batch_dir / 'all_section_anchoring_raster.pdf'
         merger.write(str(output_pdf))
         merger.close()
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 24. Merge filtered section anchoring raster plots (PNG files in 6.2_filtered_patterns folder)
-    print('\nLooking for filtered section anchoring raster plots...')
+    # 24. Merge filtered section anchoring raster plots (PNG files in 6.2_filtered_patterns/{stem} folder)
+    print(f'\nLooking for filtered section anchoring raster plots ({stem})...')
     filtered_anchoring_pngs = []
     for track_dir in track_dirs:
-        filtered_png = track_dir / '6.2_filtered_patterns' / f'{track_dir.name}_section_anchoring_raster.png'
+        filtered_png = track_dir / '6.2_filtered_patterns' / stem / f'{track_dir.name}_section_anchoring_raster.png'
         if filtered_png.exists():
             filtered_anchoring_pngs.append(filtered_png)
             print(f'  Found filtered anchoring raster: {track_dir.name}')
@@ -675,19 +681,19 @@ def merge_plots(output_dir: Path):
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
 
-        output_pdf = batch_dir / 'all_section_anchoring_raster_filtered.pdf'
+        output_pdf = stem_batch_dir / 'all_section_anchoring_raster_filtered.pdf'
         merger.write(str(output_pdf))
         merger.close()
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 25. Merge unfiltered onset histograms (from 6.1_anchoring folder)
-    print('\nLooking for unfiltered onset histograms...')
+    # 25. Merge unfiltered onset histograms (from 6.1_anchoring/{stem} folder)
+    print(f'\nLooking for unfiltered onset histograms ({stem})...')
     unfiltered_pattern_pngs = []
     unfiltered_bar_pngs = []
     for track_dir in track_dirs:
-        pattern_png = track_dir / '6.1_anchoring' / f'{track_dir.name}_onsets_per_pattern.png'
-        bar_png = track_dir / '6.1_anchoring' / f'{track_dir.name}_onsets_per_bar.png'
+        pattern_png = track_dir / '6.1_anchoring' / stem / f'{track_dir.name}_onsets_per_pattern.png'
+        bar_png = track_dir / '6.1_anchoring' / stem / f'{track_dir.name}_onsets_per_bar.png'
         if pattern_png.exists():
             unfiltered_pattern_pngs.append(pattern_png)
             print(f'  Found unfiltered onsets_per_pattern: {track_dir.name}')
@@ -701,7 +707,7 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'unfiltered_pattern_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_onsets_per_pattern.pdf'
+        output_pdf = stem_batch_dir / 'all_onsets_per_pattern.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
@@ -713,18 +719,18 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'unfiltered_bar_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_onsets_per_bar.pdf'
+        output_pdf = stem_batch_dir / 'all_onsets_per_bar.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 26. Merge filtered onset histograms (from 6.2_filtered_patterns folder)
-    print('\nLooking for filtered onset histograms...')
+    # 26. Merge filtered onset histograms (from 6.2_filtered_patterns/{stem} folder)
+    print(f'\nLooking for filtered onset histograms ({stem})...')
     filtered_pattern_pngs = []
     filtered_bar_pngs = []
     for track_dir in track_dirs:
-        pattern_png = track_dir / '6.2_filtered_patterns' / f'{track_dir.name}_onsets_per_pattern.png'
-        bar_png = track_dir / '6.2_filtered_patterns' / f'{track_dir.name}_onsets_per_bar.png'
+        pattern_png = track_dir / '6.2_filtered_patterns' / stem / f'{track_dir.name}_onsets_per_pattern.png'
+        bar_png = track_dir / '6.2_filtered_patterns' / stem / f'{track_dir.name}_onsets_per_bar.png'
         if pattern_png.exists():
             filtered_pattern_pngs.append(pattern_png)
             print(f'  Found filtered onsets_per_pattern: {track_dir.name}')
@@ -738,7 +744,7 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'filtered_pattern_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_filtered_onsets_per_pattern.pdf'
+        output_pdf = stem_batch_dir / 'all_filtered_onsets_per_pattern.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
@@ -750,18 +756,18 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'filtered_bar_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_filtered_onsets_per_bar.pdf'
+        output_pdf = stem_batch_dir / 'all_filtered_onsets_per_bar.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 27. Merge anchored rhythm histograms (PNG files in 6.6_anchored_rhythm_histograms folder)
-    print('\nLooking for anchored rhythm histograms...')
+    # 27. Merge anchored rhythm histograms (PNG files in 6.6_anchored_rhythm_histograms/{stem} folder)
+    print(f'\nLooking for anchored rhythm histograms ({stem})...')
     anchored_rhythm_pngs = []
     for track_dir in track_dirs:
         # Look for both filtered and non-filtered versions
         for suffix in ['_filtered_anchored_rhythm_histograms.png', '_anchored_rhythm_histograms.png']:
-            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_dir.name}{suffix}'
+            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / stem / f'{track_dir.name}{suffix}'
             if anchored_png.exists():
                 anchored_rhythm_pngs.append(anchored_png)
                 print(f'  Found anchored rhythm histogram: {track_dir.name}')
@@ -774,17 +780,17 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'anchored_rhythm_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_anchored_rhythm_histograms.pdf'
+        output_pdf = stem_batch_dir / 'all_anchored_rhythm_histograms.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 28. Merge anchored groove pulse histograms (PNG files in 6.6_anchored_rhythm_histograms folder)
-    print('\nLooking for anchored groove pulse histograms...')
+    # 28. Merge anchored groove pulse histograms (PNG files in 6.6_anchored_rhythm_histograms/{stem} folder)
+    print(f'\nLooking for anchored groove pulse histograms ({stem})...')
     anchored_groove_pngs = []
     for track_dir in track_dirs:
         for suffix in ['_filtered_anchored_groove_pulse_histograms.png', '_anchored_groove_pulse_histograms.png']:
-            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_dir.name}{suffix}'
+            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / stem / f'{track_dir.name}{suffix}'
             if anchored_png.exists():
                 anchored_groove_pngs.append(anchored_png)
                 print(f'  Found anchored groove pulse histogram: {track_dir.name}')
@@ -797,17 +803,17 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'anchored_groove_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_anchored_groove_pulse_histograms.pdf'
+        output_pdf = stem_batch_dir / 'all_anchored_groove_pulse_histograms.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 29. Merge anchored rhythm patterns (PNG files in 6.6_anchored_rhythm_histograms folder)
-    print('\nLooking for anchored rhythm patterns...')
+    # 29. Merge anchored rhythm patterns (PNG files in 6.6_anchored_rhythm_histograms/{stem} folder)
+    print(f'\nLooking for anchored rhythm patterns ({stem})...')
     anchored_pattern_pngs = []
     for track_dir in track_dirs:
         for suffix in ['_filtered_anchored_rhythm_patterns.png', '_anchored_rhythm_patterns.png']:
-            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_dir.name}{suffix}'
+            anchored_png = track_dir / '6.6_anchored_rhythm_histograms' / stem / f'{track_dir.name}{suffix}'
             if anchored_png.exists():
                 anchored_pattern_pngs.append(anchored_png)
                 print(f'  Found anchored rhythm pattern: {track_dir.name}')
@@ -820,16 +826,16 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'anchored_pattern_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_anchored_rhythm_patterns.pdf'
+        output_pdf = stem_batch_dir / 'all_anchored_rhythm_patterns.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 30. Merge anchored beat histograms (PNG files in 6.7_anchored_beat_histograms folder)
-    print('\nLooking for anchored beat histograms...')
+    # 30. Merge anchored beat histograms (PNG files in 6.7_anchored_beat_histograms/{stem} folder)
+    print(f'\nLooking for anchored beat histograms ({stem})...')
     anchored_beat_pngs = []
     for track_dir in track_dirs:
-        anchored_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_anchored_beat_histograms.png'
+        anchored_png = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_dir.name}_anchored_beat_histograms.png'
         if anchored_png.exists():
             anchored_beat_pngs.append(anchored_png)
             print(f'  Found anchored beat histogram: {track_dir.name}')
@@ -841,16 +847,16 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'anchored_beat_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_anchored_beat_histograms.pdf'
+        output_pdf = stem_batch_dir / 'all_anchored_beat_histograms.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 31. Merge anchored beat histograms all onsets (PNG files in 6.7_anchored_beat_histograms folder)
-    print('\nLooking for anchored beat histograms (all onsets)...')
+    # 31. Merge anchored beat histograms all onsets (PNG files in 6.7_anchored_beat_histograms/{stem} folder)
+    print(f'\nLooking for anchored beat histograms (all onsets) ({stem})...')
     anchored_beat_all_pngs = []
     for track_dir in track_dirs:
-        anchored_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_anchored_beat_histograms_all_onsets.png'
+        anchored_png = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_dir.name}_anchored_beat_histograms_all_onsets.png'
         if anchored_png.exists():
             anchored_beat_all_pngs.append(anchored_png)
             print(f'  Found anchored beat histogram (all onsets): {track_dir.name}')
@@ -862,16 +868,16 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'anchored_beat_all_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_anchored_beat_histograms_all_onsets.pdf'
+        output_pdf = stem_batch_dir / 'all_anchored_beat_histograms_all_onsets.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 32. Merge groove pulse beat histograms (PNG files in 6.7_anchored_beat_histograms folder)
-    print('\nLooking for groove pulse beat histograms...')
+    # 32. Merge groove pulse beat histograms (PNG files in 6.7_anchored_beat_histograms/{stem} folder)
+    print(f'\nLooking for groove pulse beat histograms ({stem})...')
     groove_pulse_pngs = []
     for track_dir in track_dirs:
-        groove_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_groove_pulse_beat_histograms.png'
+        groove_png = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_dir.name}_groove_pulse_beat_histograms.png'
         if groove_png.exists():
             groove_pulse_pngs.append(groove_png)
             print(f'  Found groove pulse beat histogram: {track_dir.name}')
@@ -883,16 +889,16 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'groove_pulse_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_groove_pulse_beat_histograms.pdf'
+        output_pdf = stem_batch_dir / 'all_groove_pulse_beat_histograms.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 33. Merge groove pulse beat histograms all onsets (PNG files in 6.7_anchored_beat_histograms folder)
-    print('\nLooking for groove pulse beat histograms (all onsets)...')
+    # 33. Merge groove pulse beat histograms all onsets (PNG files in 6.7_anchored_beat_histograms/{stem} folder)
+    print(f'\nLooking for groove pulse beat histograms (all onsets) ({stem})...')
     groove_pulse_all_pngs = []
     for track_dir in track_dirs:
-        groove_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_groove_pulse_beat_histograms_all_onsets.png'
+        groove_png = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_dir.name}_groove_pulse_beat_histograms_all_onsets.png'
         if groove_png.exists():
             groove_pulse_all_pngs.append(groove_png)
             print(f'  Found groove pulse beat histogram (all onsets): {track_dir.name}')
@@ -904,16 +910,16 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'groove_pulse_all_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_groove_pulse_beat_histograms_all_onsets.pdf'
+        output_pdf = stem_batch_dir / 'all_groove_pulse_beat_histograms_all_onsets.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
-    # 34. Merge anchored beat patterns (PNG files in 6.7_anchored_beat_histograms folder)
-    print('\nLooking for anchored beat patterns...')
+    # 34. Merge anchored beat patterns (PNG files in 6.7_anchored_beat_histograms/{stem} folder)
+    print(f'\nLooking for anchored beat patterns ({stem})...')
     beat_pattern_pngs = []
     for track_dir in track_dirs:
-        pattern_png = track_dir / '6.7_anchored_beat_histograms' / f'{track_dir.name}_anchored_beat_patterns.png'
+        pattern_png = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_dir.name}_anchored_beat_patterns.png'
         if pattern_png.exists():
             beat_pattern_pngs.append(pattern_png)
             print(f'  Found anchored beat pattern: {track_dir.name}')
@@ -925,7 +931,7 @@ def merge_plots(output_dir: Path):
             temp_pdf = temp_dir / f'beat_pattern_{i}.pdf'
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
-        output_pdf = batch_dir / 'all_anchored_beat_patterns.pdf'
+        output_pdf = stem_batch_dir / 'all_anchored_beat_patterns.pdf'
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
@@ -937,12 +943,32 @@ def merge_plots(output_dir: Path):
         except Exception as e:
             print(f'Warning: Could not fully clean up temp directory: {e}')
 
-    print('\n✓ All plots merged successfully!')
+    print(f'\n✓ All plots merged successfully for stem: {stem}!')
+
+
+def detect_available_stems(track_dirs):
+    """Detect which stems have data by checking the first few tracks."""
+    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other']
+    found_stems = set()
+
+    for track_dir in track_dirs[:5]:
+        rhythm_hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        if rhythm_hist_dir.exists():
+            for stem in all_stems:
+                stem_dir = rhythm_hist_dir / stem
+                if stem_dir.exists() and any(stem_dir.glob('*.png')):
+                    found_stems.add(stem)
+
+    if not found_stems:
+        return ['drums']
+
+    return sorted(found_stems, key=lambda s: all_stems.index(s))
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Usage: python merge_plots.py /path/to/batch/output')
+    if len(sys.argv) < 2:
+        print('Usage: python merge_plots.py /path/to/batch/output [stem]')
+        print('If stem is not specified, all available stems will be processed.')
         sys.exit(1)
 
     output_dir = Path(sys.argv[1])
@@ -951,4 +977,19 @@ if __name__ == '__main__':
         print(f'Error: Directory does not exist: {output_dir}')
         sys.exit(1)
 
-    merge_plots(output_dir)
+    # Find track directories
+    track_dirs = sorted([
+        d for d in output_dir.iterdir()
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']
+    ])
+
+    # Determine which stems to process
+    if len(sys.argv) >= 3:
+        stems = [sys.argv[2]]
+    else:
+        stems = detect_available_stems(track_dirs)
+        print(f"Detected stems: {stems}")
+
+    # Merge plots for each stem
+    for stem in stems:
+        merge_plots(output_dir, stem=stem)

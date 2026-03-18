@@ -154,7 +154,7 @@ def check_condition(ratios: list, condition_letter: str) -> bool:
         return False
 
 
-def create_snippet_ratio_diagrams(output_dir: Path):
+def create_snippet_ratio_diagrams(output_dir: Path, stem: str = 'drums'):
     """
     Create snippet ratio diagrams from batch processing results.
 
@@ -162,9 +162,11 @@ def create_snippet_ratio_diagrams(output_dir: Path):
     ----------
     output_dir : Path
         The batch output directory containing individual track folders
+    stem : str
+        Stem to analyze (default: 'drums')
     """
     print("\n" + "=" * 80)
-    print("SNIPPET RATIO DIAGRAMS")
+    print(f"SNIPPET RATIO DIAGRAMS ({stem})")
     print("=" * 80)
 
     # Find all track directories
@@ -183,8 +185,8 @@ def create_snippet_ratio_diagrams(output_dir: Path):
     songs_data = {}  # song_name -> list of ratios
 
     for track_dir in track_dirs:
-        # Look for *_anchored_rhythm_histograms.csv in 6.6_anchored_rhythm_histograms folder
-        hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        # Look for *_anchored_rhythm_histograms.csv in 6.6_anchored_rhythm_histograms/{stem} folder
+        hist_dir = track_dir / '6.6_anchored_rhythm_histograms' / stem
         if not hist_dir.exists():
             continue
 
@@ -227,8 +229,8 @@ def create_snippet_ratio_diagrams(output_dir: Path):
         condition_counts.append(count)
         condition_letters.append(letter)
 
-    # Create output directory
-    batch_dir = output_dir / 'snippet_ratio_batch_analysis'
+    # Create output directory (stem-specific)
+    batch_dir = output_dir / 'snippet_ratio_batch_analysis' / stem
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     # Create figure with 2 subplots (bar plot on top, table on bottom)
@@ -344,9 +346,29 @@ def create_snippet_ratio_diagrams(output_dir: Path):
     print("=" * 80)
 
 
+def detect_available_stems(track_dirs):
+    """Detect which stems have data."""
+    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other']
+    found_stems = set()
+
+    for track_dir in track_dirs[:5]:
+        rhythm_hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        if rhythm_hist_dir.exists():
+            for stem in all_stems:
+                stem_dir = rhythm_hist_dir / stem
+                if stem_dir.exists() and any(stem_dir.glob('*.csv')):
+                    found_stems.add(stem)
+
+    if not found_stems:
+        return ['drums']
+
+    return sorted(found_stems, key=lambda s: all_stems.index(s))
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Usage: python snippet_ratio_diagrams.py /path/to/batch/output')
+    if len(sys.argv) < 2:
+        print('Usage: python snippet_ratio_diagrams.py /path/to/batch/output [stem]')
+        print('If stem is not specified, all available stems will be processed.')
         sys.exit(1)
 
     output_dir = Path(sys.argv[1])
@@ -355,4 +377,19 @@ if __name__ == '__main__':
         print(f'Error: Directory does not exist: {output_dir}')
         sys.exit(1)
 
-    create_snippet_ratio_diagrams(output_dir)
+    # Find track directories
+    track_dirs = sorted([
+        d for d in output_dir.iterdir()
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis']
+    ])
+
+    # Determine which stems to process
+    if len(sys.argv) >= 3:
+        stems = [sys.argv[2]]
+    else:
+        stems = detect_available_stems(track_dirs)
+        print(f"Detected stems: {stems}")
+
+    # Process each stem
+    for stem in stems:
+        create_snippet_ratio_diagrams(output_dir, stem=stem)

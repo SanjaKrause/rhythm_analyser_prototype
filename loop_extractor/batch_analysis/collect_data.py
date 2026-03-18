@@ -5,13 +5,17 @@ Collect Data - Step 22 Batch Analysis
 Aggregates all analysis data from rhythm histograms, groove pulse, rhythm patterns,
 beat histograms, groove pulse beat, beat patterns, and statistics into structured CSVs.
 
-Creates 6 output CSVs based on pattern length (L1, L2, L4) and ratio thresholds (50%, 70%):
-    - L1_ratio50.csv - L=1 sections with ratio_in_snippet > 50%
-    - L1_ratio70.csv - L=1 sections with ratio_in_snippet > 70%
-    - L2_ratio50.csv - L=2 sections with ratio_in_snippet > 50%
-    - L2_ratio70.csv - L=2 sections with ratio_in_snippet > 70%
-    - L4_ratio50.csv - L=4 sections with ratio_in_snippet > 50%
-    - L4_ratio70.csv - L=4 sections with ratio_in_snippet > 70%
+Creates output CSVs based on pattern length (L1, L2, L4) and ratio thresholds:
+
+Standard ratio thresholds (50%, 70%) - all sections meeting threshold:
+    - L1_ratio50.csv, L1_ratio70.csv
+    - L2_ratio50.csv, L2_ratio70.csv
+    - L4_ratio50.csv, L4_ratio70.csv
+
+Max-selection ratio thresholds (30%, 40%) - only highest-ratio section per song:
+    - L1_ratio30_maxsel.csv, L1_ratio40_maxsel.csv
+    - L2_ratio30_maxsel.csv, L2_ratio40_maxsel.csv
+    - L4_ratio30_maxsel.csv, L4_ratio40_maxsel.csv
 
 Column Structure:
     Metadata: song_id, song_name, sec_no, section_label, num_repetitions, ratio_in_snippet, mean_section_tempo
@@ -80,8 +84,15 @@ from typing import Dict, List, Optional, Tuple
 # IOI categories in order
 IOI_CATEGORIES = ['1/16', '1/8', '3/16', '1/4', '3/8', '1/2', '3/4']
 
+# For bass pitch calculations
+import numpy as np
+
 # Ratio thresholds
 RATIO_THRESHOLDS = [0.50, 0.70]
+
+# Additional ratio thresholds with max-ratio selection per song
+# For these thresholds: if multiple sections per song meet criteria, keep only the one with highest ratio
+RATIO_THRESHOLDS_MAX_SELECTION = [0.30, 0.40]
 
 # Pattern lengths
 PATTERN_LENGTHS = [1, 2, 4]
@@ -397,7 +408,136 @@ def read_beat_statistics(csv_path: Path, pattern_length: int) -> Dict[str, Dict]
     return sections
 
 
-def build_column_headers(pattern_length: int) -> List[str]:
+def read_bass_pitch_data(filtered_patterns_dir: Path, pattern_length: int) -> Dict[str, Dict]:
+    """
+    Read bass pitch (f0_hz) data from filtered pattern files.
+
+    Aggregates f0_hz values per tick position within each section, computing
+    median f0 across all bars in the section.
+
+    Parameters
+    ----------
+    filtered_patterns_dir : Path
+        Path to 6.2_filtered_patterns/bass/ directory
+    pattern_length : int
+        Pattern length (1, 2, or 4 bars)
+
+    Returns
+    -------
+    Dict[str, Dict]
+        section_id -> {positions: {pos: median_f0}}
+    """
+    sections = {}
+    n_positions = pattern_length * 16
+
+    # Find all anchored CSV files for this stem
+    if not filtered_patterns_dir.exists():
+        return sections
+
+    anchored_files = sorted([f for f in filtered_patterns_dir.glob('*_anchored.csv')
+                             if not f.name.startswith('._')])
+
+    for csv_file in anchored_files:
+        try:
+            # Parse section info from filename
+            # Format: {track_id}_sec{N}_L{L}_{label}_{ratio}_anchored.csv
+            fname = csv_file.stem.replace('_anchored', '')
+            parts = fname.split('_')
+
+            # Find section pattern
+            # Note: filenames use "SecNo" (capital S), not "sec"
+            sec_idx = None
+            for i, p in enumerate(parts):
+                if p.lower().startswith('sec'):
+                    sec_idx = i
+                    break
+
+            if sec_idx is None:
+                continue
+
+            # Extract L value and section label from filename
+            # Filename format: SecNo{N}_L{L}_{label}_{ratio}_anchored.csv
+            l_val = None
+            l_idx = None
+            section_label = None
+            sec_no_part = parts[sec_idx]  # e.g., "SecNo1"
+
+            for i, p in enumerate(parts[sec_idx:]):
+                if p.startswith('L') and len(p) > 1 and p[1:].isdigit():
+                    l_val = int(p[1:])
+                    l_idx = sec_idx + i
+                    # Label is next part after L
+                    if l_idx + 1 < len(parts):
+                        section_label = parts[l_idx + 1]
+                    break
+
+            if l_val != pattern_length:
+                continue
+
+            # Build section_id to match rhythm histogram format
+            # Rhythm histogram uses: SecNo{N}_{label}_L{L}
+            # NOT the filename format: SecNo{N}_L{L}_{label}_{ratio}
+            if section_label:
+                section_id = f"{sec_no_part}_{section_label}_L{l_val}"
+            else:
+                # Fallback to old format if parsing fails
+                section_parts = []
+                for p in parts[sec_idx:]:
+                    section_parts.append(p)
+                section_id = '_'.join(section_parts)
+
+            # Read CSV and extract f0_hz per tick position
+            with open(csv_file, 'r', encoding='utf-8', errors='replace') as f:
+                # Skip comment lines
+                lines = []
+                for line in f:
+                    if not line.startswith('#'):
+                        lines.append(line)
+
+            if not lines:
+                continue
+
+            # Parse CSV
+            import io
+            reader = csv.DictReader(io.StringIO('\n'.join(lines)))
+
+            # Check if f0_hz column exists
+            if 'f0_hz' not in reader.fieldnames:
+                continue
+
+            # Collect f0_hz values per tick position
+            tick_f0_values = {pos: [] for pos in range(n_positions)}
+
+            for row in reader:
+                tick = int(row.get('tick_16th', 0))
+                f0_str = row.get('f0_hz', '')
+
+                if f0_str and f0_str != '0.0' and f0_str != '0':
+                    try:
+                        f0 = float(f0_str)
+                        # 55.0 Hz means no pitch detected (silence/no bass)
+                        if f0 > 0 and f0 != 55.0 and tick < n_positions:
+                            tick_f0_values[tick].append(f0)
+                    except (ValueError, TypeError):
+                        pass
+
+            # Compute median f0 per position
+            positions = {}
+            for pos in range(n_positions):
+                if tick_f0_values[pos]:
+                    positions[pos] = float(np.median(tick_f0_values[pos]))
+                else:
+                    positions[pos] = 0.0
+
+            sections[section_id] = {'positions': positions}
+
+        except Exception as e:
+            continue
+
+    return sections
+
+
+def build_column_headers(pattern_length: int, stem: str = 'drums') -> List[str]:
     """Build the full list of column headers for the output CSV."""
     n_positions = pattern_length * 16
     headers = []
@@ -468,6 +608,11 @@ def build_column_headers(pattern_length: int) -> List[str]:
         'groove_ioi_pulse_strength', 'total_ioi_count'
     ])
 
+    # Bass Pitch (F0) - only for bass stem, L*16 positions
+    if stem == 'bass':
+        for pos in range(n_positions):
+            headers.append(f'F0_{pos}')
+
     return headers
 
 
@@ -475,25 +620,39 @@ def collect_section_data(
     track_dir: Path,
     track_name: str,
     pattern_length: int,
-    ratio_threshold: float
+    ratio_threshold: float,
+    stem: str = 'drums'
 ) -> List[Dict]:
     """
     Collect all data for sections matching pattern_length and ratio_threshold.
+
+    Parameters
+    ----------
+    track_dir : Path
+        Track directory
+    track_name : str
+        Track name
+    pattern_length : int
+        Pattern length (1, 2, or 4)
+    ratio_threshold : float
+        Minimum ratio in snippet to include
+    stem : str
+        Stem name (e.g., 'drums', 'vocals', 'bass', 'piano', 'other')
 
     Returns list of row dicts ready for CSV output.
     """
     rows = []
     n_positions = pattern_length * 16
 
-    # File paths
-    rh_file = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_name}_filtered_anchored_rhythm_histograms.csv'
-    gp_file = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_name}_filtered_anchored_groove_pulse_histograms.csv'
-    rp_file = track_dir / '6.6_anchored_rhythm_histograms' / f'{track_name}_filtered_anchored_rhythm_patterns.csv'
-    bh_file = track_dir / '6.7_anchored_beat_histograms' / f'{track_name}_anchored_beat_histograms.csv'
-    gpb_file = track_dir / '6.7_anchored_beat_histograms' / f'{track_name}_groove_pulse_beat_histograms.csv'
-    bp_file = track_dir / '6.7_anchored_beat_histograms' / f'{track_name}_anchored_beat_patterns.csv'
-    rs_file = track_dir / '6.8_anchored_statistics' / f'{track_name}_anchored_rhythm_statistics.csv'
-    bs_file = track_dir / '6.8_anchored_statistics' / f'{track_name}_anchored_beat_statistics.csv'
+    # File paths (stem-specific subfolders)
+    rh_file = track_dir / '6.6_anchored_rhythm_histograms' / stem / f'{track_name}_filtered_anchored_rhythm_histograms.csv'
+    gp_file = track_dir / '6.6_anchored_rhythm_histograms' / stem / f'{track_name}_filtered_anchored_groove_pulse_histograms.csv'
+    rp_file = track_dir / '6.6_anchored_rhythm_histograms' / stem / f'{track_name}_filtered_anchored_rhythm_patterns.csv'
+    bh_file = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_name}_anchored_beat_histograms.csv'
+    gpb_file = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_name}_groove_pulse_beat_histograms.csv'
+    bp_file = track_dir / '6.7_anchored_beat_histograms' / stem / f'{track_name}_anchored_beat_patterns.csv'
+    rs_file = track_dir / '6.8_anchored_statistics' / stem / f'{track_name}_anchored_rhythm_statistics.csv'
+    bs_file = track_dir / '6.8_anchored_statistics' / stem / f'{track_name}_anchored_beat_statistics.csv'
 
     # Read all data sources
     rh_data = read_rhythm_histogram_data(rh_file, pattern_length) if rh_file.exists() else {}
@@ -504,6 +663,12 @@ def collect_section_data(
     bp_data = read_beat_pattern_data(bp_file, pattern_length) if bp_file.exists() else {}
     rs_data = read_rhythm_statistics(rs_file, pattern_length) if rs_file.exists() else {}
     bs_data = read_beat_statistics(bs_file, pattern_length) if bs_file.exists() else {}
+
+    # Read bass pitch data (only for bass stem)
+    f0_data = {}
+    if stem == 'bass':
+        filtered_patterns_dir = track_dir / '6.2_filtered_patterns' / 'bass'
+        f0_data = read_bass_pitch_data(filtered_patterns_dir, pattern_length)
 
     # Get all section IDs from rhythm histogram (primary source)
     if not rh_data:
@@ -599,12 +764,44 @@ def collect_section_data(
         row['groove_ioi_pulse_strength'] = bs_section.get('groove_ioi_pulse_strength', 0.0)
         row['total_ioi_count'] = bs_section.get('total_ioi_count', 0)
 
+        # Bass Pitch (F0) - only for bass stem
+        if stem == 'bass':
+            f0_section = f0_data.get(section_id, {})
+            f0_positions = f0_section.get('positions', {})
+            for pos in range(n_positions):
+                row[f'F0_{pos}'] = f0_positions.get(pos, 0.0)
+
         rows.append(row)
 
     return rows
 
 
-def create_collected_data(output_dir: Path):
+def detect_available_stems(track_dirs: List[Path]) -> List[str]:
+    """
+    Detect which stems have data by checking the first few tracks.
+
+    Returns list of stem names that have 6.6 rhythm histogram data.
+    """
+    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other']
+    found_stems = set()
+
+    # Check first 5 tracks to detect available stems
+    for track_dir in track_dirs[:5]:
+        rhythm_hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        if rhythm_hist_dir.exists():
+            for stem in all_stems:
+                stem_dir = rhythm_hist_dir / stem
+                if stem_dir.exists() and any(stem_dir.glob('*.csv')):
+                    found_stems.add(stem)
+
+    # If no stem subfolders found, assume old structure (drums only, no subfolder)
+    if not found_stems:
+        return ['drums']  # Backward compatibility
+
+    return sorted(found_stems, key=lambda s: all_stems.index(s))
+
+
+def create_collected_data(output_dir: Path, stem: str = 'drums'):
     """
     Create collected data CSVs from batch processing results.
 
@@ -612,9 +809,11 @@ def create_collected_data(output_dir: Path):
     ----------
     output_dir : Path
         The batch output directory containing individual track folders
+    stem : str
+        Stem to collect data for (default: 'drums')
     """
     print("\n" + "=" * 80)
-    print("STEP 22: COLLECT DATA")
+    print(f"STEP 22: COLLECT DATA ({stem})")
     print("=" * 80)
 
     # Find all track directories
@@ -630,8 +829,8 @@ def create_collected_data(output_dir: Path):
 
     print(f"Found {len(track_dirs)} track directories")
 
-    # Create output directory
-    collected_dir = output_dir / 'collected_data'
+    # Create output directory (stem-specific)
+    collected_dir = output_dir / 'collected_data' / stem
     collected_dir.mkdir(parents=True, exist_ok=True)
 
     # Process each combination of pattern_length and ratio_threshold
@@ -643,7 +842,7 @@ def create_collected_data(output_dir: Path):
 
             for track_dir in track_dirs:
                 track_name = track_dir.name
-                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold)
+                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold, stem=stem)
 
                 if rows:
                     print(f"  {track_name}: {len(rows)} sections")
@@ -654,7 +853,7 @@ def create_collected_data(output_dir: Path):
 
             # Write CSV
             output_file = collected_dir / f'L{pattern_length}_ratio{int(ratio_threshold*100)}.csv'
-            headers = build_column_headers(pattern_length)
+            headers = build_column_headers(pattern_length, stem=stem)
 
             with open(output_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=headers)
@@ -662,6 +861,43 @@ def create_collected_data(output_dir: Path):
                 writer.writerows(all_rows)
 
             print(f"\n  Total sections: {len(all_rows)}")
+            print(f"  Saved: {output_file.name}")
+
+    # Process ratio thresholds with max-ratio selection (0.30, 0.40)
+    # For these: if multiple sections per song meet threshold, keep only the one with highest ratio
+    for pattern_length in PATTERN_LENGTHS:
+        for ratio_threshold in RATIO_THRESHOLDS_MAX_SELECTION:
+            print(f"\n--- L{pattern_length} ratio>{int(ratio_threshold*100)}% (max selection) ---")
+
+            all_rows = []
+
+            for track_dir in track_dirs:
+                track_name = track_dir.name
+                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold, stem=stem)
+
+                if rows:
+                    # If multiple sections for this song, keep only the one with highest ratio
+                    if len(rows) > 1:
+                        max_row = max(rows, key=lambda r: r['ratio_in_snippet'])
+                        print(f"  {track_name}: {len(rows)} sections -> keeping max ratio ({max_row['ratio_in_snippet']:.4f})")
+                        all_rows.append(max_row)
+                    else:
+                        print(f"  {track_name}: 1 section")
+                        all_rows.extend(rows)
+
+            # Sort by song_id (numeric) then sec_no
+            all_rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
+
+            # Write CSV
+            output_file = collected_dir / f'L{pattern_length}_ratio{int(ratio_threshold*100)}_maxsel.csv'
+            headers = build_column_headers(pattern_length, stem=stem)
+
+            with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+                writer.writerows(all_rows)
+
+            print(f"\n  Total sections: {len(all_rows)} (one per song)")
             print(f"  Saved: {output_file.name}")
 
     print("\n" + "=" * 80)
@@ -878,6 +1114,27 @@ def collect_pironio_yodfat_data(output_dir: Path):
                     writer.writerows(rows)
                 print(f"  ✓ Saved {output_file.name}: {len(rows)} sections")
 
+    # Write Pironio section CSVs with max-selection (30%, 40%)
+    for pl in [1, 2, 4]:
+        for ratio_th in RATIO_THRESHOLDS_MAX_SELECTION:
+            rows = [r for r in pironio_sections[pl] if r['ratio_in_snippet'] >= ratio_th]
+            if rows:
+                # Group by song_id and keep only max ratio per song
+                from collections import defaultdict
+                by_song = defaultdict(list)
+                for r in rows:
+                    by_song[r['song_id']].append(r)
+                rows = [max(song_rows, key=lambda x: x['ratio_in_snippet']) for song_rows in by_song.values()]
+                rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
+                headers = ['song_id', 'song_name', 'sec_no', 'section_label', 'ratio_in_snippet'] + \
+                          [f'PIR_{m}' for m in PIRONIO_METRICS]
+                output_file = collected_dir / f'pironio_sections_L{pl}_ratio{int(ratio_th*100)}_maxsel.csv'
+                with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"  ✓ Saved {output_file.name}: {len(rows)} sections (max selection)")
+
     # Write Yodfat section CSVs (filtered by ratio threshold)
     for pl in [1, 2, 4]:
         for ratio_th in RATIO_THRESHOLDS:
@@ -892,6 +1149,27 @@ def collect_pironio_yodfat_data(output_dir: Path):
                     writer.writeheader()
                     writer.writerows(rows)
                 print(f"  ✓ Saved {output_file.name}: {len(rows)} sections")
+
+    # Write Yodfat section CSVs with max-selection (30%, 40%)
+    for pl in [1, 2, 4]:
+        for ratio_th in RATIO_THRESHOLDS_MAX_SELECTION:
+            rows = [r for r in yodfat_sections[pl] if r['ratio_in_snippet'] >= ratio_th]
+            if rows:
+                # Group by song_id and keep only max ratio per song
+                from collections import defaultdict
+                by_song = defaultdict(list)
+                for r in rows:
+                    by_song[r['song_id']].append(r)
+                rows = [max(song_rows, key=lambda x: x['ratio_in_snippet']) for song_rows in by_song.values()]
+                rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
+                headers = ['song_id', 'song_name', 'sec_no', 'section_label', 'ratio_in_snippet'] + \
+                          [f'YOD_{m}' for m in YODFAT_METRICS]
+                output_file = collected_dir / f'yodfat_sections_L{pl}_ratio{int(ratio_th*100)}_maxsel.csv'
+                with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"  ✓ Saved {output_file.name}: {len(rows)} sections (max selection)")
 
     # Write Pironio snippet CSV
     if pironio_snippets:
@@ -986,11 +1264,10 @@ def collect_spotify_data(output_dir: Path):
 
     # Collect song_ids that have sections meeting each criteria
     # Key: (pattern_length, ratio_threshold) -> set of song_ids
-    songs_by_criteria = {
-        (1, 0.50): set(), (1, 0.70): set(),
-        (2, 0.50): set(), (2, 0.70): set(),
-        (4, 0.50): set(), (4, 0.70): set()
-    }
+    songs_by_criteria = {}
+    for pl in [1, 2, 4]:
+        for ratio_th in RATIO_THRESHOLDS + RATIO_THRESHOLDS_MAX_SELECTION:
+            songs_by_criteria[(pl, ratio_th)] = set()
     all_song_ids = set()
 
     for track_dir in track_dirs:
@@ -1017,7 +1294,7 @@ def collect_spotify_data(output_dir: Path):
                     ratio = parsed['ratio_in_snippet']
 
                     if pl in [1, 2, 4]:
-                        for ratio_th in RATIO_THRESHOLDS:
+                        for ratio_th in RATIO_THRESHOLDS + RATIO_THRESHOLDS_MAX_SELECTION:
                             if ratio >= ratio_th:
                                 songs_by_criteria[(pl, ratio_th)].add(song_id)
             except Exception as e:
@@ -1041,6 +1318,29 @@ def collect_spotify_data(output_dir: Path):
 
             if rows:
                 output_file = collected_dir / f'spotify_L{pl}_ratio{int(ratio_th*100)}.csv'
+                with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"  ✓ Saved {output_file.name}: {len(rows)} songs")
+
+    # Write Spotify CSVs for max-selection thresholds (30%, 40%)
+    # Note: Spotify features are per-song, so no max-selection needed - just use songs that have qualifying sections
+    for pl in [1, 2, 4]:
+        for ratio_th in RATIO_THRESHOLDS_MAX_SELECTION:
+            song_ids = songs_by_criteria[(pl, ratio_th)]
+            rows = []
+
+            for song_id in sorted(song_ids, key=int):
+                if song_id in spotify_features:
+                    features = spotify_features[song_id]
+                    row = {'song_id': song_id, 'song_name': ''}
+                    for feat in SPOTIFY_FEATURES:
+                        row[f'SP_{feat}'] = features.get(feat, '')
+                    rows.append(row)
+
+            if rows:
+                output_file = collected_dir / f'spotify_L{pl}_ratio{int(ratio_th*100)}_maxsel.csv'
                 with open(output_file, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.DictWriter(f, fieldnames=headers)
                     writer.writeheader()
@@ -1071,9 +1371,11 @@ def collect_spotify_data(output_dir: Path):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Usage: python collect_data.py /path/to/batch/output')
+    if len(sys.argv) < 2:
+        print('Usage: python collect_data.py /path/to/batch/output [stem]')
         print('Example: python collect_data.py "/Volumes/PortableSSD/06_Testing/new test feb20"')
+        print('Example: python collect_data.py "/path/to/output" drums')
+        print('If stem is not specified, all available stems will be processed.')
         sys.exit(1)
 
     output_dir = Path(sys.argv[1])
@@ -1082,6 +1384,26 @@ if __name__ == '__main__':
         print(f'Error: Directory does not exist: {output_dir}')
         sys.exit(1)
 
-    create_collected_data(output_dir)
+    # Find track directories
+    track_dirs = sorted([
+        d for d in output_dir.iterdir()
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis',
+                                          'snippet_ratio_batch_analysis', 'collected_data']
+    ])
+
+    # Determine which stems to process
+    if len(sys.argv) >= 3:
+        # Specific stem requested
+        stems = [sys.argv[2]]
+    else:
+        # Auto-detect available stems
+        stems = detect_available_stems(track_dirs)
+        print(f"Detected stems: {stems}")
+
+    # Collect data for each stem
+    for stem in stems:
+        create_collected_data(output_dir, stem=stem)
+
+    # Pironio/Yodfat and Spotify are not stem-specific
     collect_pironio_yodfat_data(output_dir)
     collect_spotify_data(output_dir)

@@ -17,7 +17,7 @@ class LoopExtractorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("LOOP EXTRACTOR 2000")
-        self.root.geometry("750x700")
+        self.root.geometry("750x800")
         self.root.configure(bg='#000080')  # Dark blue background
 
         # Set up cleanup on window close
@@ -52,6 +52,9 @@ class LoopExtractorGUI:
 
         # Reuse existing files (skip steps 1-4.5, 5.5)
         self.reuse_existing = tk.BooleanVar(value=False)  # Default: run full pipeline
+
+        # Onset stems: drums only or all stems
+        self.onset_all_stems = tk.BooleanVar(value=False)  # Default: drums only
 
         self.setup_ui()
 
@@ -422,6 +425,46 @@ class LoopExtractorGUI:
         )
         reuse_check.pack(anchor='w', pady=(0, 8))
 
+        # ONSET STEMS section
+        stems_label = tk.Label(
+            onset_frame,
+            text="ONSET STEMS:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        stems_label.pack(anchor='w', pady=(15, 10))
+
+        # Radio button: Drums only (default)
+        drums_only_radio = tk.Radiobutton(
+            onset_frame,
+            text="Drums only",
+            variable=self.onset_all_stems,
+            value=False,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        drums_only_radio.pack(anchor='w', pady=(0, 8))
+
+        # Radio button: All 5 stems
+        all_stems_radio = tk.Radiobutton(
+            onset_frame,
+            text="All 5 stems",
+            variable=self.onset_all_stems,
+            value=True,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        all_stems_radio.pack(anchor='w', pady=(0, 8))
+
         # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -691,6 +734,10 @@ class LoopExtractorGUI:
             # Add reuse existing files flag
             if self.reuse_existing.get():
                 cmd.append("--reuse-existing")
+
+            # Add all stems flag
+            if self.onset_all_stems.get():
+                cmd.append("--all-stems")
 
             # Add onset threshold for drumtranscriber (default 0.5)
             cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])

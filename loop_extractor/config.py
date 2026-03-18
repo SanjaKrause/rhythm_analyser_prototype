@@ -62,8 +62,12 @@ class Config:
     MEL_FMIN = 30               # Minimum frequency (Hz)
     MEL_FMAX = 11000            # Maximum frequency (Hz)
 
-    # Stems order
-    STEMS = ["vocals", "drums", "bass", "piano", "other"]
+    # Stems order (drums first - used as reference for anchoring other stems)
+    STEMS = ["drums", "vocals", "bass", "piano", "other"]
+
+    # Stems to process for onset detection and downstream analysis
+    # Default: only drums. Set to STEMS to process all 5 stems.
+    ONSET_STEMS = ["drums"]
 
     # ============================================================================
     # STEP 2: BEAT DETECTION (Beat-Transformer)
@@ -232,17 +236,19 @@ class Config:
             'tempo_plots_pdf': track_dir / '3.5_tempo_plots' / f'{track_name}_tempo_plots.pdf',
             'tempo_csv': track_dir / '3.5_tempo_plots' / f'{track_name}_bar_tempos.csv',
 
-            # Step 4: Onset detection
-            'onsets_file': track_dir / '4_onsets' / f'{track_name}_onsets.csv',
+            # Step 4: Onset detection (drums stem by default, subfolders for multi-stem)
+            'onsets_dir': track_dir / '4_onsets' / 'drums',
+            'onsets_file': track_dir / '4_onsets' / 'drums' / f'{track_name}_onsets.csv',
 
-            # Step 5: Raster/grid calculations
-            'comprehensive_csv': track_dir / '5_grid' / f'{track_name}_comprehensive_phases.csv',
+            # Step 5: Raster/grid calculations (drums stem by default)
+            'grid_dir': track_dir / '5_grid' / 'drums',
+            'comprehensive_csv': track_dir / '5_grid' / 'drums' / f'{track_name}_comprehensive_phases.csv',
 
-            # Step 6.1: Section anchoring
-            'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER,
+            # Step 6.1: Section anchoring (drums stem by default)
+            'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER / 'drums',
 
-            # Step 6.2/6.3: Filtered patterns (output goes here, plot stays here)
-            'filtered_patterns_dir': track_dir / '6.2_filtered_patterns',
+            # Step 6.2/6.3: Filtered patterns (drums stem by default)
+            'filtered_patterns_dir': track_dir / '6.2_filtered_patterns' / 'drums',
 
             # Step 6: RMS analysis
             'rms_summary': track_dir / '6_rms' / f'{track_name}_rms_summary.json',
@@ -270,6 +276,49 @@ class Config:
 
             # Step 14: Yodfat rhythmic complexity
             'yodfat_dir': track_dir / '14_yodfat',
+        }
+
+    @classmethod
+    def get_stem_paths(cls, track_name: str, stem: str, base_output_dir: Optional[Path] = None) -> dict:
+        """
+        Generate stem-specific output paths for onset and grid analysis.
+
+        Parameters
+        ----------
+        track_name : str
+            Name of the track (without extension)
+        stem : str
+            Stem name (e.g., 'drums', 'vocals', 'bass', 'piano', 'other')
+        base_output_dir : Path, optional
+            Base output directory. If None, uses DEFAULT_OUTPUT_DIR
+
+        Returns
+        -------
+        dict
+            Dictionary with stem-specific paths:
+            - onsets_dir: Directory for onset detection
+            - onsets_file: Onset detection CSV
+            - grid_dir: Directory for grid/comprehensive phases
+            - comprehensive_csv: Comprehensive phases CSV
+            - anchoring_dir: Directory for anchoring results
+            - filtered_patterns_dir: Directory for filtered patterns
+        """
+        if base_output_dir is None:
+            base_output_dir = cls.DEFAULT_OUTPUT_DIR
+
+        track_dir = base_output_dir / track_name
+
+        return {
+            'onsets_dir': track_dir / '4_onsets' / stem,
+            'onsets_file': track_dir / '4_onsets' / stem / f'{track_name}_onsets.csv',
+            'grid_dir': track_dir / '5_grid' / stem,
+            'comprehensive_csv': track_dir / '5_grid' / stem / f'{track_name}_comprehensive_phases.csv',
+            'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER / stem,
+            'filtered_patterns_dir': track_dir / '6.2_filtered_patterns' / stem,
+            # Downstream analysis folders (stem-specific)
+            'rhythm_histograms_dir': track_dir / '6.6_anchored_rhythm_histograms' / stem,
+            'beat_histograms_dir': track_dir / '6.7_anchored_beat_histograms' / stem,
+            'sections_dir': track_dir / '9.1_sections' / stem,
         }
 
     @classmethod

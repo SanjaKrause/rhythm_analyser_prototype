@@ -2897,6 +2897,94 @@ Shows a bar chart of onset counts per pattern repetition:
 - Horizontal line at median
 - Shaded region showing IQR bounds
 
+### Multi-Stem Anchoring
+
+When processing multiple stems (vocals, bass, piano, other), they all use **drum-based anchoring** to ensure consistent analysis across all stems. This means:
+
+1. **Drums are processed first**: The drum stem goes through the full anchoring (6.1) and filtering (6.2) pipeline
+2. **Other stems inherit drum structure**: Instead of independent anchoring, non-drum stems use the drum filtered patterns as their grid reference
+
+#### Why Drum-Based Anchoring?
+
+- **Consistent section boundaries**: All stems share the same section start/end times
+- **Same bars kept**: If a bar is filtered out for drums, it's also excluded from other stems
+- **Identical grid times**: The 16th-note grid positions come from drum analysis
+- **Cross-stem comparability**: Enables direct comparison of microtiming across stems
+
+#### How It Works for Non-Drum Stems
+
+```mermaid
+flowchart TD
+    subgraph "Drum Processing (Full Pipeline)"
+        D1[Step 6.1: Anchoring]
+        D2[Step 6.2: Filtering]
+        D3[Drum Filtered CSVs<br/>with grid_time column]
+    end
+
+    subgraph "Other Stem Processing"
+        S1[Load Stem Onsets<br/>from 4_onsets/stem/]
+        S2[Read Drum Grid Times<br/>from 6.2_filtered_patterns/drums/]
+        S3[Map Onsets to Grid<br/>within 100ms window]
+        S4[Calculate Phases<br/>relative to grid positions]
+        S5[Write Filtered CSV<br/>to 6.2_filtered_patterns/stem/]
+    end
+
+    D1 --> D2
+    D2 --> D3
+    D3 --> S2
+    S1 --> S3
+    S2 --> S3
+    S3 --> S4
+    S4 --> S5
+```
+
+#### Output Structure
+
+```
+6.1_anchoring/
+└── drums/                     # Only drums has 6.1 folder
+    └── SecNo1_L2_..._anchored.csv
+
+6.2_filtered_patterns/
+├── drums/                     # Full filtered patterns
+│   └── SecNo1_L2_..._anchored.csv
+├── vocals/                    # Drum-anchored, stem-specific onsets
+│   └── SecNo1_L2_..._anchored.csv
+├── bass/
+│   └── SecNo1_L2_..._anchored.csv
+├── piano/
+│   └── SecNo1_L2_..._anchored.csv
+└── other/
+    └── SecNo1_L2_..._anchored.csv
+```
+
+#### CSV Content Differences
+
+**Same across all stems:**
+- `grid_time` - identical 16th-note grid positions
+- `bar_number`, `bar_number_global` - same bars kept
+- `pattern_index`, `pattern_start_time`, `pattern_end_time` - same pattern structure
+- `local_tempo` - tempo from drum analysis
+- All header metadata (section boundaries, bars_kept_indices, etc.)
+
+**Different per stem:**
+- `onset_time` - actual onset times from that stem's detection
+- `phase` - deviation of stem onset from grid position
+
+#### Configuration
+
+Stems are configured in `config.py`:
+
+```python
+# Stems order (drums first - used as reference for anchoring other stems)
+STEMS = ["drums", "vocals", "bass", "piano", "other"]
+
+# Stems to process for onset detection and downstream analysis
+ONSET_STEMS = ["drums"]  # Set to STEMS for multi-stem processing
+```
+
+To enable multi-stem analysis, set `ONSET_STEMS = STEMS` in config.py or use the `--all-stems` flag in the pipeline.
+
 ---
 
 ## Step 11.1: Section Extraction
@@ -3672,3 +3760,138 @@ python collect_data.py /path/to/batch/output
 - Update PIPELINE_DIAGRAM.md with any missing steps
 - Ensure TECHNICAL_DETAILS.md is up to date
 - Add usage examples for new features (groove pulse, rhythm patterns)
+
+---
+
+### Fix Step 7.1: Negative xerr in Beat Histogram Plotting
+
+**Issue:** When processing non-drum stems (vocals, bass, piano, other), the beat histogram plotting in Step 7.1 can fail with the error `'xerr' must not contain negative values`.
+
+**Root cause:** In `utils/anchored_beat_histograms.py`, the IQR error bar calculation uses log-scale transformation:
+```python
+log_upper = np.log2(median_val + iqr_val / 2)
+log_lower = np.log2(max(0.1, median_val - iqr_val / 2))
+iqr_log = (log_upper - log_lower) / 2
+```
+
+When `median_val + iqr_val / 2 < 0.1` (the clamped lower bound), `log_upper < log_lower`, resulting in negative `iqr_log`.
+
+**Impact:**
+- CSVs are saved correctly (before plotting fails)
+- PNG plots are NOT generated
+- Step 7.1 reports an error for the affected stem
+
+**Proposed fix:**
+```python
+log_upper = np.log2(max(0.1, median_val + iqr_val / 2))
+log_lower = np.log2(max(0.1, median_val - iqr_val / 2))
+iqr_log = max(0, (log_upper - log_lower) / 2)
+if iqr_log > 0:
+    ax.errorbar(...)
+```
+
+**Related files:**
+- `loop_extractor/utils/anchored_beat_histograms.py` - Lines 536-540, 1055-1059, 1505-1509
+
+**STATUS: FIXED** (2026-03-18)
+
+Applied fix to all three locations in `anchored_beat_histograms.py`:
+1. Lines 538-541: Added `iqr_log = max(0, ...)` and `if iqr_log > 0:` guard
+2. Lines 1058-1062: Same fix applied
+3. Lines 1508-1513: Same fix applied
+
+---
+
+### Fix: Non-Drum Stems Statistics = 0 in Collected Data
+
+**Issue:** When running `collect_data.py`, non-drum stems (vocals, bass, piano, other) have all statistics = 0 in the collected CSV files, even though the underlying data exists.
+
+**Root cause 1 - Wrong filename check in main.py:**
+In `main.py` line 1725, the code checks for rhythm histogram existence before running statistics:
+```python
+# WRONG:
+rhythm_csv = rhythm_hist_dir / f'{track_id}_anchored_rhythm_histograms.csv'
+# CORRECT:
+rhythm_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_rhythm_histograms.csv'
+```
+Missing `_filtered_` prefix causes the check to fail, skipping statistics generation for non-drum stems.
+
+**Root cause 2 - Wrong filename in anchored_rhythm_statistics.py:**
+In `batch_analysis/anchored_rhythm_statistics.py` line 470, same issue:
+```python
+# WRONG:
+rhythm_csv = rhythm_hist_dir / f'{track_id}_anchored_rhythm_histograms.csv'
+# CORRECT:
+rhythm_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_rhythm_histograms.csv'
+```
+
+**Root cause 3 - xerr negative values crashes histogram generation:**
+The xerr bug (documented above) causes `create_anchored_beat_histograms()` to fail for non-drum stems before saving `_anchored_beat_histograms.csv`. This means:
+1. Beat histograms CSV is not created for non-drum stems
+2. Statistics step (7.2) finds no beat histogram file
+3. Beat statistics are never calculated
+4. `collect_data.py` finds empty statistics -> all 0s
+
+**Files modified:**
+1. `loop_extractor/main.py` line 1725:
+   - Changed `_anchored_rhythm_histograms.csv` to `_filtered_anchored_rhythm_histograms.csv`
+
+2. `loop_extractor/batch_analysis/anchored_rhythm_statistics.py` line 470:
+   - Changed `_anchored_rhythm_histograms.csv` to `_filtered_anchored_rhythm_histograms.csv`
+
+3. `loop_extractor/utils/anchored_beat_histograms.py` lines 538-541, 1058-1062, 1508-1513:
+   - Fixed xerr negative values bug (see above)
+
+**STATUS: FIXED** (2026-03-18)
+
+---
+
+### Fix: Bass F0 Positions = 0 in Collected Data
+
+**Issue:** Bass F0 (pitch) positions are all 0 in collected data CSVs, even though the anchored CSV files in `6.2_filtered_patterns/bass/` contain valid f0_hz values.
+
+**Root cause 1 - Case-sensitive filename parsing:**
+In `collect_data.py` `read_bass_pitch_data()` line 450, the code searched for section prefix:
+```python
+# WRONG - case sensitive:
+if p.startswith('sec'):
+# Actual filename: SecNo1_L1_verse_...
+# 'SecNo1'.startswith('sec') = False (capital S!)
+```
+This caused `sec_idx` to remain `None` and every file was skipped.
+
+**Root cause 2 - Section ID format mismatch:**
+Even after finding files, section_id was built from filename parts in wrong order:
+1. Filename format: `SecNo1_L1_verse_0.2625_anchored.csv` → was parsed as `SecNo1_L1_verse_0.2625`
+2. Rhythm histogram format: `SecNo1_verse_L1`
+
+The `f0_data.get(section_id, {})` always returned empty dict (no match).
+
+**Fixes applied:**
+
+1. **Case-insensitive matching** (line 450):
+```python
+# OLD (wrong):
+if p.startswith('sec'):
+# NEW (correct):
+if p.lower().startswith('sec'):
+```
+
+2. **Correct section_id format** (lines 457-483):
+```python
+# OLD (wrong):
+section_parts = []
+for p in parts[sec_idx:]:
+    section_parts.append(p)
+section_id = '_'.join(section_parts)
+# Result: "SecNo1_L1_verse_0.2625"
+
+# NEW (correct):
+section_id = f"{sec_no_part}_{section_label}_L{l_val}"
+# Result: "SecNo1_verse_L1"
+```
+
+**Related files:**
+- `loop_extractor/batch_analysis/collect_data.py` - `read_bass_pitch_data()` function (lines 447-487)
+
+**STATUS: FIXED** (2026-03-18)

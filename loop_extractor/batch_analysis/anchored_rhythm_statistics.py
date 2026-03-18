@@ -380,6 +380,148 @@ def anchored_statistics_for_track(track_root: Path, track_id: str):
     print(f"    Saved: {output_csv.name}")
 
 
+def anchored_beat_statistics_for_track_stem(beat_hist_dir: Path, stats_dir: Path, track_id: str):
+    """
+    Calculate and export anchored beat statistics for a single track (stem-specific version).
+
+    Parameters
+    ----------
+    beat_hist_dir : Path
+        Directory containing beat histograms (e.g., 6.7_anchored_beat_histograms/drums/)
+    stats_dir : Path
+        Output directory for statistics (e.g., 6.8_anchored_statistics/drums/)
+    track_id : str
+        Track identifier
+    """
+    print(f"[Anchored Beat Statistics] Processing: {track_id}")
+
+    # Check if required CSV files exist
+    beat_csv = beat_hist_dir / f'{track_id}_anchored_beat_histograms.csv'
+    groove_beat_csv = beat_hist_dir / f'{track_id}_groove_pulse_beat_histograms.csv'
+
+    if not beat_csv.exists():
+        print(f"  Error: Missing file {beat_csv}")
+        return
+
+    # Load main beat histograms CSV
+    df_beat = pd.read_csv(beat_csv)
+
+    # Load groove pulse beat CSV if exists
+    df_groove_beat = None
+    if groove_beat_csv.exists():
+        df_groove_beat = pd.read_csv(groove_beat_csv)
+
+    # Get unique section_ids
+    section_ids = df_beat['section_id'].unique()
+
+    if len(section_ids) == 0:
+        print(f"  Warning: No sections found")
+        return
+
+    # Calculate statistics for each section
+    all_stats = []
+    for section_id in section_ids:
+        df_section = df_beat[df_beat['section_id'] == section_id]
+        pattern_length = df_section['pattern_length'].iloc[0]
+
+        # Get corresponding groove data
+        df_groove_section = None
+        if df_groove_beat is not None:
+            df_groove_section = df_groove_beat[df_groove_beat['section_id'] == section_id]
+
+        stats = calculate_beat_section_statistics(
+            df_section,
+            df_groove_section,
+            section_id,
+            pattern_length
+        )
+        all_stats.append(stats)
+
+        ioi_mt_deg = f"{stats['ioi_microtiming_degree']:.4f}" if stats['ioi_microtiming_degree'] is not None else 'N/A'
+        ioi_mt_cplx = f"{stats['ioi_microtiming_complexity']:.4f}" if stats['ioi_microtiming_complexity'] is not None else 'N/A'
+        print(f"    {section_id}: IOI_MT_deg={ioi_mt_deg}, IOI_MT_cplx={ioi_mt_cplx}, cats={stats['num_ioi_categories']}")
+
+    # Create output directory
+    stats_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save aggregated statistics CSV
+    df_stats = pd.DataFrame(all_stats)
+    output_csv = stats_dir / f'{track_id}_anchored_beat_statistics.csv'
+    df_stats.to_csv(output_csv, index=False)
+    print(f"    Saved: {output_csv.name}")
+
+
+def anchored_statistics_for_track_stem(rhythm_hist_dir: Path, stats_dir: Path, track_id: str):
+    """
+    Calculate and export anchored rhythm statistics for a single track (stem-specific version).
+
+    Parameters
+    ----------
+    rhythm_hist_dir : Path
+        Directory containing rhythm histograms (e.g., 6.6_anchored_rhythm_histograms/drums/)
+    stats_dir : Path
+        Output directory for statistics (e.g., 6.8_anchored_statistics/drums/)
+    track_id : str
+        Track identifier
+    """
+    print(f"[Anchored Rhythm Statistics] Processing: {track_id}")
+
+    # Check if required CSV files exist
+    rhythm_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_rhythm_histograms.csv'
+    groove_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_groove_pulse_histograms.csv'
+
+    if not rhythm_csv.exists():
+        print(f"  Error: Missing file {rhythm_csv}")
+        return
+
+    # Load main rhythm histograms CSV
+    df_rhythm = pd.read_csv(rhythm_csv)
+
+    # Load groove pulse CSV if exists
+    df_groove = None
+    if groove_csv.exists():
+        df_groove = pd.read_csv(groove_csv)
+
+    # Get unique section_ids
+    section_ids = df_rhythm['section_id'].unique()
+
+    if len(section_ids) == 0:
+        print(f"  Warning: No sections found")
+        return
+
+    # Calculate statistics for each section
+    all_stats = []
+    for section_id in section_ids:
+        df_section = df_rhythm[df_rhythm['section_id'] == section_id]
+        pattern_length = df_section['pattern_length'].iloc[0]
+
+        # Get corresponding groove data
+        df_groove_section = None
+        if df_groove is not None:
+            df_groove_section = df_groove[df_groove['section_id'] == section_id]
+
+        stats = calculate_section_statistics(
+            df_section,
+            df_groove_section,
+            section_id,
+            pattern_length
+        )
+        all_stats.append(stats)
+
+        mt_deg = f"{stats['microtiming_degree']:.4f}" if stats['microtiming_degree'] is not None else 'N/A'
+        mt_cplx = f"{stats['microtiming_complexity']:.4f}" if stats['microtiming_complexity'] is not None else 'N/A'
+        print(f"    {section_id}: MT_deg={mt_deg}, MT_cplx={mt_cplx}")
+
+    # Create output directory
+    stats_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save aggregated statistics CSV
+    df_stats = pd.DataFrame(all_stats)
+    output_csv = stats_dir / f'{track_id}_anchored_rhythm_statistics.csv'
+    df_stats.to_csv(output_csv, index=False)
+    print(f"    Saved: {output_csv.name}")
+
+
 if __name__ == '__main__':
     if len(sys.argv) != 3:
         print('Usage: python anchored_rhythm_statistics.py <track_root_folder> <track_id>')

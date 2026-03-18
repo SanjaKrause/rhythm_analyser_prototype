@@ -535,9 +535,10 @@ def create_anchored_beat_histograms(
                     error_bar_y = strength * 0.9
                     log_upper = np.log2(median_val + iqr_val / 2)
                     log_lower = np.log2(max(0.1, median_val - iqr_val / 2))
-                    iqr_log = (log_upper - log_lower) / 2
-                    ax.errorbar(shifted_log, error_bar_y, xerr=iqr_log, fmt='none',
-                               ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
+                    iqr_log = max(0, (log_upper - log_lower) / 2)  # Clamp to non-negative
+                    if iqr_log > 0:  # Only draw error bar if valid
+                        ax.errorbar(shifted_log, error_bar_y, xerr=iqr_log, fmt='none',
+                                   ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
 
             # Add deviation labels (median shift)
             for i, (cat, shifted_log, strength, median_val) in enumerate(
@@ -1054,9 +1055,10 @@ def create_anchored_groove_pulse_beat_histograms(
                     error_bar_y = strength * 0.9
                     log_upper = np.log2(median_val + iqr_val / 2)
                     log_lower = np.log2(max(0.1, median_val - iqr_val / 2))
-                    iqr_log = (log_upper - log_lower) / 2
-                    ax.errorbar(shifted_log, error_bar_y, xerr=iqr_log, fmt='none',
-                               ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
+                    iqr_log = max(0, (log_upper - log_lower) / 2)  # Clamp to non-negative
+                    if iqr_log > 0:  # Only draw error bar if valid
+                        ax.errorbar(shifted_log, error_bar_y, xerr=iqr_log, fmt='none',
+                                   ecolor='black', capsize=3, capthick=1.5, linewidth=1.5)
 
             for i, (cat, shifted_log, strength, median_val) in enumerate(
                 zip(category_order, shifted_positions_log, filtered_onset_strength, filtered_medians)):
@@ -1503,10 +1505,11 @@ def create_anchored_beat_patterns(
                     if shifted_ticks > 0:
                         log_upper = np.log2(shifted_ticks + iqr_scaleds[i] / 2)
                         log_lower = np.log2(max(0.1, shifted_ticks - iqr_scaleds[i] / 2))
-                        iqr_log = (log_upper - log_lower) / 2
-                        ax.errorbar(shifted_positions_log[i], error_bar_y,
-                                   xerr=iqr_log, fmt='none',
-                                   ecolor='black', capsize=2, capthick=1, linewidth=1)
+                        iqr_log = max(0, (log_upper - log_lower) / 2)  # Clamp to non-negative
+                        if iqr_log > 0:  # Only draw error bar if valid
+                            ax.errorbar(shifted_positions_log[i], error_bar_y,
+                                       xerr=iqr_log, fmt='none',
+                                       ecolor='black', capsize=2, capthick=1, linewidth=1)
 
             # Add median shift labels on top of bars
             for i in range(len(category_order)):

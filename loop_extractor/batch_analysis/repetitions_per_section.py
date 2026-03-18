@@ -40,7 +40,7 @@ import numpy as np
 RATIO_THRESHOLDS = [0.40, 0.50, 0.60, 0.70, 0.80]
 
 
-def collect_repetition_data(output_dir: Path, use_filtered: bool = False) -> list:
+def collect_repetition_data(output_dir: Path, use_filtered: bool = False, stem: str = 'drums') -> list:
     """
     Collect repetition data from all tracks' 6.6_anchored_rhythm_histograms.
 
@@ -51,6 +51,8 @@ def collect_repetition_data(output_dir: Path, use_filtered: bool = False) -> lis
     use_filtered : bool
         If True, read from *_filtered_anchored_rhythm_histograms.csv (6.2 source)
         If False, read from *_anchored_rhythm_histograms.csv (6.1 source)
+    stem : str
+        Stem to collect data for (default: 'drums')
 
     Returns
     -------
@@ -71,8 +73,8 @@ def collect_repetition_data(output_dir: Path, use_filtered: bool = False) -> lis
     all_sections = []
 
     for track_dir in track_dirs:
-        # Look for *_anchored_rhythm_histograms.csv in 6.6_anchored_rhythm_histograms folder
-        hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        # Look for *_anchored_rhythm_histograms.csv in 6.6_anchored_rhythm_histograms/{stem} folder
+        hist_dir = track_dir / '6.6_anchored_rhythm_histograms' / stem
         if not hist_dir.exists():
             continue
 
@@ -260,7 +262,7 @@ def create_repetitions_plot(all_sections: list, batch_dir: Path, suffix: str, ti
                 print(f"      ratio>{int(threshold*100)}%:   0 sections")
 
 
-def create_repetitions_diagrams(output_dir: Path):
+def create_repetitions_diagrams(output_dir: Path, stem: str = 'drums'):
     """
     Create repetitions per section diagrams from batch processing results.
 
@@ -268,13 +270,15 @@ def create_repetitions_diagrams(output_dir: Path):
     ----------
     output_dir : Path
         The batch output directory containing individual track folders
+    stem : str
+        Stem to analyze (default: 'drums')
     """
     print("\n" + "=" * 80)
-    print("STEP 21: REPETITIONS PER SECTION ANALYSIS")
+    print(f"STEP 21: REPETITIONS PER SECTION ANALYSIS ({stem})")
     print("=" * 80)
 
-    # Create output directory
-    batch_dir = output_dir / 'snippet_ratio_batch_analysis'
+    # Create output directory (stem-specific)
+    batch_dir = output_dir / 'snippet_ratio_batch_analysis' / stem
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     # Find number of track directories
@@ -286,7 +290,7 @@ def create_repetitions_diagrams(output_dir: Path):
 
     # 1. Unfiltered (before filtering) - from 6.1 source
     print("\n--- UNFILTERED (Before Filtering) ---")
-    unfiltered_sections = collect_repetition_data(output_dir, use_filtered=False)
+    unfiltered_sections = collect_repetition_data(output_dir, use_filtered=False, stem=stem)
     if unfiltered_sections:
         print(f"Collected {len(unfiltered_sections)} sections")
         create_repetitions_plot(unfiltered_sections, batch_dir, '_unfiltered', ' (Before Filtering)')
@@ -295,7 +299,7 @@ def create_repetitions_diagrams(output_dir: Path):
 
     # 2. Filtered (after filtering) - from 6.2 source
     print("\n--- FILTERED (After Filtering) ---")
-    filtered_sections = collect_repetition_data(output_dir, use_filtered=True)
+    filtered_sections = collect_repetition_data(output_dir, use_filtered=True, stem=stem)
     if filtered_sections:
         print(f"Collected {len(filtered_sections)} sections")
         create_repetitions_plot(filtered_sections, batch_dir, '_filtered', ' (After Filtering)')
@@ -305,10 +309,30 @@ def create_repetitions_diagrams(output_dir: Path):
     print("\n" + "=" * 80)
 
 
+def detect_available_stems(track_dirs):
+    """Detect which stems have data."""
+    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other']
+    found_stems = set()
+
+    for track_dir in track_dirs[:5]:
+        rhythm_hist_dir = track_dir / '6.6_anchored_rhythm_histograms'
+        if rhythm_hist_dir.exists():
+            for stem in all_stems:
+                stem_dir = rhythm_hist_dir / stem
+                if stem_dir.exists() and any(stem_dir.glob('*.csv')):
+                    found_stems.add(stem)
+
+    if not found_stems:
+        return ['drums']
+
+    return sorted(found_stems, key=lambda s: all_stems.index(s))
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Usage: python repetitions_per_section.py /path/to/batch/output')
+    if len(sys.argv) < 2:
+        print('Usage: python repetitions_per_section.py /path/to/batch/output [stem]')
         print('Example: python repetitions_per_section.py "/Volumes/PortableSSD/06_Testing/new test feb20"')
+        print('If stem is not specified, all available stems will be processed.')
         sys.exit(1)
 
     output_dir = Path(sys.argv[1])
@@ -317,4 +341,19 @@ if __name__ == '__main__':
         print(f'Error: Directory does not exist: {output_dir}')
         sys.exit(1)
 
-    create_repetitions_diagrams(output_dir)
+    # Find track directories
+    track_dirs = sorted([
+        d for d in output_dir.iterdir()
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis']
+    ])
+
+    # Determine which stems to process
+    if len(sys.argv) >= 3:
+        stems = [sys.argv[2]]
+    else:
+        stems = detect_available_stems(track_dirs)
+        print(f"Detected stems: {stems}")
+
+    # Process each stem
+    for stem in stems:
+        create_repetitions_diagrams(output_dir, stem=stem)
