@@ -98,6 +98,7 @@ def run_complete_pipeline(
     onset_mode: str = 'librosa',
     onset_threshold_drumtranscriber: float = 0.5,  # Filter onsets closer than this fraction of 1/16th note (0.5 = 1/32nd)
     loop_start_offset_ms: float = 0.0,  # Loop start offset in ms (0.0 = use grid time exactly, negative was adding silence)
+    anchoring_mode: str = 'double',  # 'single' or 'double' anchoring
     skip_existing: bool = False,
     create_audio_examples: bool = True,
     daw_ready: bool = False,
@@ -846,7 +847,8 @@ def run_complete_pipeline(
                     songformer_sections_csv=str(sf_overlapping_csv),
                     snippet_timings_csv=str(sf_timings_csv),
                     output_dir=str(anchoring_dir),
-                    pattern_lengths=[2, 4],
+                    pattern_lengths=[1, 2, 4],
+                    anchoring_mode=anchoring_mode,
                     verbose=verbose
                 )
 
@@ -2287,6 +2289,8 @@ Environment:
                        help='Onset detection method: librosa (Step 5) or drumtranscriber (Step 5.1, requires DrumTranscriber)')
     parser.add_argument('--onset-threshold-drumtranscriber', type=float, default=0.5,
                        help='Minimum onset interval as fraction of 1/16th note (default: 0.5 = 1/32nd note). Only used with --onset-mode drumtranscriber')
+    parser.add_argument('--anchoring-mode', choices=['single', 'double'], default='double',
+                       help='Grid anchoring mode: single (start only) or double (start + end, default)')
     parser.add_argument('--loop-start-offset-ms', type=float, default=0.0,
                        help='Loop start offset in milliseconds (default: 0.0ms, use grid time exactly. Negative values start earlier but may add silence)')
     parser.add_argument('--pattern-file', help='Path to pattern lengths CSV')
@@ -2382,6 +2386,7 @@ Environment:
                     onset_mode=args.onset_mode,
                     onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
                     loop_start_offset_ms=args.loop_start_offset_ms,
+                    anchoring_mode=args.anchoring_mode,
                     skip_existing=False,
                     create_audio_examples=not args.no_audio_examples,
                     daw_ready=args.daw_ready,
@@ -2573,6 +2578,7 @@ Environment:
             onset_mode=args.onset_mode,
             onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
             loop_start_offset_ms=args.loop_start_offset_ms,
+            anchoring_mode=args.anchoring_mode,
             skip_existing=False,
             create_audio_examples=not args.no_audio_examples,
             daw_ready=args.daw_ready,

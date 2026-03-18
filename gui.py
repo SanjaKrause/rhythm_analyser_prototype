@@ -17,7 +17,7 @@ class LoopExtractorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("LOOP EXTRACTOR 2000")
-        self.root.geometry("750x575")
+        self.root.geometry("750x650")
         self.root.configure(bg='#000080')  # Dark blue background
 
         # Set up cleanup on window close
@@ -46,6 +46,9 @@ class LoopExtractorGUI:
 
         # Onset calculation mode
         self.onset_mode = tk.StringVar(value="librosa")  # Default: librosa
+
+        # Anchoring mode
+        self.anchoring_mode = tk.StringVar(value="double")  # Default: double
 
         self.setup_ui()
 
@@ -352,6 +355,46 @@ class LoopExtractorGUI:
         )
         drumtranscriber_radio.pack(anchor='w', pady=(0, 8))
 
+        # ANCHORING MODE section
+        anchoring_label = tk.Label(
+            onset_frame,
+            text="ANCHORING MODE:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        anchoring_label.pack(anchor='w', pady=(15, 10))
+
+        # Radio button: Double anchoring (default)
+        double_radio = tk.Radiobutton(
+            onset_frame,
+            text="Double (start + end)",
+            variable=self.anchoring_mode,
+            value="double",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        double_radio.pack(anchor='w', pady=(0, 8))
+
+        # Radio button: Single anchoring
+        single_radio = tk.Radiobutton(
+            onset_frame,
+            text="Single (start only)",
+            variable=self.anchoring_mode,
+            value="single",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        single_radio.pack(anchor='w', pady=(0, 8))
+
         # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -614,6 +657,9 @@ class LoopExtractorGUI:
 
             # Add onset mode
             cmd.extend(["--onset-mode", self.onset_mode.get()])
+
+            # Add anchoring mode
+            cmd.extend(["--anchoring-mode", self.anchoring_mode.get()])
 
             # Add onset threshold for drumtranscriber (default 0.5)
             cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])

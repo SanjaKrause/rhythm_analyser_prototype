@@ -3,9 +3,10 @@
 Aggregate Statistics for Rhythm Histograms
 
 Calculate summary statistics from rhythm histogram CSVs for each track.
-Creates aggregate metrics for pattern lengths L=2 and L=4.
+Creates aggregate metrics for pattern lengths L=1, L=2 and L=4.
 
-Output files: {track_id}_rhythm_statistics_L2.csv
+Output files: {track_id}_rhythm_statistics_L1.csv
+             {track_id}_rhythm_statistics_L2.csv
              {track_id}_rhythm_statistics_L4.csv
 
 Usage:
@@ -164,8 +165,8 @@ def aggregate_statistics_for_track(track_root: Path, track_id: str):
     stats_dir = track_root / '5.6_statistics'
     stats_dir.mkdir(parents=True, exist_ok=True)
 
-    # Calculate statistics for L=2 and L=4
-    for pattern_length in [2, 4]:
+    # Calculate statistics for L=1, L=2 and L=4
+    for pattern_length in [1, 2, 4]:
         print(f"  Calculating statistics for L={pattern_length}...")
 
         stats = calculate_rhythm_statistics(

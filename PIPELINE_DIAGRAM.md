@@ -2643,6 +2643,7 @@ flowchart TD
     subgraph "For Each Section"
         A[Find Anchor Bar<br/>nearest to section start]
         F[FlexStart: Find Pattern Start<br/>first bar with onset near downbeat]
+        L1[Process L=1 bars]
         L2[Process L=2 bars]
         L4[Process L=4 bars]
     end
@@ -2664,8 +2665,10 @@ flowchart TD
     SN --> A
     A --> F
     ON --> F
+    F --> L1
     F --> L2
     F --> L4
+    L1 --> P
     L2 --> P
     L4 --> P
     P --> R
@@ -2702,6 +2705,7 @@ Bar 41: onset at 97.408s near downbeat 97.361s? YES → Pattern Start = 41
 #### 3. Pattern Lengths (L)
 
 Each section is analyzed with multiple pattern lengths:
+- **L=1**: 1-bar repeating patterns (for fine-grained timing analysis)
 - **L=2**: 2-bar repeating patterns (common in pop music)
 - **L=4**: 4-bar repeating patterns (verse/chorus structures)
 
@@ -2732,8 +2736,42 @@ Each anchored CSV includes metadata in comment headers:
 # no_of_repetitions=6
 # snippet_start=107.111000
 # snippet_end=137.111000
+# anchoring_mode=double
 # mean_section_tempo=102.97
 bar_number,bar_number_global,tick_16th,onset_time,phase,grid_time,grid_phase,tick_phase,pattern_index,pattern_start_time,pattern_end_time,local_tempo
+```
+
+### Anchoring Mode
+
+The anchoring mode determines how the grid is aligned to actual onset positions:
+
+#### Single Anchoring (Original Method)
+- Finds a reference onset at the **start** of each L-bar segment
+- Shifts the entire grid by this single offset
+- All ticks within the segment get the same correction
+
+#### Double Anchoring (New Method)
+- Finds reference onsets at **both start AND end** of each L-bar segment
+- Builds equidistant grid between corrected start and end times:
+  ```
+  corrected_start = segment_start_time + start_offset
+  corrected_end = segment_end_time + end_offset
+  corrected_duration = corrected_end - corrected_start
+  sixteenth_duration = corrected_duration / (L × 16)
+  ```
+- Captures micro-tempo fluctuations within each segment
+- Falls back to single anchoring if no end onset is found
+
+**Configuration:** Set `ANCHORING_MODE` in `config.py`:
+```python
+ANCHORING_MODE = 'double'  # or 'single'
+```
+
+**Reference Onsets CSV (double anchoring):**
+```csv
+bar_number,bar_number_global,start_ref_ms,end_ref_ms,start_ref_phase,end_ref_phase,bar_duration,start_ref_onset_time,end_ref_onset_time,anchoring_mode
+0,20,69.66,46.44,0.022,0.015,3.11,62.58,65.69,double
+1,21,46.44,69.66,0.015,0.022,3.13,65.69,68.82,double
 ```
 
 ### New Tempo Columns
@@ -3505,6 +3543,7 @@ Each row represents one section from one track. Columns are organized as follows
 
 | Pattern Length | Calculation | Total Columns |
 |----------------|-------------|---------------|
+| L1 (16 positions) | 7 + (16×3)×3 + (7×3)×3 + 4 + 4 | **222** |
 | L2 (32 positions) | 7 + (32×3)×3 + (7×3)×3 + 4 + 4 | **366** |
 | L4 (64 positions) | 7 + (64×3)×3 + (7×3)×3 + 4 + 4 | **654** |
 
@@ -3541,6 +3580,24 @@ python collect_data.py /path/to/batch/output
 ---
 
 ## TODO
+
+### Double Anchoring: Show End Reference Onset for Last Loop
+
+**Issue:** With double anchoring, each loop segment uses both a start and end reference onset. The end reference of loop N equals the start reference of loop N+1, so the rasterplot circles already visualize this. However, the **last loop's end reference onset is not shown** since there's no following loop to display it.
+
+**Current behavior:**
+- Rasterplot shows red circles (⚪) for reference onsets at each loop start
+- Last loop's end reference onset is missing from visualization
+
+**Proposed fix:**
+- Add an additional marker (different color/shape) for the end reference onset of the last loop
+- Or add a second circle at the end boundary of the last pattern
+
+**Related files:**
+- `loop_extractor/analysis/plots_anchoring.py` - Rasterplot generation
+- `loop_extractor/analysis/anchoring.py` - Reference onset data
+
+---
 
 ### Groove Pulse Clicks - Boundary Filtering Issue
 

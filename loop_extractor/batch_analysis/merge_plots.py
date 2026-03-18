@@ -17,8 +17,10 @@ Merges:
 - All new 4-method raster plots into all_raster_4method.pdf
 - All Spotify sections timelines into all_spotify_sections.pdf
 - All SongFormer sections timelines into all_songformer_sections.pdf
+- All onsets per 1-bar pattern plots into all_onsets_per_pattern_1bar.pdf
 - All onsets per 2-bar pattern plots into all_onsets_per_pattern_2bar.pdf
 - All onsets per 4-bar pattern plots into all_onsets_per_pattern_4bar.pdf
+- All onsets per bar (1-bar grid) plots into all_onsets_per_bar_1bar.pdf
 - All onsets per bar (2-bar grid) plots into all_onsets_per_bar_2bar.pdf
 - All onsets per bar (4-bar grid) plots into all_onsets_per_bar_4bar.pdf
 - All section anchoring raster plots into all_section_anchoring_raster.pdf
@@ -532,8 +534,8 @@ def merge_plots(output_dir: Path):
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # 19. Merge onsets per pattern plots (PNG files in 13_spotify folder)
-    # Process both 2-bar and 4-bar patterns
-    for pattern_len in [2, 4]:
+    # Process 1-bar, 2-bar and 4-bar patterns
+    for pattern_len in [1, 2, 4]:
         print(f'\nLooking for onsets per {pattern_len}-bar pattern plots...')
         onsets_per_pattern_pngs = []
         for track_dir in track_dirs:
@@ -558,8 +560,8 @@ def merge_plots(output_dir: Path):
             print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # 20. Merge onsets per bar plots (PNG files in 13_spotify folder)
-    # Process both 2-bar and 4-bar grids
-    for pattern_len in [2, 4]:
+    # Process 1-bar, 2-bar and 4-bar grids
+    for pattern_len in [1, 2, 4]:
         print(f'\nLooking for onsets per bar ({pattern_len}-bar grid) plots...')
         onsets_per_bar_pngs = []
         for track_dir in track_dirs:

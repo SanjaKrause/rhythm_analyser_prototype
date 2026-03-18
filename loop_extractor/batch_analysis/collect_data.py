@@ -5,7 +5,9 @@ Collect Data - Step 22 Batch Analysis
 Aggregates all analysis data from rhythm histograms, groove pulse, rhythm patterns,
 beat histograms, groove pulse beat, beat patterns, and statistics into structured CSVs.
 
-Creates 4 output CSVs based on pattern length (L2, L4) and ratio thresholds (50%, 70%):
+Creates 6 output CSVs based on pattern length (L1, L2, L4) and ratio thresholds (50%, 70%):
+    - L1_ratio50.csv - L=1 sections with ratio_in_snippet > 50%
+    - L1_ratio70.csv - L=1 sections with ratio_in_snippet > 70%
     - L2_ratio50.csv - L=2 sections with ratio_in_snippet > 50%
     - L2_ratio70.csv - L=2 sections with ratio_in_snippet > 70%
     - L4_ratio50.csv - L=4 sections with ratio_in_snippet > 50%
@@ -53,6 +55,8 @@ Input:
     6.8_anchored_statistics/{track_id}_anchored_beat_statistics.csv
 
 Output (in collected_data/):
+    - L1_ratio50.csv
+    - L1_ratio70.csv
     - L2_ratio50.csv
     - L2_ratio70.csv
     - L4_ratio50.csv
@@ -80,7 +84,7 @@ IOI_CATEGORIES = ['1/16', '1/8', '3/16', '1/4', '3/8', '1/2', '3/4']
 RATIO_THRESHOLDS = [0.50, 0.70]
 
 # Pattern lengths
-PATTERN_LENGTHS = [2, 4]
+PATTERN_LENGTHS = [1, 2, 4]
 
 
 def extract_song_id(track_name: str) -> str:
@@ -789,8 +793,8 @@ def collect_pironio_yodfat_data(output_dir: Path):
     collected_dir.mkdir(parents=True, exist_ok=True)
 
     # Collect section data by pattern length
-    pironio_sections = {2: [], 4: []}
-    yodfat_sections = {2: [], 4: []}
+    pironio_sections = {1: [], 2: [], 4: []}
+    yodfat_sections = {1: [], 2: [], 4: []}
 
     # Collect snippet data
     pironio_snippets = []
@@ -808,7 +812,7 @@ def collect_pironio_yodfat_data(output_dir: Path):
             for section_id, metrics in sections.items():
                 parsed = parse_section_id(section_id)
                 pl = parsed['pattern_length']
-                if pl in [2, 4]:
+                if pl in [1, 2, 4]:
                     row = {
                         'song_id': song_id,
                         'song_name': song_name,
@@ -827,7 +831,7 @@ def collect_pironio_yodfat_data(output_dir: Path):
             for section_id, metrics in sections.items():
                 parsed = parse_section_id(section_id)
                 pl = parsed['pattern_length']
-                if pl in [2, 4]:
+                if pl in [1, 2, 4]:
                     row = {
                         'song_id': song_id,
                         'song_name': song_name,
@@ -860,7 +864,7 @@ def collect_pironio_yodfat_data(output_dir: Path):
                 yodfat_snippets.append(row)
 
     # Write Pironio section CSVs (filtered by ratio threshold)
-    for pl in [2, 4]:
+    for pl in [1, 2, 4]:
         for ratio_th in RATIO_THRESHOLDS:
             rows = [r for r in pironio_sections[pl] if r['ratio_in_snippet'] >= ratio_th]
             if rows:
@@ -875,7 +879,7 @@ def collect_pironio_yodfat_data(output_dir: Path):
                 print(f"  ✓ Saved {output_file.name}: {len(rows)} sections")
 
     # Write Yodfat section CSVs (filtered by ratio threshold)
-    for pl in [2, 4]:
+    for pl in [1, 2, 4]:
         for ratio_th in RATIO_THRESHOLDS:
             rows = [r for r in yodfat_sections[pl] if r['ratio_in_snippet'] >= ratio_th]
             if rows:
@@ -982,7 +986,11 @@ def collect_spotify_data(output_dir: Path):
 
     # Collect song_ids that have sections meeting each criteria
     # Key: (pattern_length, ratio_threshold) -> set of song_ids
-    songs_by_criteria = {(2, 0.50): set(), (2, 0.70): set(), (4, 0.50): set(), (4, 0.70): set()}
+    songs_by_criteria = {
+        (1, 0.50): set(), (1, 0.70): set(),
+        (2, 0.50): set(), (2, 0.70): set(),
+        (4, 0.50): set(), (4, 0.70): set()
+    }
     all_song_ids = set()
 
     for track_dir in track_dirs:
@@ -1008,7 +1016,7 @@ def collect_spotify_data(output_dir: Path):
                     pl = parsed['pattern_length']
                     ratio = parsed['ratio_in_snippet']
 
-                    if pl in [2, 4]:
+                    if pl in [1, 2, 4]:
                         for ratio_th in RATIO_THRESHOLDS:
                             if ratio >= ratio_th:
                                 songs_by_criteria[(pl, ratio_th)].add(song_id)
@@ -1018,7 +1026,7 @@ def collect_spotify_data(output_dir: Path):
     # Write Spotify CSVs for each L/ratio combination
     headers = ['song_id', 'song_name'] + [f'SP_{f}' for f in SPOTIFY_FEATURES]
 
-    for pl in [2, 4]:
+    for pl in [1, 2, 4]:
         for ratio_th in RATIO_THRESHOLDS:
             song_ids = songs_by_criteria[(pl, ratio_th)]
             rows = []

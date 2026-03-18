@@ -7,7 +7,7 @@ Analyzes the distribution of repetitions (num_repetitions) per section from
 
 Creates histograms showing repetition counts for sections at different
 ratio_in_snippet thresholds (>40%, >50%, >60%, >70%, >80%), separated by
-pattern length (L2 and L4).
+pattern length (L1, L2 and L4).
 
 Generates TWO sets of outputs:
 1. Unfiltered (before): from *_anchored_rhythm_histograms.csv (6.1 source)
@@ -152,13 +152,13 @@ def create_repetitions_plot(all_sections: list, batch_dir: Path, suffix: str, ti
         writer.writerows(csv_rows)
     print(f"  Saved raw data: {csv_file.name}")
 
-    # Create figure with 5 rows (ratio thresholds) x 2 columns (L2, L4)
-    fig, axes = plt.subplots(5, 2, figsize=(10, 14))
+    # Create figure with 5 rows (ratio thresholds) x 3 columns (L1, L2, L4)
+    fig, axes = plt.subplots(5, 3, figsize=(15, 14))
     fig.suptitle(f'Repetitions Per Section by Ratio Threshold{title_suffix}',
                  fontsize=14, fontweight='bold', y=0.98)
 
-    pattern_lengths = [2, 4]
-    col_labels = ['L2 (2-bar)', 'L4 (4-bar)']
+    pattern_lengths = [1, 2, 4]
+    col_labels = ['L1 (1-bar)', 'L2 (2-bar)', 'L4 (4-bar)']
 
     for row_idx, threshold in enumerate(RATIO_THRESHOLDS):
         for col_idx, (pattern_len, col_label) in enumerate(zip(pattern_lengths, col_labels)):
@@ -200,7 +200,7 @@ def create_repetitions_plot(all_sections: list, batch_dir: Path, suffix: str, ti
                 # Create secondary y-axis for counts (right side)
                 ax2 = ax.twinx()
                 ax2.set_ylim(0, max_count * 1.15)
-                if col_idx == 1:  # Only show count label on right column
+                if col_idx == 2:  # Only show count label on right column
                     ax2.set_ylabel('Count', fontsize=8, color='gray')
                 ax2.tick_params(axis='y', labelcolor='gray', labelsize=7)
 

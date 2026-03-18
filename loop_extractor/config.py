@@ -118,6 +118,11 @@ class Config:
     # Output folder name for anchoring results
     ANCHORING_OUTPUT_FOLDER = '6.1_anchoring'
 
+    # Anchoring mode: 'single' or 'double'
+    # - 'single': Anchor grid to loop START only (original method)
+    # - 'double': Anchor grid to both loop START and END (interpolated correction)
+    ANCHORING_MODE = 'double'
+
     # ============================================================================
     # STEP 6.2: FILTER ANCHORED PATTERNS
     # ============================================================================
