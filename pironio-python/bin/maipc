@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+# encoding: utf-8
+
+"""
+	CLI tool for the maipc package
+"""
+
+import fire
+from maipc.rnn import neurons_cross_correlation, cell_states_precision, autocorrelation_periodicity
+from maipc.dbn import viterbi_max, viterbi_entropy
+from maipc.output import peak_average, RNN_entropy, DBN_entropy
+
+if __name__ == '__main__':
+
+	fire.Fire()

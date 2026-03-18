@@ -1,0 +1,11 @@
+tensorflow
+keras
+scikit-learn
+librosa
+streamlit-player
+streamlit
+numpy
+pandas
+matplotlib
+pytube
+plotly

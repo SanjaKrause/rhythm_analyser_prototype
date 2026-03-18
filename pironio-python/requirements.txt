@@ -1,0 +1,5 @@
+numpy>=1.19.4
+scipy>=0.16
+madmom>=0.16.1
+KDEpy>=1.0.10
+fire>=0.4.0

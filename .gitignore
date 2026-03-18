@@ -66,3 +66,4 @@ AP_2_code/input_wav/*.flac
 
 # Data folders (large datasets)
 groove-data/
+drumtranscriber/model/drum_transcriber.h5
