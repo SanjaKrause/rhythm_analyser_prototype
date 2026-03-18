@@ -105,6 +105,7 @@ def run_complete_pipeline(
     manual_start: Optional[float] = None,
     manual_duration: Optional[float] = None,
     export_format: str = 'wav',
+    reuse_existing: bool = False,  # Reuse existing stems/beats/songformer, skip steps 1-4.5, 5.5
     verbose: bool = True
 ) -> dict:
     """
@@ -176,7 +177,11 @@ def run_complete_pipeline(
     # STEP 1: STEM SEPARATION
     # ========================================================================
     try:
-        if skip_existing and paths['npz_file'].exists():
+        if reuse_existing and paths['npz_file'].exists():
+            if verbose:
+                print("\n[1/7] Stem separation - SKIPPED (reuse existing)")
+            results['steps_completed'].append('stem_separation_skipped')
+        elif skip_existing and paths['npz_file'].exists():
             if verbose:
                 print("\n[1/7] Stem separation - SKIPPED (exists)")
             results['steps_completed'].append('stem_separation_skipped')
@@ -208,7 +213,11 @@ def run_complete_pipeline(
     # STEP 2: BEAT DETECTION
     # ========================================================================
     try:
-        if skip_existing and paths['beats_file'].exists():
+        if reuse_existing and paths['beats_file'].exists():
+            if verbose:
+                print("\n[2/7] Beat detection - SKIPPED (reuse existing)")
+            results['steps_completed'].append('beat_detection_skipped')
+        elif skip_existing and paths['beats_file'].exists():
             if verbose:
                 print("\n[2/7] Beat detection - SKIPPED (exists)")
             results['steps_completed'].append('beat_detection_skipped')
@@ -239,7 +248,11 @@ def run_complete_pipeline(
     # STEP 3: CORRECT DOWNBEATS
     # ========================================================================
     try:
-        if skip_existing and paths['corrected_downbeats_file'].exists():
+        if reuse_existing and paths['corrected_downbeats_file'].exists():
+            if verbose:
+                print("\n[3] Downbeat correction - SKIPPED (reuse existing)")
+            results['steps_completed'].append('correct_bars_skipped')
+        elif skip_existing and paths['corrected_downbeats_file'].exists():
             if verbose:
                 print("\n[3] Downbeat correction - SKIPPED (exists)")
             results['steps_completed'].append('correct_bars_skipped')
@@ -270,7 +283,11 @@ def run_complete_pipeline(
     # STEP 3.5: TEMPO PLOTS
     # ========================================================================
     try:
-        if skip_existing and paths['tempo_plots_pdf'].exists() and paths['tempo_csv'].exists():
+        if reuse_existing and paths['tempo_csv'].exists():
+            if verbose:
+                print("\n[3.5] Tempo plots - SKIPPED (reuse existing)")
+            results['steps_completed'].append('tempo_plots_skipped')
+        elif skip_existing and paths['tempo_plots_pdf'].exists() and paths['tempo_csv'].exists():
             if verbose:
                 print("\n[3.5] Tempo plots - SKIPPED (exists)")
             results['steps_completed'].append('tempo_plots_skipped')
@@ -357,7 +374,11 @@ def run_complete_pipeline(
         snippet_dur_val = results['time_range'].get('actual_duration', 30.0)
         songformer_json = paths['songformer_dir'] / 'SF_sections.json'
 
-        if skip_existing and songformer_json.exists():
+        if reuse_existing and songformer_json.exists():
+            if verbose:
+                print("\n[4] SongFormer structure analysis - SKIPPED (reuse existing)")
+            results['steps_completed'].append('songformer_skipped')
+        elif skip_existing and songformer_json.exists():
             if verbose:
                 print("\n[4] SongFormer structure analysis - SKIPPED (exists)")
             results['steps_completed'].append('songformer_skipped')
@@ -430,7 +451,11 @@ def run_complete_pipeline(
         snippet_offset_val = results['time_range'].get('actual_start', 30.0)
         snippet_dur_val = results['time_range'].get('actual_duration', 30.0)
 
-        if skip_existing and snippet_wav_path.exists():
+        if reuse_existing and snippet_wav_path.exists():
+            if verbose:
+                print("\n[4.5] Full snippet WAV - SKIPPED (reuse existing)")
+            results['steps_completed'].append('snippet_wav_skipped')
+        elif skip_existing and snippet_wav_path.exists():
             if verbose:
                 print("\n[4.5] Full snippet WAV - SKIPPED (exists)")
             results['steps_completed'].append('snippet_wav_skipped')
@@ -467,7 +492,11 @@ def run_complete_pipeline(
         if onset_file is None:
             onset_file = paths['onsets_file']
 
-        if skip_existing and Path(onset_file).exists():
+        if reuse_existing and Path(onset_file).exists():
+            if verbose:
+                print("\n[5] Onset detection - SKIPPED (reuse existing)")
+            results['steps_completed'].append('onset_detection_skipped')
+        elif skip_existing and Path(onset_file).exists():
             if verbose:
                 print("\n[5] Onset detection - SKIPPED (exists)")
             results['steps_completed'].append('onset_detection_skipped')
@@ -632,16 +661,24 @@ def run_complete_pipeline(
     # STEP 5.5: PATTERN LENGTH DETECTION
     # ========================================================================
     try:
-        if verbose:
+        # Skip pattern detection when reusing existing files (bass F0 extraction is slow)
+        if reuse_existing:
+            pattern_lengths = {'drum': 4, 'mel': 4, 'pitch': 4, 'lepa': 4, 'aicc': 4}
+            results['pattern_lengths'] = pattern_lengths
+            results['steps_completed'].append('pattern_detection_skipped')
+            if verbose:
+                print("\n[5.5] Pattern length detection - SKIPPED (reuse existing)")
+                print(f"    Using defaults: {pattern_lengths}")
+        elif verbose:
             print("\n[5.5] Pattern length detection...")
 
         # Load pattern lengths from file if provided
-        if pattern_file and Path(pattern_file).exists():
+        if not reuse_existing and pattern_file and Path(pattern_file).exists():
             pattern_lengths = raster.load_pattern_lengths(pattern_file, track_id)
             if verbose:
                 print(f"    Loaded from file: {pattern_lengths}")
             results['steps_completed'].append('pattern_detection_loaded')
-        else:
+        elif not reuse_existing:
             # Detect pattern lengths using all 3 methods
             if verbose:
                 print(f"    Detecting pattern lengths using drum/mel/pitch methods...")
@@ -1977,7 +2014,11 @@ def run_complete_pipeline(
         pironio_json = paths['pironio_dir'] / f'{track_id}_pironio_metrics.json'
         snippet_wav_path = paths['stems_dir'] / 'full_snippet.wav'
 
-        if skip_existing and pironio_json.exists():
+        if reuse_existing and pironio_json.exists():
+            if verbose:
+                print("\n[13] Pironio pulse clarity - SKIPPED (reuse existing)")
+            results['steps_completed'].append('pironio_skipped')
+        elif skip_existing and pironio_json.exists():
             if verbose:
                 print("\n[13] Pironio pulse clarity - SKIPPED (exists)")
             results['steps_completed'].append('pironio_skipped')
@@ -2022,7 +2063,11 @@ def run_complete_pipeline(
         # Check if sections exist
         section_wavs = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
 
-        if skip_existing and pironio_sections_json.exists():
+        if reuse_existing and pironio_sections_json.exists():
+            if verbose:
+                print("\n[13.1] Pironio section metrics - SKIPPED (reuse existing)")
+            results['steps_completed'].append('pironio_sections_skipped')
+        elif skip_existing and pironio_sections_json.exists():
             if verbose:
                 print("\n[13.1] Pironio section metrics - SKIPPED (exists)")
             results['steps_completed'].append('pironio_sections_skipped')
@@ -2194,7 +2239,11 @@ def run_complete_pipeline(
         # Check if sections exist
         section_wavs = list(sections_dir.glob('*_section.wav')) if sections_dir.exists() else []
 
-        if skip_existing and yodfat_sections_json.exists():
+        if reuse_existing and yodfat_sections_json.exists():
+            if verbose:
+                print("\n[15.1] Yodfat section analysis - SKIPPED (reuse existing)")
+            results['steps_completed'].append('yodfat_sections_skipped')
+        elif skip_existing and yodfat_sections_json.exists():
             if verbose:
                 print("\n[15.1] Yodfat section analysis - SKIPPED (exists)")
             results['steps_completed'].append('yodfat_sections_skipped')
@@ -2308,6 +2357,8 @@ Environment:
                        help='Export format for stem loops (default: wav)')
     parser.add_argument('--quiet', action='store_true',
                        help='Minimize output')
+    parser.add_argument('--reuse-existing', action='store_true',
+                       help='Reuse existing stems, beats, and SongFormer files. Skips steps 1-4.5 and 5.5 (pattern detection). Useful for re-running analysis with different onset/anchoring parameters.')
 
     args = parser.parse_args()
 
@@ -2341,21 +2392,48 @@ Environment:
     if args.analyse_all:
         audio_dir = Path(args.audio_dir)
 
-        # Find all audio files (WAV and MP3) in the directory
-        # Filter out macOS resource fork files (._filename)
-        wav_files = [f for f in sorted(audio_dir.glob('*.wav')) if not f.name.startswith('._')]
-        mp3_files = [f for f in sorted(audio_dir.glob('*.mp3')) if not f.name.startswith('._')]
-        audio_files = sorted(wav_files + mp3_files)
+        # When reusing existing files, look for track folders in output directory
+        # Each track folder should have 1_stems/ with the original stems
+        if args.reuse_existing:
+            # Look for existing track folders (directories that contain 1_stems/)
+            track_folders = []
+            for d in sorted(audio_dir.iterdir()):
+                if d.is_dir() and (d / '1_stems').exists():
+                    # Find a representative audio file (drums.wav or any stem)
+                    stems_dir = d / '1_stems'
+                    drums_wav = stems_dir / 'drums.wav'
+                    if drums_wav.exists():
+                        track_folders.append((d.name, drums_wav))
 
-        if not audio_files:
-            print(f"No WAV or MP3 files found in {audio_dir}")
-            sys.exit(1)
+            if not track_folders:
+                print(f"No existing track folders found in {audio_dir}")
+                print("  (Expected folders with 1_stems/ subdirectory)")
+                sys.exit(1)
 
-        print("=" * 80)
-        print(f"Batch Processing Mode: {len(audio_files)} audio files found")
-        print(f"  WAV files: {len(wav_files)}")
-        print(f"  MP3 files: {len(mp3_files)}")
-        print("=" * 80)
+            print("=" * 80)
+            print(f"Batch Processing Mode (REUSE EXISTING): {len(track_folders)} track folders found")
+            print("  Skipping: stems, beats, downbeat correction, tempo plots, SongFormer,")
+            print("            pattern detection, onset detection, Pironio, Yodfat")
+            print("  Running: anchoring, filtering, histograms, statistics")
+            print("=" * 80)
+
+            audio_files = track_folders  # List of (track_id, audio_path) tuples
+        else:
+            # Find all audio files (WAV and MP3) in the directory
+            # Filter out macOS resource fork files (._filename)
+            wav_files = [f for f in sorted(audio_dir.glob('*.wav')) if not f.name.startswith('._')]
+            mp3_files = [f for f in sorted(audio_dir.glob('*.mp3')) if not f.name.startswith('._')]
+            audio_files = sorted(wav_files + mp3_files)
+
+            if not audio_files:
+                print(f"No WAV or MP3 files found in {audio_dir}")
+                sys.exit(1)
+
+            print("=" * 80)
+            print(f"Batch Processing Mode: {len(audio_files)} audio files found")
+            print(f"  WAV files: {len(wav_files)}")
+            print(f"  MP3 files: {len(mp3_files)}")
+            print("=" * 80)
 
         # Track overall results
         batch_results = {
@@ -2366,13 +2444,17 @@ Environment:
         }
 
         # Process each file
-        for i, wav_file in enumerate(audio_files, start=1):
-            # Derive track_id from filename (stem without extension)
-            track_id = wav_file.stem
+        for i, item in enumerate(audio_files, start=1):
+            # Handle both reuse mode (tuple) and normal mode (Path)
+            if args.reuse_existing:
+                track_id, wav_file = item
+            else:
+                wav_file = item
+                track_id = wav_file.stem
 
             print(f"\n{'=' * 80}")
-            print(f"Processing [{i}/{len(wav_files)}]: {track_id}")
-            print(f"File: {wav_file.name}")
+            print(f"Processing [{i}/{len(audio_files)}]: {track_id}")
+            print(f"File: {wav_file.name if hasattr(wav_file, 'name') else wav_file}")
             print(f"{'=' * 80}")
 
             try:
@@ -2393,6 +2475,7 @@ Environment:
                     manual_start=args.manual_start,
                     manual_duration=args.manual_duration,
                     export_format=args.export_format,
+                    reuse_existing=args.reuse_existing,
                     verbose=not args.quiet
                 )
 
@@ -2585,6 +2668,7 @@ Environment:
             manual_start=args.manual_start,
             manual_duration=args.manual_duration,
             export_format=args.export_format,
+            reuse_existing=args.reuse_existing,
             verbose=not args.quiet
         )
 

@@ -17,7 +17,7 @@ class LoopExtractorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("LOOP EXTRACTOR 2000")
-        self.root.geometry("750x650")
+        self.root.geometry("750x700")
         self.root.configure(bg='#000080')  # Dark blue background
 
         # Set up cleanup on window close
@@ -49,6 +49,9 @@ class LoopExtractorGUI:
 
         # Anchoring mode
         self.anchoring_mode = tk.StringVar(value="double")  # Default: double
+
+        # Reuse existing files (skip steps 1-4.5, 5.5)
+        self.reuse_existing = tk.BooleanVar(value=False)  # Default: run full pipeline
 
         self.setup_ui()
 
@@ -395,6 +398,30 @@ class LoopExtractorGUI:
         )
         single_radio.pack(anchor='w', pady=(0, 8))
 
+        # REUSE EXISTING FILES section
+        reuse_label = tk.Label(
+            onset_frame,
+            text="REUSE FILES:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        reuse_label.pack(anchor='w', pady=(15, 10))
+
+        # Checkbox: Reuse stems + SongFormer
+        reuse_check = tk.Checkbutton(
+            onset_frame,
+            text="Use existing stems/beats",
+            variable=self.reuse_existing,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        reuse_check.pack(anchor='w', pady=(0, 8))
+
         # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -660,6 +687,10 @@ class LoopExtractorGUI:
 
             # Add anchoring mode
             cmd.extend(["--anchoring-mode", self.anchoring_mode.get()])
+
+            # Add reuse existing files flag
+            if self.reuse_existing.get():
+                cmd.append("--reuse-existing")
 
             # Add onset threshold for drumtranscriber (default 0.5)
             cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])
