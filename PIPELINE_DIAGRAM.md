@@ -3919,6 +3919,41 @@ section_id = f"{sec_no_part}_{section_label}_L{l_val}"
 
 ---
 
+### Known Behavior: Sections Starting Before Snippet Show "No Onset Data"
+
+**Behavior:** In section anchoring raster plots (`plots_anchoring.py`), some sections may show "No onset data available" in the Uncorrected and Per-Section Corrected subplots (right column). This is expected behavior, not a bug.
+
+**Explanation:**
+- Section anchoring (6.1_anchoring) uses bars based on SongFormer section boundaries, which may start BEFORE the 30-second snippet window
+- The 5_grid comprehensive_phases.csv only contains bars WITHIN the snippet window
+- When `bar_number_global` values don't overlap between these two data sources, there is no uncorrected data to display
+
+**Example:**
+```
+Section "pre-chorus" anchored CSV: bar_number_global = 29
+5_grid comprehensive_phases.csv:   bar_number_global starts at 30
+
+→ Bar 29 has no uncorrected data (outside snippet window)
+→ Uncorrected subplot shows "No onset data available"
+→ Double Anchored subplot (left column) still shows data
+```
+
+**Why this happens:**
+- SongFormer sections are based on the full song structure
+- The snippet (from SongFormer analysis) defines a 30-second window
+- Section boundaries may extend beyond the snippet start
+- The 5_grid step only processes bars within the snippet
+
+**What to expect:**
+- Left column (Double Anchored plots): Always shows data if anchoring succeeded
+- Right column (Uncorrected/Per-Section): Only shows data for bars within the snippet
+
+**Related files:**
+- `loop_extractor/analysis/plots_anchoring.py` - Contains detailed docstring about this limitation
+- `loop_extractor/analysis/anchoring.py` - Section boundary and bar selection logic
+
+---
+
 ### Update MacBook
 
 **Task:** Update macOS to latest version (postponed for overnight calculations)

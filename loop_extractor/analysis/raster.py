@@ -1324,6 +1324,7 @@ def create_raster_csv(
         for tick in range(steps_per_bar):
             grid_rows.append({
                 'bar_number': bar_idx - first_bar,  # Snippet-relative
+                'bar_number_global': bar_idx,  # Global bar number for cross-step matching
                 'tick_16th': tick
             })
 
