@@ -2,6 +2,9 @@
 """
 Microtiming deviation plots - Pattern-folded raster visualization (AP2 style).
 
+OLD METHOD: Uses comprehensive_phases CSV with FlexStart and per-snippet corrections.
+For the NEW per-section/per-stem anchored method, see: anchored_microtiming_plots.py
+
 This module creates pattern-folded microtiming plots showing onset deviations
 from the metrical grid, similar to the AP2 notebook visualization.
 
@@ -9,7 +12,7 @@ Each plot shows:
 - Pattern-folded 16th-note positions (x-axis)
 - Deviation in milliseconds (y-axis)
 - Multiple loops as colored lines
-- Corrected and uncorrected versions
+- Corrected and uncorrected versions (FlexStart, per-snippet methods)
 
 Environment: AEinBOX_13_3
 Dependencies: matplotlib, pandas, numpy

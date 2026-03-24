@@ -81,7 +81,7 @@ config = config_module.config
 from stem_separation import spleeter_interface
 from beat_detection import transformer
 from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections
-from utils import audio_export, raster_plots, midi_export, microtiming_plots, drumtranscriber_interface
+from utils import audio_export, raster_plots, midi_export, microtiming_plots, anchored_microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
 import yodfat_analysis
@@ -503,6 +503,14 @@ def run_complete_pipeline(
 
             stem_onset_file = stem_paths['onsets_file']
 
+            # Skip librosa for drums when using drumtranscriber mode
+            # (DrumTranscriber will create the onsets in Step 5.1)
+            if stem == 'drums' and onset_mode == 'drumtranscriber':
+                if verbose:
+                    print(f"\n[5] Onset detection ({stem}) - SKIPPED (using drumtranscriber mode)")
+                results['steps_completed'].append(f'onset_detection_{stem}_skipped_drumtranscriber')
+                continue
+
             if skip_existing and Path(stem_onset_file).exists():
                 if verbose:
                     print(f"\n[5] Onset detection ({stem}) - SKIPPED (exists)")
@@ -570,46 +578,42 @@ def run_complete_pipeline(
                     print("      Using librosa onsets from Step 5")
                 results['steps_completed'].append('drumtranscriber_skipped_daw')
             else:
-                # Check if already exists
-                transcription_csv = paths['drumtranscriber_dir'] / f'{track_id}_drum_transcription.csv'
-                drumtranscriber_onsets_csv = paths['drumtranscriber_dir'] / f'{track_id}_onsets.csv'
+                # Always run DrumTranscriber fresh when this mode is selected
+                if verbose:
+                    print("\n[5.1] Drum transcription...")
 
-                if skip_existing and transcription_csv.exists() and drumtranscriber_onsets_csv.exists():
+                # Transcribe the drum stem (not the full mix)
+                drum_stem_path = paths['stems_dir'] / 'drums.wav'
+                transcription_results = drumtranscriber_interface.transcribe_drums(
+                    str(drum_stem_path),
+                    str(paths['drumtranscriber_dir']),
+                    track_id,
+                    sr=44100
+                )
+
+                results['drumtranscriber'] = {
+                    'predictions_csv': transcription_results['predictions_csv'],
+                    'timeline_csv': transcription_results.get('timeline_csv'),
+                    'onsets_csv': transcription_results.get('onsets_csv'),
+                    'summary_json': transcription_results['summary_json'],
+                    'total_hits': transcription_results['summary']['total_hits']
+                }
+                results['steps_completed'].append('drumtranscriber')
+
+                # Copy DrumTranscriber onsets to standard drums onset location
+                # This ensures all downstream steps (anchoring, etc.) use the same file
+                # Note: paths['onsets_file'] is already 4_onsets/drums/{track}_onsets.csv
+                if 'onsets_csv' in transcription_results:
+                    import shutil
+                    drum_onset_path = paths['onsets_file']  # Use the exact path config expects
+                    drum_onset_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(transcription_results['onsets_csv'], drum_onset_path)
+                    onset_file = str(drum_onset_path)
+                    results['onset_files']['drums'] = onset_file
                     if verbose:
-                        print("\n[5.1] Drum transcription - SKIPPED (exists)")
-                    results['steps_completed'].append('drumtranscriber_skipped')
-                    # Override onset_file with existing drumtranscriber onsets
-                    onset_file = str(drumtranscriber_onsets_csv)
-                    if verbose:
-                        print(f"      Using DrumTranscriber onsets: {onset_file}")
-                else:
-                    if verbose:
-                        print("\n[5.1] Drum transcription...")
-
-                    # Transcribe the drum stem (not the full mix)
-                    drum_stem_path = paths['stems_dir'] / 'drums.wav'
-                    transcription_results = drumtranscriber_interface.transcribe_drums(
-                        str(drum_stem_path),
-                        str(paths['drumtranscriber_dir']),
-                        track_id,
-                        sr=44100
-                    )
-
-                    results['drumtranscriber'] = {
-                        'predictions_csv': transcription_results['predictions_csv'],
-                        'timeline_csv': transcription_results.get('timeline_csv'),
-                        'onsets_csv': transcription_results.get('onsets_csv'),
-                        'summary_json': transcription_results['summary_json'],
-                        'total_hits': transcription_results['summary']['total_hits']
-                    }
-                    results['steps_completed'].append('drumtranscriber')
-
-                    # Override onset_file to use DrumTranscriber onsets for all downstream analysis
-                    if 'onsets_csv' in transcription_results:
-                        onset_file = transcription_results['onsets_csv']
-                        if verbose:
-                            print(f"  ✓ Transcribed {transcription_results['summary']['total_hits']} drum hits")
-                            print(f"  ✓ Onset mode: Using DrumTranscriber onsets for all analysis")
+                        print(f"  ✓ Transcribed {transcription_results['summary']['total_hits']} drum hits")
+                        print(f"  ✓ Copied onsets to: {drum_onset_path}")
+                        print(f"  ✓ Onset mode: Using DrumTranscriber onsets for all analysis")
         else:
             # Using librosa onset mode (default)
             if verbose:
@@ -641,6 +645,9 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ✓ Filtered onsets - SKIPPED (exists)")
                     onset_file = str(filtered_onset_file)
+                    # Also ensure standard onset file has filtered version
+                    import shutil
+                    shutil.copy(filtered_onset_file, paths['onsets_file'])
                     results['steps_completed'].append('onset_filtering_skipped')
                 else:
                     # Filter onsets that are too close together
@@ -656,8 +663,13 @@ def run_complete_pipeline(
                     results['onset_filter_stats'] = filter_stats
                     results['steps_completed'].append('onset_filtering')
 
+                    # Also overwrite the standard onset file so downstream steps use filtered version
+                    # (stem_paths['onsets_file'] is hardcoded, so we need to replace it)
+                    shutil.copy(filtered_onset_file, paths['onsets_file'])
+
                     if verbose:
                         print(f"  ✓ Filtered onsets saved: {filtered_onset_file.name}")
+                        print(f"  ✓ Updated standard onset file with filtered version")
             else:
                 if verbose:
                     print(f"\n[5.2] Onset filtering - SKIPPED (no tempo CSV yet)")
@@ -1124,6 +1136,55 @@ def run_complete_pipeline(
             results['steps_completed'].append('anchoring_filtering')
             results['steps_completed'].append('filtered_patterns_plot')
             results['steps_completed'].append('onset_histograms')
+
+    # ========================================================================
+    # STEP 6.2.5: ANCHORED MICROTIMING PLOTS (per section, per stem)
+    # ========================================================================
+    if daw_ready:
+        if verbose:
+            print("\n[6.2.5] Anchored microtiming plots - SKIPPED (DAW ready mode)")
+        results['steps_completed'].append('anchored_microtiming_plots_skipped_daw')
+    else:
+        try:
+            track_dir = Path(output_dir) / track_id
+            filtered_patterns_dir = track_dir / '6.2_filtered_patterns'
+
+            if not filtered_patterns_dir.exists():
+                if verbose:
+                    print("\n[6.2.5] Anchored microtiming plots - SKIPPED (no filtered patterns)")
+                results['steps_completed'].append('anchored_microtiming_plots_skipped')
+            else:
+                # Check if any anchored microtiming plots already exist
+                existing_plots = list(filtered_patterns_dir.glob('*/*_microtiming.pdf'))
+
+                if skip_existing and existing_plots:
+                    if verbose:
+                        print("\n[6.2.5] Anchored microtiming plots - SKIPPED (exists)")
+                    results['steps_completed'].append('anchored_microtiming_plots_skipped')
+                else:
+                    if verbose:
+                        print("\n[6.2.5] Generating anchored microtiming plots...")
+
+                    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+                    all_plots = anchored_microtiming_plots.create_all_anchored_microtiming_plots(
+                        str(filtered_patterns_dir),
+                        track_id,
+                        stems=onset_stems
+                    )
+
+                    results['anchored_microtiming_plots'] = all_plots
+                    results['steps_completed'].append('anchored_microtiming_plots')
+
+                    if verbose:
+                        total_plots = sum(len(v) for v in all_plots.values())
+                        print(f"  ✓ Anchored microtiming plots created ({total_plots} files)")
+
+        except Exception as e:
+            error_msg = f"Step 6.2.5 failed: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR: {e}")
+            # Don't raise - continue to next step
 
     # ========================================================================
     # STEP 6.5: RASTER PLOTS (for all stems)
@@ -2199,9 +2260,16 @@ def run_complete_pipeline(
             if verbose:
                 print(f"\n[11.1] Extracting sections from filtered patterns ({stem})...")
 
+            # Use stem-specific audio file, not original audio
+            stem_audio_path = paths['stems_dir'] / f'{stem}.wav'
+            if not stem_audio_path.exists():
+                if verbose:
+                    print(f"  ⚠️  Stem audio not found: {stem_audio_path.name}, skipping")
+                continue
+
             extracted = extract_sections.extract_all_sections(
                 filtered_dir=filtered_dir,
-                audio_path=Path(audio_file),
+                audio_path=stem_audio_path,
                 output_dir=sections_dir,
                 fade_duration=0.05,  # 50ms fade in/out
                 sr=44100,

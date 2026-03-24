@@ -30,6 +30,7 @@ Merges:
 - All anchored rhythm patterns into all_anchored_rhythm_patterns.pdf
 - All anchored beat histograms into all_anchored_beat_histograms.pdf
 - All anchored beat histograms (all onsets) into all_anchored_beat_histograms_all_onsets.pdf
+- All anchored microtiming plots into all_anchored_microtiming_plots.pdf (per stem)
 
 Usage:
     python merge_plots.py /path/to/batch/output
@@ -757,6 +758,29 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
             png_to_pdf(png, temp_pdf)
             merger.append(str(temp_pdf))
         output_pdf = stem_batch_dir / 'all_filtered_onsets_per_bar.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 26b. Merge anchored microtiming plots (PDF files in 6.2_filtered_patterns/{stem} folder)
+    # One PDF per track per stem: {track_id}_anchored_microtiming_plots.pdf
+    print(f'\nLooking for anchored microtiming plots ({stem})...')
+    anchored_microtiming_pdfs = []
+    for track_dir in track_dirs:
+        stem_dir = track_dir / '6.2_filtered_patterns' / stem
+        if stem_dir.exists():
+            # Look for the single combined file per track
+            pdf = stem_dir / f'{track_dir.name}_anchored_microtiming_plots.pdf'
+            if pdf.exists():
+                anchored_microtiming_pdfs.append(pdf)
+                print(f'  Found anchored microtiming: {track_dir.name}')
+
+    if anchored_microtiming_pdfs:
+        print(f'\nMerging {len(anchored_microtiming_pdfs)} anchored microtiming PDFs...')
+        output_pdf = stem_batch_dir / 'all_anchored_microtiming_plots.pdf'
+        merger = PdfMerger()
+        for pdf in anchored_microtiming_pdfs:
+            merger.append(str(pdf))
         merger.write(str(output_pdf))
         merger.close()
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
