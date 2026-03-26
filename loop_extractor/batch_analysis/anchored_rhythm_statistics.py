@@ -97,11 +97,14 @@ def calculate_section_statistics(
 
     # 3. Pulse Strength: Mean of onset_strength at beat positions (non-NaN)
     # Beat positions for pattern length
-    if pattern_length == 2:
-        # Positions 1, 5, 9, 13, 17, 21, 25, 29 (1-based)
+    if pattern_length == 1:
+        # L1: 16 positions (1 bar), beat positions are 1, 5, 9, 13 (1-based)
+        beat_positions = [1, 5, 9, 13]
+    elif pattern_length == 2:
+        # L2: 32 positions (2 bars), beat positions are 1, 5, 9, 13, 17, 21, 25, 29 (1-based)
         beat_positions = [1, 5, 9, 13, 17, 21, 25, 29]
     elif pattern_length == 4:
-        # Positions 1, 5, 9, 13, ... for all 4 bars
+        # L4: 64 positions (4 bars), beat positions 1, 5, 9, 13, ... for all 4 bars
         beat_positions = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61]
     else:
         beat_positions = []

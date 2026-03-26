@@ -3762,6 +3762,42 @@ python collect_data.py /path/to/batch/output
 
 ---
 
+### BUG: Time Signature Misdetection Causes Only 8 Ticks Per Bar Instead of 16
+
+**Issue:** Some tracks are detected with `time_signature=2` (2/4) instead of the correct 4/4 time, causing the anchoring step to only create 8 ticks per bar instead of 16. This results in rhythm histograms and microtiming plots showing only the first half of the bar with no data in the second half (ticks 8-15).
+
+**Root cause:**
+- Downbeat correction step detects tempo as half of what it should be (e.g., 67 BPM instead of 134 BPM)
+- Time signature incorrectly set to 2/4 instead of 4/4
+- Anchoring calculates `steps_per_bar = time_sig * GRID_SUBDIV_PER_BEAT = 2 * 4 = 8` instead of 16
+
+**Example affected track:**
+- Track: "104_Fake Love - Drake"
+- Detected: 67.03 BPM, time_signature=2
+- Actual: 134 BPM, time_signature=4
+- Result: Only ticks 0-7 in anchored CSV (first half of bar), no ticks 8-15 (second half)
+
+**Investigation needed:**
+- Why does tempo detection sometimes halve the tempo?
+- Is this related to specific drum patterns or instrumentation?
+- Should there be validation to detect when time_sig=2 is likely wrong?
+- Consider forcing `steps_per_bar=16` regardless of detected time signature
+
+**Potential fixes:**
+1. Add validation: if BPM < 100 and time_sig=2, double BPM and set time_sig=4
+2. Force `steps_per_bar=16` in anchoring regardless of time signature
+3. Improve tempo detection to avoid half-tempo errors
+4. Add user override for time signature and tempo
+
+**Related files:**
+- `loop_extractor/analysis/anchoring.py` (line 3009): `steps_per_bar = time_sig * GRID_SUBDIV_PER_BEAT`
+- `loop_extractor/beat_detection/downbeat_correction.py`: Time signature detection
+- Downbeat correction output: `3_corrected/{track}_downbeats_corrected.txt` (contains `time_signature=X`)
+
+**Note:** This bug is relatively rare but does occur. It affects all downstream analysis including rhythm histograms, microtiming plots, and anchored onset data.
+
+---
+
 ### Code Cleanup and Organization
 
 **Refactor Routines:**
@@ -3781,6 +3817,45 @@ python collect_data.py /path/to/batch/output
 - Update PIPELINE_DIAGRAM.md with any missing steps
 - Ensure TECHNICAL_DETAILS.md is up to date
 - Add usage examples for new features (groove pulse, rhythm patterns)
+
+---
+
+### Restructure Section Audio Export to Flat Directory
+
+**Issue:** Currently section audio files are exported to stem-specific subdirectories (`9.1_sections/drums/`, `9.1_sections/vocals/`, etc.). Need to flatten structure so all section audio files and full stem audio are in the root `9.1_sections/` directory.
+
+**Current structure:**
+```
+9.1_sections/
+├── drums/
+│   ├── SecNo1_verse_0.123_section.wav
+│   └── SecNo2_chorus_0.456_section.wav
+├── vocals/
+│   └── SecNo1_verse_0.123_section.wav
+...
+```
+
+**Desired structure:**
+```
+9.1_sections/
+├── SecNo1_verse_0.123_drums_section.wav
+├── SecNo1_verse_0.123_vocals_section.wav
+├── SecNo2_chorus_0.456_drums_section.wav
+├── drums.wav  (full stem audio)
+├── vocals.wav (full stem audio)
+...
+```
+
+**Changes needed:**
+1. Modify section extraction to output to parent `9.1_sections/` directory instead of stem subdirectory
+2. Update section filename pattern to include stem name (e.g., `*_drums_section.wav`)
+3. Copy full stem audio files to `9.1_sections/` for reference
+4. Update downstream code that reads section files (Pironio, Yodfat analysis)
+
+**Related files:**
+- `loop_extractor/main.py` (lines 2242-2290): Section extraction loop
+- `loop_extractor/config.py` (line 321): `get_stem_paths()` defines `sections_dir`
+- `loop_extractor/utils/extract_sections.py`: Section extraction logic
 
 ---
 

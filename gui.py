@@ -12,6 +12,8 @@ import subprocess
 import threading
 import sys
 import os
+import time
+import math
 
 class LoopExtractorGUI:
     def __init__(self, root):
@@ -32,6 +34,12 @@ class LoopExtractorGUI:
         self.last_input_dir = None
         self.last_output_dir = None
         self.apply_to_folder = tk.BooleanVar(value=True)  # Default: apply to all files
+
+        # Progress tracking
+        self.songs_processed = 0
+        self.songs_total = 0
+        self.processing_times = []  # List of processing times in seconds
+        self.current_song_start_time = None  # Track when current song started
 
         # Output mode
         self.output_mode = tk.StringVar(value="detailed")  # Default: detailed analysis + plots
@@ -573,6 +581,52 @@ class LoopExtractorGUI:
         )
         mp3_radio.pack(side=tk.LEFT)
 
+        # Circular progress indicator section
+        progress_indicator_frame = tk.Frame(right_frame, bg='#000080')
+        progress_indicator_frame.pack(fill=tk.X, pady=(20, 10))
+
+        # Container for pie chart and labels
+        pie_container = tk.Frame(progress_indicator_frame, bg='#000080')
+        pie_container.pack()
+
+        # Circular progress canvas (pie chart)
+        self.pie_size = 80
+        self.progress_canvas = tk.Canvas(
+            pie_container,
+            width=self.pie_size,
+            height=self.pie_size,
+            bg='#000080',
+            highlightthickness=0
+        )
+        self.progress_canvas.pack(side=tk.LEFT, padx=(0, 15))
+
+        # Draw initial empty pie (black circle)
+        self._draw_pie_chart(0)
+
+        # Labels container (right of pie chart)
+        labels_container = tk.Frame(pie_container, bg='#000080')
+        labels_container.pack(side=tk.LEFT, fill=tk.Y)
+
+        # Songs processed counter
+        self.songs_counter_label = tk.Label(
+            labels_container,
+            text="Songs Analysed: 0/0",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        self.songs_counter_label.pack(anchor='w', pady=(5, 5))
+
+        # Estimated time remaining
+        self.time_remaining_label = tk.Label(
+            labels_container,
+            text="Est. Time Left: --:--",
+            font=('Arial', 10),
+            fg='#00FF00',
+            bg='#000080'
+        )
+        self.time_remaining_label.pack(anchor='w', pady=(0, 5))
+
         # Progress bar
         progress_frame = tk.Frame(right_frame, bg='#000080')
         progress_frame.pack(fill=tk.X, pady=(20, 10))
@@ -656,6 +710,113 @@ class LoopExtractorGUI:
         self.status_text.see(tk.END)
         self.status_text.config(state=tk.DISABLED)
 
+    def _draw_pie_chart(self, progress_fraction):
+        """
+        Draw a circular pie chart showing progress.
+
+        Parameters
+        ----------
+        progress_fraction : float
+            Progress from 0.0 to 1.0
+        """
+        self.progress_canvas.delete("all")
+
+        # Dimensions
+        padding = 5
+        x0, y0 = padding, padding
+        x1, y1 = self.pie_size - padding, self.pie_size - padding
+
+        # Draw background circle (black/dark)
+        self.progress_canvas.create_oval(
+            x0, y0, x1, y1,
+            fill='#000000',
+            outline='#404040',
+            width=2
+        )
+
+        # Draw progress arc (white fill) if there's any progress
+        if progress_fraction > 0:
+            # Arc starts at top (90 degrees) and goes clockwise (negative extent)
+            extent = -360 * progress_fraction
+            self.progress_canvas.create_arc(
+                x0, y0, x1, y1,
+                start=90,
+                extent=extent,
+                fill='white',
+                outline='white'
+            )
+
+        # Draw center text showing percentage
+        center_x = self.pie_size / 2
+        center_y = self.pie_size / 2
+        percentage = int(progress_fraction * 100)
+        self.progress_canvas.create_text(
+            center_x, center_y,
+            text=f"{percentage}%",
+            fill='#00FF00' if progress_fraction > 0 else '#808080',
+            font=('Arial', 10, 'bold')
+        )
+
+    def _update_progress_display(self):
+        """Update the progress counter, pie chart, and time estimate."""
+        # Update counter label
+        self.songs_counter_label.config(
+            text=f"Songs Analysed: {self.songs_processed}/{self.songs_total}"
+        )
+
+        # Update pie chart
+        if self.songs_total > 0:
+            progress_fraction = self.songs_processed / self.songs_total
+        else:
+            progress_fraction = 0
+        self._draw_pie_chart(progress_fraction)
+
+        # Update time estimate
+        if self.songs_processed > 0 and self.songs_processed < self.songs_total:
+            avg_time = sum(self.processing_times) / len(self.processing_times)
+            songs_remaining = self.songs_total - self.songs_processed
+            est_seconds = avg_time * songs_remaining
+
+            # Format time
+            if est_seconds >= 3600:
+                hours = int(est_seconds // 3600)
+                minutes = int((est_seconds % 3600) // 60)
+                time_str = f"{hours}h {minutes}m"
+            elif est_seconds >= 60:
+                minutes = int(est_seconds // 60)
+                seconds = int(est_seconds % 60)
+                time_str = f"{minutes}m {seconds}s"
+            else:
+                time_str = f"{int(est_seconds)}s"
+
+            self.time_remaining_label.config(text=f"Est. Time Left: {time_str}")
+        elif self.songs_processed >= self.songs_total and self.songs_total > 0:
+            self.time_remaining_label.config(text="Est. Time Left: Done!")
+        else:
+            self.time_remaining_label.config(text="Est. Time Left: --:--")
+
+    def _reset_progress(self):
+        """Reset progress tracking for a new batch."""
+        self.songs_processed = 0
+        self.songs_total = 0
+        self.processing_times = []
+        self.current_song_start_time = None
+        self._update_progress_display()
+
+    def _count_audio_files(self, input_path):
+        """Count audio files to process."""
+        input_path = Path(input_path)
+        audio_extensions = {'.wav', '.mp3', '.flac', '.m4a', '.aac', '.ogg'}
+
+        if input_path.is_file():
+            return 1
+        elif input_path.is_dir():
+            count = 0
+            for ext in audio_extensions:
+                count += len(list(input_path.glob(f'*{ext}')))
+            return count
+        return 0
+
     def run_analysis(self):
         """Run the analysis pipeline"""
         print("DEBUG: run_analysis called!")  # Debug print
@@ -686,6 +847,11 @@ class LoopExtractorGUI:
     def _run_pipeline(self):
         """Execute the pipeline (runs in separate thread)"""
         try:
+            # Reset and initialize progress tracking
+            self._reset_progress()
+            self.songs_total = self._count_audio_files(self.input_path.get())
+            self.root.after(0, self._update_progress_display)
+
             # Build command
             cmd = [
                 sys.executable,
@@ -772,9 +938,47 @@ class LoopExtractorGUI:
             # Store process reference for cleanup
             self.running_process = process
 
-            # Stream output to status window
+            # Stream output to status window and track progress
             for line in process.stdout:
                 self.log_status(line.rstrip())
+
+                # Detect when a new song starts processing and extract actual total count
+                # Format: "Processing [1/25]: track_name"
+                if "Processing [" in line and "]: " in line:
+                    try:
+                        # Extract the total from "Processing [X/Y]:"
+                        import re
+                        match = re.search(r'Processing \[(\d+)/(\d+)\]:', line)
+                        if match:
+                            current_num = int(match.group(1))
+                            total_num = int(match.group(2))
+
+                            # Update total if we haven't set it yet or if it's different
+                            # (reuse mode might have different count than file count)
+                            if self.songs_total != total_num:
+                                self.songs_total = total_num
+                                self.root.after(0, self._update_progress_display)
+                    except:
+                        pass
+
+                    self.current_song_start_time = time.time()
+
+                # Detect when a song completes (successfully or with errors/failure)
+                # Only count completion if we have a start time (i.e., we saw "Processing [X/Y]:" first)
+                # This prevents counting intermediate "completed" messages from pipeline steps
+                if self.current_song_start_time is not None:
+                    if ("completed successfully" in line or
+                        "completed with" in line and "errors" in line or
+                        "failed:" in line):
+                        # Record processing time
+                        elapsed = time.time() - self.current_song_start_time
+                        self.processing_times.append(elapsed)
+                        self.current_song_start_time = None
+
+                        # Increment processed count
+                        self.songs_processed += 1
+                        # Update display on main thread
+                        self.root.after(0, self._update_progress_display)
 
             process.wait()
 
