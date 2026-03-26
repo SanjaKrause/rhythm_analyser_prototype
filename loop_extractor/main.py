@@ -107,6 +107,8 @@ def run_complete_pipeline(
     export_format: str = 'wav',
     reuse_existing: bool = False,  # Reuse existing stems/beats/songformer, skip steps 1-4.5, 5.5
     all_stems: bool = False,  # Run onset/grid analysis for all 5 stems
+    fullmix: bool = False,  # Also calculate on full mix (non-separated audio)
+    fullmix_dir: Optional[str] = None,  # Directory with original fullmix WAVs (for reuse mode)
     verbose: bool = True
 ) -> dict:
     """
@@ -173,6 +175,33 @@ def run_complete_pipeline(
         'warnings': [],
         'errors': []
     }
+
+    # ========================================================================
+    # FULLMIX WAV LOCATING (if fullmix calculation enabled)
+    # ========================================================================
+    fullmix_wav_path = None
+    if fullmix:
+        if reuse_existing:
+            # Reuse mode: look for {track_id}.wav in fullmix_dir
+            if fullmix_dir is None:
+                raise ValueError("--fullmix-dir is required when using --fullmix with --reuse-existing")
+
+            fullmix_dir_path = Path(fullmix_dir)
+            if not fullmix_dir_path.exists():
+                raise FileNotFoundError(f"Fullmix directory not found: {fullmix_dir}")
+
+            # Try to find matching WAV file
+            fullmix_wav_path = fullmix_dir_path / f"{track_id}.wav"
+            if not fullmix_wav_path.exists():
+                raise FileNotFoundError(f"Fullmix WAV not found: {fullmix_wav_path}")
+
+            if verbose:
+                print(f"Fullmix WAV located: {fullmix_wav_path}")
+        else:
+            # Normal mode: use the input audio file directly
+            fullmix_wav_path = audio_file
+            if verbose:
+                print(f"Fullmix WAV: using input file {fullmix_wav_path}")
 
     # ========================================================================
     # STEP 1: STEM SEPARATION
@@ -490,6 +519,9 @@ def run_complete_pipeline(
     # ========================================================================
     # Determine which stems to process
     onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    # Append fullmix if enabled
+    if fullmix:
+        onset_stems = list(onset_stems) + ['fullmix']  # Convert to list and append
     results['onset_stems'] = onset_stems
     results['onset_files'] = {}
 
@@ -520,11 +552,14 @@ def run_complete_pipeline(
                 if verbose:
                     print(f"\n[5] Onset detection from {stem} stem...")
 
-                # Detect onsets from stem
-                stem_wav = paths['stems_dir'] / f'{stem}.wav'
+                # Detect onsets from stem (or fullmix)
+                if stem == 'fullmix':
+                    stem_wav = fullmix_wav_path
+                else:
+                    stem_wav = paths['stems_dir'] / f'{stem}.wav'
 
                 if not stem_wav.exists():
-                    raise FileNotFoundError(f"{stem.capitalize()} stem not found: {stem_wav}")
+                    raise FileNotFoundError(f"{stem.capitalize()} {'WAV' if stem == 'fullmix' else 'stem'} not found: {stem_wav}")
 
                 onsets, onset_file_path = onset_detection.detect_and_save_onsets(
                     str(stem_wav),
@@ -955,6 +990,9 @@ def run_complete_pipeline(
         # IMPORTANT: drums must be first (defined in config.STEMS) because other stems
         # use drum anchoring as reference
         onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+        # Append fullmix if enabled
+        if fullmix:
+            onset_stems = list(onset_stems) + ['fullmix']
         results['anchoring_files'] = {}
         results['anchoring_filtered_files'] = {}
 
@@ -1166,6 +1204,9 @@ def run_complete_pipeline(
                         print("\n[6.2.5] Generating anchored microtiming plots...")
 
                     onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+                    # Append fullmix if enabled
+                    if fullmix:
+                        onset_stems = list(onset_stems) + ['fullmix']
                     all_plots = anchored_microtiming_plots.create_all_anchored_microtiming_plots(
                         str(filtered_patterns_dir),
                         track_id,
@@ -1195,6 +1236,9 @@ def run_complete_pipeline(
         results['steps_completed'].append('raster_plots_skipped_daw')
     else:
         onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+        # Append fullmix if enabled
+        if fullmix:
+            onset_stems = list(onset_stems) + ['fullmix']
         raster_created = False
 
         for stem in onset_stems:
@@ -1603,6 +1647,9 @@ def run_complete_pipeline(
     from analysis import anchored_rhythm_histograms
 
     onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    # Append fullmix if enabled
+    if fullmix:
+        onset_stems = list(onset_stems) + ['fullmix']
     rhythm_hist_created = False
 
     # Store rhythm_hist_dir per stem for use in Step 7.1
@@ -1683,6 +1730,9 @@ def run_complete_pipeline(
     from utils import anchored_beat_histograms
 
     onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    # Append fullmix if enabled
+    if fullmix:
+        onset_stems = list(onset_stems) + ['fullmix']
     beat_hist_created = False
 
     for stem in onset_stems:
@@ -1774,6 +1824,9 @@ def run_complete_pipeline(
         from batch_analysis import anchored_rhythm_statistics
 
         onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+        # Append fullmix if enabled
+        if fullmix:
+            onset_stems = list(onset_stems) + ['fullmix']
         stats_created = False
 
         for stem in onset_stems:
@@ -2236,6 +2289,9 @@ def run_complete_pipeline(
     # STEP 11.1: SECTION EXTRACTION (for all stems)
     # ========================================================================
     onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    # Append fullmix if enabled
+    if fullmix:
+        onset_stems = list(onset_stems) + ['fullmix']
     sections_extracted = False
     results['sections_extracted'] = {}
 
@@ -2260,11 +2316,15 @@ def run_complete_pipeline(
             if verbose:
                 print(f"\n[11.1] Extracting sections from filtered patterns ({stem})...")
 
-            # Use stem-specific audio file, not original audio
-            stem_audio_path = paths['stems_dir'] / f'{stem}.wav'
+            # Use stem-specific audio file (or fullmix)
+            if stem == 'fullmix':
+                stem_audio_path = fullmix_wav_path
+            else:
+                stem_audio_path = paths['stems_dir'] / f'{stem}.wav'
+
             if not stem_audio_path.exists():
                 if verbose:
-                    print(f"  ⚠️  Stem audio not found: {stem_audio_path.name}, skipping")
+                    print(f"  ⚠️  {'Fullmix' if stem == 'fullmix' else 'Stem'} audio not found: {stem_audio_path.name}, skipping")
                 continue
 
             extracted = extract_sections.extract_all_sections(
@@ -2646,6 +2706,10 @@ Environment:
                        help='Reuse existing stems, beats, and SongFormer files. Skips steps 1-4.5 and 5.5 (pattern detection). Useful for re-running analysis with different onset/anchoring parameters.')
     parser.add_argument('--all-stems', action='store_true',
                        help='Run onset detection and downstream analysis for all 5 stems (vocals, drums, bass, piano, other). Default: drums only.')
+    parser.add_argument('--fullmix', action='store_true',
+                       help='Also calculate onset detection and analysis on full mix (non-separated audio).')
+    parser.add_argument('--fullmix-dir', default=None,
+                       help='Directory containing original full mix WAV files (required when using --fullmix with --reuse-existing). Files should be named as {track_id}.wav.')
 
     args = parser.parse_args()
 
@@ -2764,6 +2828,8 @@ Environment:
                     export_format=args.export_format,
                     reuse_existing=args.reuse_existing,
                     all_stems=args.all_stems,
+                    fullmix=args.fullmix,
+                    fullmix_dir=args.fullmix_dir,
                     verbose=not args.quiet
                 )
 

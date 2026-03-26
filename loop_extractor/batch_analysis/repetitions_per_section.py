@@ -311,7 +311,7 @@ def create_repetitions_diagrams(output_dir: Path, stem: str = 'drums'):
 
 def detect_available_stems(track_dirs):
     """Detect which stems have data."""
-    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other']
+    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other', 'fullmix']
     found_stems = set()
 
     for track_dir in track_dirs[:5]:

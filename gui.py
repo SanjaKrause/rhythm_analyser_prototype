@@ -64,6 +64,10 @@ class LoopExtractorGUI:
         # Onset stems: drums only or all stems
         self.onset_all_stems = tk.BooleanVar(value=False)  # Default: drums only
 
+        # Fullmix calculation
+        self.calculate_fullmix = tk.BooleanVar(value=False)  # Default: don't calculate fullmix
+        self.fullmix_dir_path = tk.StringVar(value="/Volumes/PortableSSD/mastabfiles/renamed")  # Default path
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -326,6 +330,119 @@ class LoopExtractorGUI:
         self.manual_start_time.trace_add('write', lambda *args: self.start_value_label.config(text=f"{int(self.manual_start_time.get())}s"))
         self.manual_end_time.trace_add('write', lambda *args: self.end_value_label.config(text=f"{int(self.manual_end_time.get())}s"))
 
+        # ONSET STEMS section (moved from right column to left, below TIME RANGE)
+        stems_label = tk.Label(
+            time_frame,
+            text="ONSET STEMS:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        stems_label.pack(anchor='w', pady=(20, 10))
+
+        # Radio button: Drums only (default)
+        drums_only_radio = tk.Radiobutton(
+            time_frame,
+            text="Drums only",
+            variable=self.onset_all_stems,
+            value=False,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        drums_only_radio.pack(anchor='w', pady=(0, 8))
+
+        # Radio button: All 5 stems
+        all_stems_radio = tk.Radiobutton(
+            time_frame,
+            text="All 5 stems",
+            variable=self.onset_all_stems,
+            value=True,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        all_stems_radio.pack(anchor='w', pady=(0, 8))
+
+        # FULLMIX CALCULATION section
+        fullmix_label = tk.Label(
+            time_frame,
+            text="ALSO CALCULATE ON FULL WAV:",
+            font=('Arial', 11, 'bold'),
+            fg='white',
+            bg='#000080'
+        )
+        fullmix_label.pack(anchor='w', pady=(20, 10))
+
+        # Checkbox: Calculate fullmix
+        fullmix_check = tk.Checkbutton(
+            time_frame,
+            text="Yes",
+            variable=self.calculate_fullmix,
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        fullmix_check.pack(anchor='w', pady=(0, 8))
+
+        # Fullmix directory path label
+        fullmix_path_label = tk.Label(
+            time_frame,
+            text="Original WAV folder (required if reuse enabled):",
+            font=('Arial', 9),
+            fg='#CCCCCC',
+            bg='#000080'
+        )
+        fullmix_path_label.pack(anchor='w', pady=(5, 3))
+
+        # Fullmix path entry and browse button container
+        fullmix_path_frame = tk.Frame(time_frame, bg='#000080')
+        fullmix_path_frame.pack(fill=tk.X, pady=(0, 5))
+
+        fullmix_path_entry = tk.Entry(
+            fullmix_path_frame,
+            textvariable=self.fullmix_dir_path,
+            font=('Arial', 9),
+            bg='#1C1C1C',
+            fg='white',
+            insertbackground='white',
+            width=30
+        )
+        fullmix_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        fullmix_browse_btn = tk.Button(
+            fullmix_path_frame,
+            text="Browse",
+            command=self.browse_fullmix_dir,
+            font=('Arial', 9),
+            bg='#0000CC',
+            fg='white',
+            activebackground='#0000AA',
+            activeforeground='white',
+            relief=tk.RAISED,
+            bd=2
+        )
+        fullmix_browse_btn.pack(side=tk.LEFT)
+
+        # Hint label
+        fullmix_hint_label = tk.Label(
+            time_frame,
+            text="Hint: Required when 'Use existing stems/beats' is checked",
+            font=('Arial', 8, 'italic'),
+            fg='#00FF00',
+            bg='#000080'
+        )
+        fullmix_hint_label.pack(anchor='w', pady=(2, 0))
+
         # Onset calculation section (right side, next to TIME RANGE)
         onset_frame = tk.Frame(time_onset_container, bg='#000080')
         onset_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False)
@@ -432,46 +549,6 @@ class LoopExtractorGUI:
             activeforeground='white'
         )
         reuse_check.pack(anchor='w', pady=(0, 8))
-
-        # ONSET STEMS section
-        stems_label = tk.Label(
-            onset_frame,
-            text="ONSET STEMS:",
-            font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
-        )
-        stems_label.pack(anchor='w', pady=(15, 10))
-
-        # Radio button: Drums only (default)
-        drums_only_radio = tk.Radiobutton(
-            onset_frame,
-            text="Drums only",
-            variable=self.onset_all_stems,
-            value=False,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
-        )
-        drums_only_radio.pack(anchor='w', pady=(0, 8))
-
-        # Radio button: All 5 stems
-        all_stems_radio = tk.Radiobutton(
-            onset_frame,
-            text="All 5 stems",
-            variable=self.onset_all_stems,
-            value=True,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
-        )
-        all_stems_radio.pack(anchor='w', pady=(0, 8))
 
         # Right column - Plots and Status
         right_frame = tk.Frame(main_frame, bg='#000080')
@@ -703,6 +780,19 @@ class LoopExtractorGUI:
             self.last_output_dir = path
             self.log_status(f"Output path: {path}")
 
+    def browse_fullmix_dir(self):
+        """Browse for fullmix original WAV folder"""
+        current_path = self.fullmix_dir_path.get()
+        initial_dir = current_path if Path(current_path).exists() else None
+
+        path = filedialog.askdirectory(
+            title="Select original WAV folder (for fullmix)",
+            initialdir=initial_dir
+        )
+        if path:
+            self.fullmix_dir_path.set(path)
+            self.log_status(f"Fullmix WAV folder: {path}")
+
     def log_status(self, message):
         """Add message to status log"""
         self.status_text.config(state=tk.NORMAL)
@@ -904,6 +994,11 @@ class LoopExtractorGUI:
             # Add all stems flag
             if self.onset_all_stems.get():
                 cmd.append("--all-stems")
+
+            # Add fullmix calculation flag and directory
+            if self.calculate_fullmix.get():
+                cmd.append("--fullmix")
+                cmd.extend(["--fullmix-dir", self.fullmix_dir_path.get()])
 
             # Add onset threshold for drumtranscriber (default 0.5)
             cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])

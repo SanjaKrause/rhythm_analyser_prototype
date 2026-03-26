@@ -782,7 +782,7 @@ def detect_available_stems(track_dirs: List[Path]) -> List[str]:
 
     Returns list of stem names that have 6.6 rhythm histogram data.
     """
-    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other']
+    all_stems = ['vocals', 'drums', 'bass', 'piano', 'other', 'fullmix']
     found_stems = set()
 
     # Check first 5 tracks to detect available stems
