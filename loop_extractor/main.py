@@ -65,6 +65,7 @@ import argparse
 from pathlib import Path
 import sys
 import json
+import subprocess
 import importlib.util
 from typing import Optional
 
@@ -80,7 +81,7 @@ config = config_module.config
 # Import all pipeline modules
 from stem_separation import spleeter_interface
 from beat_detection import transformer
-from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections
+from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections, write_clicks_to_sectionwavs
 from utils import audio_export, raster_plots, midi_export, microtiming_plots, anchored_microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
@@ -97,6 +98,7 @@ def run_complete_pipeline(
     onset_file: Optional[str] = None,
     onset_mode: str = 'librosa',
     onset_threshold_drumtranscriber: float = 0.5,  # Filter onsets closer than this fraction of 1/16th note (0.5 = 1/32nd)
+    onset_threshold_madmom: float = 0.5,  # Madmom onset detection threshold (0.3-0.7, lower = more sensitive)
     loop_start_offset_ms: float = 0.0,  # Loop start offset in ms (0.0 = use grid time exactly, negative was adding silence)
     anchoring_mode: str = 'double',  # 'single' or 'double' anchoring
     skip_existing: bool = False,
@@ -561,24 +563,60 @@ def run_complete_pipeline(
                 if not stem_wav.exists():
                     raise FileNotFoundError(f"{stem.capitalize()} {'WAV' if stem == 'fullmix' else 'stem'} not found: {stem_wav}")
 
-                onsets, onset_file_path = onset_detection.detect_and_save_onsets(
-                    str(stem_wav),
-                    str(stem_onset_file),
-                    hop_length=512,
-                    backtrack=False,
-                    delta=0.12,
-                    refine_onsets=False,
-                    min_interval_s=0.15,
-                    sr=22050
-                )
+                # Use madmom CNN onset detection if specified
+                if onset_mode == 'madmom':
+                    if verbose:
+                        print(f"  Using madmom CNN onset detection (threshold={onset_threshold_madmom})...")
 
-                results['onset_files'][stem] = str(onset_file_path)
-                results[f'num_onsets_{stem}'] = len(onsets)
-                results['steps_completed'].append(f'onset_detection_{stem}')
+                    # Path to madmom onset detection script
+                    madmom_script = Path(__file__).parent / 'analysis' / 'onset_detection_madmom.py'
 
-                if verbose:
-                    print(f"  ✓ Detected {len(onsets)} onsets")
-                    print(f"  ✓ Saved to: {onset_file_path}")
+                    # Call madmom script via subprocess (uses new_beatnet_env)
+                    cmd = [
+                        config.MADMOM_PYTHON,
+                        str(madmom_script),
+                        '--audio', str(stem_wav),
+                        '--output', str(stem_onset_file),
+                        '--threshold', str(onset_threshold_madmom)
+                    ]
+
+                    result = subprocess.run(cmd, check=True, capture_output=not verbose, text=True)
+
+                    if not verbose and result.stdout:
+                        print(result.stdout)
+
+                    # Read the saved CSV to get onset count
+                    import pandas as pd
+                    onset_df = pd.read_csv(stem_onset_file)
+                    num_onsets = len(onset_df)
+
+                    results['onset_files'][stem] = str(stem_onset_file)
+                    results[f'num_onsets_{stem}'] = num_onsets
+                    results['steps_completed'].append(f'onset_detection_{stem}_madmom')
+
+                    if verbose:
+                        print(f"  ✓ Detected {num_onsets} onsets with madmom")
+                        print(f"  ✓ Saved to: {stem_onset_file}")
+                else:
+                    # Use librosa onset detection (default)
+                    onsets, onset_file_path = onset_detection.detect_and_save_onsets(
+                        str(stem_wav),
+                        str(stem_onset_file),
+                        hop_length=512,
+                        backtrack=False,
+                        delta=0.12,
+                        refine_onsets=False,
+                        min_interval_s=0.15,
+                        sr=22050
+                    )
+
+                    results['onset_files'][stem] = str(onset_file_path)
+                    results[f'num_onsets_{stem}'] = len(onsets)
+                    results['steps_completed'].append(f'onset_detection_{stem}')
+
+                    if verbose:
+                        print(f"  ✓ Detected {len(onsets)} onsets")
+                        print(f"  ✓ Saved to: {onset_file_path}")
 
         except Exception as e:
             error_msg = f"Step 5 ({stem}) failed: {e}"
@@ -2353,6 +2391,47 @@ def run_complete_pipeline(
         results['steps_completed'].append('section_extraction')
 
     # ========================================================================
+    # STEP 11.2: SECTION CLICK TRACKS (rhythm pattern clicks on section WAVs)
+    # ========================================================================
+    try:
+        track_output_dir = Path(output_dir) / track_id
+        rhythm_hist_dir = track_output_dir / '6.6_anchored_rhythm_histograms'
+
+        # Check if rhythm histograms exist (prerequisite)
+        if not rhythm_hist_dir.exists():
+            if verbose:
+                print(f"\n[11.2] Section click tracks - SKIPPED (no 6.6_anchored_rhythm_histograms)")
+        else:
+            # Check if click WAVs already exist
+            sections_dir = track_output_dir / '9.1_sections'
+            existing_clicks = list(sections_dir.rglob('*_section_clicks.wav')) if sections_dir.exists() else []
+
+            if skip_existing and len(existing_clicks) > 0:
+                if verbose:
+                    print(f"\n[11.2] Section click tracks - SKIPPED ({len(existing_clicks)} exist)")
+            else:
+                if verbose:
+                    print(f"\n[11.2] Writing rhythm pattern click tracks onto section WAVs...")
+
+                created = write_clicks_to_sectionwavs.write_clicks_to_section_wavs(
+                    track_dir=track_output_dir,
+                    stems=onset_stems,
+                    sr=44100,
+                    click_volume_db=0.0,
+                    verbose=verbose,
+                )
+
+                results['section_click_tracks'] = len(created)
+                if created:
+                    results['steps_completed'].append('section_click_tracks')
+
+    except Exception as e:
+        error_msg = f"Step 11.2 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+
+    # ========================================================================
     # STEP 13: PIRONIO PULSE CLARITY METRICS
     # ========================================================================
     try:
@@ -2425,7 +2504,6 @@ def run_complete_pipeline(
                 print(f"\n[13.1] Computing Pironio metrics for {len(section_wavs)} sections...")
 
             # Run via subprocess (requires madmom in new_beatnet_env)
-            import subprocess
             run_script = Path(__file__).parent / "run_pironio.py"
 
             cmd = [
@@ -2679,10 +2757,12 @@ Environment:
     parser.add_argument('--analyse-all', action='store_true',
                        help='Process all audio files in --audio-dir')
     parser.add_argument('--onset-file', help='Path to onsets CSV file')
-    parser.add_argument('--onset-mode', choices=['librosa', 'drumtranscriber'], default='librosa',
-                       help='Onset detection method: librosa (Step 5) or drumtranscriber (Step 5.1, requires DrumTranscriber)')
+    parser.add_argument('--onset-mode', choices=['librosa', 'drumtranscriber', 'madmom'], default='librosa',
+                       help='Onset detection method: librosa (Step 5), drumtranscriber (Step 5.1), or madmom (CNN-based)')
     parser.add_argument('--onset-threshold-drumtranscriber', type=float, default=0.5,
                        help='Minimum onset interval as fraction of 1/16th note (default: 0.5 = 1/32nd note). Only used with --onset-mode drumtranscriber')
+    parser.add_argument('--onset-threshold-madmom', type=float, default=0.5,
+                       help='Onset detection threshold for madmom (default: 0.5, range: 0.3-0.7). Lower = more sensitive. Only used with --onset-mode madmom')
     parser.add_argument('--anchoring-mode', choices=['single', 'double'], default='double',
                        help='Grid anchoring mode: single (start only) or double (start + end, default)')
     parser.add_argument('--loop-start-offset-ms', type=float, default=0.0,
@@ -2818,6 +2898,7 @@ Environment:
                     onset_file=args.onset_file,
                     onset_mode=args.onset_mode,
                     onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
+                    onset_threshold_madmom=args.onset_threshold_madmom,
                     loop_start_offset_ms=args.loop_start_offset_ms,
                     anchoring_mode=args.anchoring_mode,
                     skip_existing=False,
@@ -3032,6 +3113,7 @@ Environment:
             onset_file=args.onset_file,
             onset_mode=args.onset_mode,
             onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
+            onset_threshold_madmom=args.onset_threshold_madmom,
             loop_start_offset_ms=args.loop_start_offset_ms,
             anchoring_mode=args.anchoring_mode,
             skip_existing=False,
