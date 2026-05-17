@@ -480,6 +480,12 @@ Beat detection models sometimes misidentify the downbeat periodicity:
    - True tempo: 120 BPM → Detected: 60 BPM
 3. **Quadruple-time error**: Detects every 4 bars as 1 bar → tempo appears 4× too fast
 
+### Scope — factor-of-2 only
+
+The correction handles only factor-of-2 misdetections (`classify_factor2` checks the half-time and double-time windows around the median tempo with ±10% tolerance). Bars with 3 or 5 detected beats — i.e. ≈0.75× or ≈1.25× of base tempo — fall outside both windows, are classified as `"normal"`, and are **not corrected**.
+
+This is intentional. The pipeline reads downbeats from BeatTransformer's `downbeat_time(s)` head, which is more reliable than aggregating beat-level positions. Single-beat insertion/deletion errors at this stage are rare in pop music and would require beat-level reconstruction (not just merge/split of bars) to fix robustly. Remaining outliers stay in the corrected file but are flagged `usable=0` by the `OUTLIER_PERCENT` band and excluded from downstream rhythm/microtiming analysis.
+
 ### Algorithm
 
 #### Step 3.1: Extract Downbeat Times

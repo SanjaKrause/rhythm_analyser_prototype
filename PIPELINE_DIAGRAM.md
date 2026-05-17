@@ -184,7 +184,7 @@ flowchart LR
 - **Correction mechanics**:
   - *Merge*: Double-tempo bar merges with next bar (removes intermediate downbeat)
   - *Split*: Half-tempo bar splits at midpoint (inserts new downbeat)
-  - *3+5 beat case*: 5-beat bar (1.25×, classified "double") merges with following 3-beat bar (0.75×, "half"), creating 8-beat span that then splits into 2 normal bars
+- **Scope — factor-of-2 only**: Bars with 3 or 5 detected beats (≈0.75× / 1.25× of base) fall outside the half/double tolerance windows and are left unchanged. Since the pipeline reads from BeatTransformer's `downbeat_time(s)` head, single-beat insertions/deletions are rare in pop music; remaining outliers are filtered by the usability mask (`OUTLIER_PERCENT`) for downstream analysis.
 - **Fully automated**: No manual intervention required
 
 ---
