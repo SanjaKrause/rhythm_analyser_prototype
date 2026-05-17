@@ -76,13 +76,16 @@ def load_uncorrected_bar_tempos(beat_path: str) -> Tuple[List[float], List[float
     """
     sig = detect_time_signature(beat_path)
 
-    # Extract downbeat times (beat_pos == 1)
+    # Extract downbeat times (beat_pos == 1).
+    # Use column 1 `downbeat_time(s)` to stay consistent with the corrected
+    # pipeline (parse_downbeats_direct_strict). BeatTransformer's beat and
+    # downbeat heads can disagree by ~20 ms, which flips rounded BPM buckets.
     downbeat_times = []
     with open(beat_path, 'r') as f:
         for line in f.readlines()[1:]:
             p = line.split()
             if len(p) == 5 and int(p[2]) == 1:
-                downbeat_times.append(float(p[0]))
+                downbeat_times.append(float(p[1]))
             elif len(p) == 2 and int(p[1]) == 1:
                 downbeat_times.append(float(p[0]))
 
