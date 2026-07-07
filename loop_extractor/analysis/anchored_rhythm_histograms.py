@@ -822,16 +822,38 @@ def create_anchored_rhythm_patterns(
             median_phases = section_df['median_tick_phase'].values
             iqr_16th = section_df['iqr_16th'].values
 
+            # Binarization from RAW onset counts (per section x pattern-length group).
+            # Single events (count == 1) are dropped as noise; the strong/weak split
+            # sits at ((maxCount - 1) / 2) + 1 == (maxCount + 1) / 2 of the raw counts.
+            # Uses onset_count_original (unfiltered), so this floor replaces the relative
+            # groove-pulse filter for the pattern stage. Falls back to the old
+            # strength-based split for older CSVs without raw counts.
+            use_counts = 'onset_count_original' in section_df.columns
+            if use_counts:
+                onset_counts = section_df['onset_count_original'].values
+                max_count = onset_counts.max() if len(onset_counts) else 0
+                strong_threshold = (max_count + 1) / 2
+
             # Create binary pattern values
-            # >= threshold -> 1.0, 0 < value < threshold -> 0.5, value == 0 -> 0
             pattern_values = np.zeros(num_positions)
             for i in range(num_positions):
-                if onset_strength[i] >= binary_threshold:
-                    pattern_values[i] = 1.0
-                elif onset_strength[i] > 0:
-                    pattern_values[i] = 0.5
+                if use_counts:
+                    # Count-based ternary: drop singletons, split at (maxCount + 1) / 2
+                    count = onset_counts[i]
+                    if count <= 1:
+                        pattern_values[i] = 0.0          # noise floor (count 0 or 1)
+                    elif count > strong_threshold:
+                        pattern_values[i] = 1.0          # strong
+                    else:
+                        pattern_values[i] = 0.5          # weak (2 <= count <= threshold)
                 else:
-                    pattern_values[i] = 0.0
+                    # Fallback: strength-based split (>= threshold -> 1.0, 0 < s -> 0.5)
+                    if onset_strength[i] >= binary_threshold:
+                        pattern_values[i] = 1.0
+                    elif onset_strength[i] > 0:
+                        pattern_values[i] = 0.5
+                    else:
+                        pattern_values[i] = 0.0
 
             # X-axis: base positions (1-based)
             base_positions = np.arange(1, num_positions + 1)

@@ -167,11 +167,21 @@ def create_rhythm_pattern_histograms(
         median_phases = np.full(num_positions, np.nan)  # Median phases for position shifting
         iqr_16th = np.full(num_positions, np.nan)  # IQR for error bars
 
+        # Binarization threshold from RAW onset counts (per pattern-length group).
+        # Single events (count == 1) are treated as noise and dropped; the strong/weak
+        # split sits at ((maxCount - 1) / 2) + 1 == (maxCount + 1) / 2 of the raw counts.
+        # Uses count_original (unfiltered) so this floor replaces the relative
+        # groove-pulse filter for the pattern stage. Falls back to the old
+        # strength-based split for older CSVs without raw counts.
+        use_counts = 'count_original' in df_groove.columns
+        if use_counts:
+            max_count = df_groove['count_original'].max()
+            strong_threshold = (max_count + 1) / 2
+
         # Fill pattern data from groove pulse CSV
         for _, row in df_groove.iterrows():
             pos_1based = int(row['position'])  # Position is 1-based in CSV
             pos = pos_1based - 1  # Convert to 0-indexed
-            onset_strength = row['onset_strength_filtered']
 
             if 0 <= pos < num_positions:
                 position_exists[pos] = True
@@ -182,13 +192,24 @@ def create_rhythm_pattern_histograms(
                 if 'iqr_16th' in row and pd.notna(row['iqr_16th']):
                     iqr_16th[pos] = row['iqr_16th']
 
-                # Apply threshold: > 50% -> 1.0, 0 < strength <= 50% -> 0.5, strength = 0 -> 0
-                if onset_strength > 0.5:
-                    pattern_values[pos] = 1.0
-                elif onset_strength > 0:
-                    pattern_values[pos] = 0.5
+                if use_counts:
+                    # Count-based ternary: drop singletons, split at (maxCount + 1) / 2
+                    count = row['count_original']
+                    if count <= 1:
+                        pattern_values[pos] = 0.0          # noise floor (count 0 or 1)
+                    elif count > strong_threshold:
+                        pattern_values[pos] = 1.0          # strong
+                    else:
+                        pattern_values[pos] = 0.5          # weak (2 <= count <= threshold)
                 else:
-                    pattern_values[pos] = 0.0
+                    # Fallback: strength-based split (> 50% -> 1.0, 0 < s <= 50% -> 0.5)
+                    onset_strength = row['onset_strength_filtered']
+                    if onset_strength > 0.5:
+                        pattern_values[pos] = 1.0
+                    elif onset_strength > 0:
+                        pattern_values[pos] = 0.5
+                    else:
+                        pattern_values[pos] = 0.0
 
         # Get pattern count from groove pulse CSV data
         num_patterns_displayed = None
