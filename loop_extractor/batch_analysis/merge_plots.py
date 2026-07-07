@@ -4,6 +4,7 @@ Simple script to merge all plot PDFs from batch processing into combined PDFs.
 
 Merges:
 - All tempo plots into all_tempo_plots.pdf
+- All full-song (no-snippet, shared-scale) tempo plots into all_tempo_plots_fullsong.pdf
 - All raster comparison plots into all_raster_comparison.pdf
 - All raster standard plots into all_raster_standard.pdf
 - All new grid corrections plots into all_new_grid_corrections.pdf
@@ -17,6 +18,7 @@ Merges:
 - All new 4-method raster plots into all_raster_4method.pdf
 - All Spotify sections timelines into all_spotify_sections.pdf
 - All SongFormer sections timelines into all_songformer_sections.pdf
+- All SongFormer song sections (no snippet) into all_songformer_song_sections_no_snippet.pdf
 - All onsets per 1-bar pattern plots into all_onsets_per_pattern_1bar.pdf
 - All onsets per 2-bar pattern plots into all_onsets_per_pattern_2bar.pdf
 - All onsets per 4-bar pattern plots into all_onsets_per_pattern_4bar.pdf
@@ -102,6 +104,25 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
         output_pdf = batch_dir / 'all_tempo_plots.pdf'
         merger = PdfMerger()
         for pdf in tempo_pdfs:
+            merger.append(str(pdf))
+        merger.write(str(output_pdf))
+        merger.close()
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 1b. Merge full-song (no-snippet, shared-scale) tempo plots
+    print('Looking for full-song tempo plots...')
+    tempo_fullsong_pdfs = []
+    for track_dir in track_dirs:
+        tempo_pdf = track_dir / '3.5_tempo_plots' / f'{track_dir.name}_tempo_plots_fullsong.pdf'
+        if tempo_pdf.exists():
+            tempo_fullsong_pdfs.append(tempo_pdf)
+            print(f'  Found full-song tempo: {track_dir.name}')
+
+    if tempo_fullsong_pdfs:
+        print(f'\nMerging {len(tempo_fullsong_pdfs)} full-song tempo PDFs...')
+        output_pdf = batch_dir / 'all_tempo_plots_fullsong.pdf'
+        merger = PdfMerger()
+        for pdf in tempo_fullsong_pdfs:
             merger.append(str(pdf))
         merger.write(str(output_pdf))
         merger.close()
@@ -635,6 +656,30 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
             merger.append(str(temp_pdf))
 
         output_pdf = batch_dir / 'all_songformer_song_sections.pdf'
+        merger.write(str(output_pdf))
+        merger.close()
+
+        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
+
+    # 22b. Merge SongFormer song sections plots WITHOUT snippet marking (PNG files in 2.5_songformer_sections folder)
+    print('\nLooking for SongFormer song sections plots (no snippet)...')
+    sf_song_no_snippet_pngs = []
+    for track_dir in track_dirs:
+        sf_png = track_dir / '2.5_songformer_sections' / 'SF_song_sections_no_snippet.png'
+        if sf_png.exists():
+            sf_song_no_snippet_pngs.append(sf_png)
+            print(f'  Found SongFormer song sections (no snippet): {track_dir.name}')
+
+    if sf_song_no_snippet_pngs:
+        print(f'\nConverting and merging {len(sf_song_no_snippet_pngs)} SongFormer song sections (no snippet) PNGs...')
+
+        merger = PdfMerger()
+        for i, png in enumerate(sf_song_no_snippet_pngs):
+            temp_pdf = temp_dir / f'sf_song_sections_no_snippet_{i}.pdf'
+            png_to_pdf(png, temp_pdf)
+            merger.append(str(temp_pdf))
+
+        output_pdf = batch_dir / 'all_songformer_song_sections_no_snippet.pdf'
         merger.write(str(output_pdf))
         merger.close()
 

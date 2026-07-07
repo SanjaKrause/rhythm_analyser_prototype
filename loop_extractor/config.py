@@ -21,11 +21,15 @@ class Config:
     # Loop extractor environment (runs spleeter, analysis, everything except beat detection)
     MAIN_ENV = "loop_extractor_main"
 
-    # Subprocess environment (only for Beat-Transformer)
+    # Subprocess environment (for Beat-Transformer and Madmom onset detection)
     BEAT_DETECTION_ENV = "new_beatnet_env"
 
     # Path to conda/python executables
+    # Note: This environment is used for both beat detection and madmom onset detection
     BEAT_DETECTION_PYTHON = "/Users/alexk/miniforge3/envs/new_beatnet_env/bin/python"
+
+    # Madmom onset detection uses the same environment as beat detection
+    MADMOM_PYTHON = BEAT_DETECTION_PYTHON
 
     # ============================================================================
     # DIRECTORY PATHS

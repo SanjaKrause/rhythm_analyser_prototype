@@ -486,6 +486,21 @@ class LoopExtractorGUI:
         )
         drumtranscriber_radio.pack(anchor='w', pady=(0, 8))
 
+        # Radio button: Madmom CNN
+        madmom_radio = tk.Radiobutton(
+            onset_frame,
+            text="Madmom CNN",
+            variable=self.onset_mode,
+            value="madmom",
+            font=('Arial', 10),
+            fg='white',
+            bg='#000080',
+            selectcolor='#000080',
+            activebackground='#000080',
+            activeforeground='white'
+        )
+        madmom_radio.pack(anchor='w', pady=(0, 8))
+
         # ANCHORING MODE section
         anchoring_label = tk.Label(
             onset_frame,

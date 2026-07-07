@@ -1084,7 +1084,7 @@ def create_anchored_groove_pulse_beat_histograms(
             ax2.set_ylim(0, max_count * 1.2)
             ax2.set_ylabel('Count', fontsize=9)
 
-            title = f'SecNo{sec_no} — {section_label} — L{pattern_length} (Groove Pulse)'
+            title = f'SecNo{sec_no} — {section_label} — L{pattern_length}'
             if num_reps:
                 title += f' — {num_reps} reps'
             title += f' — {len(df_section)} IOIs'
@@ -1110,8 +1110,8 @@ def create_anchored_groove_pulse_beat_histograms(
                 row_data = {
                     'ioi_category': cat,
                     'nominal_ticks': stats['nominal_ticks'],
-                    'count': stats['count'],
-                    'onset_strength': float(onset_strength[i]),
+                    'count': stats['count'] if passes_threshold else 0,
+                    'onset_strength': float(onset_strength[i]) if passes_threshold else 0.0,
                     'passes_threshold': passes_threshold,
                     'median_ioi': stats['median'] if passes_threshold else np.nan,
                     'median_shift': stats['median_shift'] if passes_threshold else np.nan,
@@ -1306,7 +1306,7 @@ def create_anchored_groove_pulse_beat_histograms_all_onsets(
             ax.set_ylim(0, 1)
             ax.set_yticks([])
 
-            title = f'SecNo{sec_no} — {section_label} — L{pattern_length} (Groove Pulse)'
+            title = f'SecNo{sec_no} — {section_label} — L{pattern_length}'
             if num_reps:
                 title += f' — {num_reps} reps'
             title += f' — {len(df_section)} IOIs'
@@ -1623,13 +1623,15 @@ if __name__ == '__main__':
     create_anchored_beat_histograms(filtered_patterns_dir, track_id, output_dir)
     create_anchored_beat_histograms_all_onsets(filtered_patterns_dir, track_id, output_dir)
 
-    # Create beat patterns from the aggregated CSV
-    beat_histograms_csv = Path(output_dir) / f'{track_id}_anchored_beat_histograms.csv'
-    if beat_histograms_csv.exists():
-        create_anchored_beat_patterns(str(beat_histograms_csv), track_id, output_dir)
-
     # Run groove pulse filtered versions if groove_pulse_csv is provided
     if len(sys.argv) >= 5:
         groove_pulse_csv = sys.argv[4]
         create_anchored_groove_pulse_beat_histograms(filtered_patterns_dir, track_id, output_dir, groove_pulse_csv)
         create_anchored_groove_pulse_beat_histograms_all_onsets(filtered_patterns_dir, track_id, output_dir, groove_pulse_csv)
+
+    # Create beat patterns from groove pulse beat histograms (fallback to regular)
+    groove_pulse_beat_csv = Path(output_dir) / f'{track_id}_groove_pulse_beat_histograms.csv'
+    regular_beat_csv = Path(output_dir) / f'{track_id}_anchored_beat_histograms.csv'
+    beat_patterns_csv = groove_pulse_beat_csv if groove_pulse_beat_csv.exists() else regular_beat_csv
+    if beat_patterns_csv.exists():
+        create_anchored_beat_patterns(str(beat_patterns_csv), track_id, output_dir)

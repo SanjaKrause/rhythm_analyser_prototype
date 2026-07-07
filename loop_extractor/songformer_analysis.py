@@ -546,11 +546,12 @@ def plot_songformer_song_sections(
     track_name: str = "",
     song_id: Optional[int] = None,
     downbeats_file: Optional[Path] = None,
+    mark_snippet: bool = True,
     verbose: bool = True
 ) -> Optional[Path]:
     """
     Create a horizontal bar plot showing ALL SongFormer sections for the full song,
-    with snippet boundaries marked.
+    optionally with snippet boundaries marked.
 
     Parameters
     ----------
@@ -570,6 +571,9 @@ def plot_songformer_song_sections(
         Song ID to include in the title
     downbeats_file : Path, optional
         Path to corrected downbeats file for adding bar markers
+    mark_snippet : bool
+        If True, draw snippet boundary lines, shaded region and legend entry.
+        If False, produce a clean full-song plot without any snippet marking.
     verbose : bool
         Print progress messages
 
@@ -628,12 +632,11 @@ def plot_songformer_song_sections(
             ax.text(label_x, y_pos, label.upper(), ha='center', va='center',
                    fontsize=8, fontweight='bold')
 
-    # Add snippet boundary lines
-    ax.axvline(x=snippet_start, color='red', linestyle='--', linewidth=2, alpha=0.8)
-    ax.axvline(x=snippet_end, color='red', linestyle='--', linewidth=2, alpha=0.8)
-
-    # Add shaded region for snippet
-    ax.axvspan(snippet_start, snippet_end, alpha=0.15, color='red')
+    # Add snippet boundary lines and shaded region (optional)
+    if mark_snippet:
+        ax.axvline(x=snippet_start, color='red', linestyle='--', linewidth=2, alpha=0.8)
+        ax.axvline(x=snippet_end, color='red', linestyle='--', linewidth=2, alpha=0.8)
+        ax.axvspan(snippet_start, snippet_end, alpha=0.15, color='red')
 
     # Add downbeat markers if provided
     if downbeats_file and Path(downbeats_file).exists():
@@ -682,8 +685,9 @@ def plot_songformer_song_sections(
     present_labels = set(s.get("label", "unknown") for s in sections)
     legend_patches = [mpatches.Patch(color=label_colors.get(l, default_color), label=l.capitalize())
                       for l in present_labels if l in label_colors]
-    # Add snippet boundary to legend
-    legend_patches.append(mpatches.Patch(color='red', alpha=0.3, label=f'Snippet ({snippet_start:.1f}s - {snippet_end:.1f}s)'))
+    # Add snippet boundary to legend (only when snippet is marked)
+    if mark_snippet:
+        legend_patches.append(mpatches.Patch(color='red', alpha=0.3, label=f'Snippet ({snippet_start:.1f}s - {snippet_end:.1f}s)'))
     # Add bar markers to legend if downbeats were added
     if downbeats_file and Path(downbeats_file).exists():
         from matplotlib.lines import Line2D
@@ -800,6 +804,23 @@ def create_songformer_plots(
     )
     if sf_song_path:
         results["output_songformer_song_plot"] = str(sf_song_path)
+
+    # 2b. Full song sections plot WITHOUT snippet marking (clean version)
+    sf_song_plot_no_snippet = output_dir / "SF_song_sections_no_snippet.png"
+    sf_song_path_no_snippet = plot_songformer_song_sections(
+        sections=sf_sections,
+        song_duration=song_duration,
+        snippet_start=snippet_start,
+        snippet_duration=snippet_duration,
+        output_path=sf_song_plot_no_snippet,
+        track_name=track_name,
+        song_id=song_id,
+        downbeats_file=downbeats_file,
+        mark_snippet=False,
+        verbose=verbose
+    )
+    if sf_song_path_no_snippet:
+        results["output_songformer_song_plot_no_snippet"] = str(sf_song_path_no_snippet)
 
     # 3. Create snippet-filtered section changes CSV (sections that START within snippet)
     snippet_end = snippet_start + snippet_duration

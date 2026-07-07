@@ -571,6 +571,48 @@ def create_tempo_plots(
     plt.close(fig)
 
     result['plot_pdf'] = str(plot_path)
+
+    # ------------------------------------------------------------------
+    # Second figure: full-song only (no snippet), with the corrected
+    # tempo-over-time panel sharing the uncorrected panel's y-axis scale.
+    # This makes the flattening from the correction visible at the same
+    # zoom level as the (wide-ranging) uncorrected tempi.
+    # ------------------------------------------------------------------
+    fig2, axes2 = plt.subplots(4, 1, figsize=(10, 12))
+
+    title2 = f"Track {track_id} - Bar Tempo Analysis, Full Song (Time Sig: {sig_uncorr}/4)"
+    fig2.suptitle(title2, fontsize=14, fontweight='bold')
+
+    # UNCORRECTED full-song plots (no snippet shading)
+    plot_tempo_over_time(axes2[0], uncorr_indices, uncorr_tempos,
+                        '1. Bar Tempo Over Time (Full Song) - Uncorrected',
+                        color='blue')
+    plot_tempo_histogram(axes2[1], uncorr_tempos, bins,
+                        '2. Bar Tempo Histogram (Full Song) - Uncorrected',
+                        color='skyblue')
+
+    # CORRECTED full-song plots (with usable mask, no snippet shading)
+    plot_tempo_over_time(axes2[2], corr_indices, corr_tempos,
+                        '3. Bar Tempo Over Time (Full Song) - Corrected',
+                        color='green', usable_mask=corr_usable)
+    plot_tempo_histogram(axes2[3], corr_tempos, bins,
+                        '4. Bar Tempo Histogram (Full Song) - Corrected',
+                        color='lightgreen', usable_mask=corr_usable)
+
+    # Match corrected tempo-over-time y-axis to the uncorrected scale.
+    # autoscale_view() forces the uncorrected view limits to be computed now
+    # (they are otherwise only finalized at draw time).
+    axes2[0].autoscale_view()
+    axes2[2].set_ylim(axes2[0].get_ylim())
+
+    fig2.tight_layout(rect=[0, 0.01, 1, 0.99])
+
+    plot_path_fullsong = output_dir / f'{track_id}_tempo_plots_fullsong.pdf'
+    fig2.savefig(plot_path_fullsong)
+    plt.close(fig2)
+
+    result['plot_pdf_fullsong'] = str(plot_path_fullsong)
+
     return result
 
 

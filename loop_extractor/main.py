@@ -375,6 +375,7 @@ def run_complete_pipeline(
             )
 
             results['tempo_plots_pdf'] = tempo_files.get('plot_pdf')
+            results['tempo_plots_pdf_fullsong'] = tempo_files.get('plot_pdf_fullsong')
             results['tempo_csv'] = tempo_files['csv']
 
             if daw_ready:
@@ -1804,11 +1805,13 @@ def run_complete_pipeline(
                 output_dir=str(beat_hist_dir)
             )
 
-            # Create binary beat patterns from aggregated CSV
+            # Create binary beat patterns from groove pulse beat histograms CSV (fallback to regular)
+            groove_pulse_beat_csv = beat_hist_dir / f'{track_id}_groove_pulse_beat_histograms.csv'
             aggregated_csv = beat_hist_dir / f'{track_id}_anchored_beat_histograms.csv'
-            if aggregated_csv.exists():
+            beat_patterns_csv = groove_pulse_beat_csv if groove_pulse_beat_csv.exists() else aggregated_csv
+            if beat_patterns_csv.exists():
                 pattern_results = anchored_beat_histograms.create_anchored_beat_patterns(
-                    beat_histograms_csv=str(aggregated_csv),
+                    beat_histograms_csv=str(beat_patterns_csv),
                     track_id=track_id,
                     output_dir=str(beat_hist_dir)
                 )
