@@ -2864,13 +2864,16 @@ Environment:
 
         # Merge all plot PDFs (per stem)
         try:
-            from batch_analysis.merge_plots import merge_plots
+            from batch_analysis.merge_plots import merge_plots, merge_plots_noHats
             print("\n" + "=" * 80)
             print("MERGING PLOTS")
             print("=" * 80)
             for stem in available_stems:
                 print(f"\n--- Merging plots for {stem} ---")
                 merge_plots(Path(args.output_dir), stem=stem)
+            # noHats variant batch plots (drums-only) -> batch_analysis/drums/noHats/
+            if 'drums' in available_stems:
+                merge_plots_noHats(Path(args.output_dir), stem='drums')
         except ImportError as ie:
             print(f"\n⚠️  PDF merging skipped: {ie}")
             print("Install required packages: pip install PyPDF2 Pillow reportlab")
