@@ -1116,6 +1116,42 @@ def run_complete_pipeline(
                     if verbose:
                         print(f"  ✓ Filtering ({stem}) completed: {len(filter_results)} files filtered")
 
+                    # ================================================================
+                    # STEP 6.2.6: DRUM CLASSIFICATION + noHats FILTERING (drums only)
+                    # Classify each L2 anchored onset (kick/snare/tom/hihat/ride/crash),
+                    # write predicted_class + confidence back into 6.2, and write a
+                    # cymbal-filtered copy to 6.3_filtered_patterns_noHats/drums.
+                    # ================================================================
+                    try:
+                        from analysis import classify_anchored_drums
+                        nohats_dir = stem_paths['nohats_patterns_dir']
+                        nohats_exists = nohats_dir.exists() and any(nohats_dir.glob('*_L2_*_anchored.csv'))
+
+                        if not classify_anchored_drums.DRUM_CLASSIFICATION_AVAILABLE:
+                            if verbose:
+                                print("\n[6.2.6] Drum classification - SKIPPED (DrumTranscriber unavailable)")
+                            results['steps_completed'].append('drum_classification_unavailable')
+                        elif skip_existing and nohats_exists:
+                            if verbose:
+                                print("\n[6.2.6] Drum classification - SKIPPED (exists)")
+                        else:
+                            if verbose:
+                                print(f"\n[6.2.6] Classifying anchored drum onsets ({stem})...")
+                            drums_wav = paths['stems_dir'] / 'drums.wav'
+                            clf_results = classify_anchored_drums.classify_and_filter_anchored_drums(
+                                drums_wav_path=drums_wav,
+                                filtered_dir=filtered_dir,
+                                nohats_dir=nohats_dir,
+                                verbose=verbose,
+                            )
+                            results['drum_classification'] = clf_results
+                            results['steps_completed'].append('drum_classification')
+                    except Exception as e:
+                        error_msg = f"Step 6.2.6 (Drum classification) failed: {e}"
+                        results['errors'].append(error_msg)
+                        if verbose:
+                            print(f"  ✗ ERROR (drum classification): {e}")
+
                 # ================================================================
                 # OTHER STEMS: Apply drum anchoring (no independent anchoring/filtering)
                 # ================================================================
@@ -1618,6 +1654,132 @@ def run_complete_pipeline(
 
         if stats_created:
             results['steps_completed'].append('anchored_statistics')
+
+    # ========================================================================
+    # STEP 7.6/7.7/7.8: noHats VARIANT (drums only)
+    # Rhythm histograms, beat histograms and statistics computed on the
+    # cymbal-filtered patterns (6.3_filtered_patterns_noHats), written to
+    # parallel _noHats folders so BOTH variants are kept side by side.
+    # Mirrors the "filtered" branch of Steps 7 / 7.1 / 7.2 for drums.
+    # ========================================================================
+    if daw_ready:
+        if verbose:
+            print("\n[7.6-7.8] noHats variant - SKIPPED (DAW ready mode)")
+    else:
+        try:
+            stem = 'drums'
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            nohats_dir = stem_paths['nohats_patterns_dir']
+            nohats_rhythm_dir = stem_paths['nohats_rhythm_histograms_dir']
+            nohats_beat_dir = stem_paths['nohats_beat_histograms_dir']
+            track_dir = Path(output_dir) / track_id
+            nohats_stats_dir = track_dir / '6.8_anchored_statistics_noHats' / stem
+
+            if not nohats_dir.exists() or not any(nohats_dir.glob('*_L2_*_anchored.csv')):
+                if verbose:
+                    print("\n[7.6-7.8] noHats variant - SKIPPED (no noHats patterns)")
+            else:
+                from analysis import anchored_rhythm_histograms as _nh_arh
+                from utils import anchored_beat_histograms as _nh_abh
+                from batch_analysis import anchored_rhythm_statistics as _nh_ars
+                nh_tid = track_id + '_filtered'
+
+                # ---- 7.6: noHats rhythm histograms ----
+                if verbose:
+                    print("\n[7.6] noHats rhythm histograms (drums)...")
+                nohats_rhythm_dir.mkdir(parents=True, exist_ok=True)
+                nh_rhythm = _nh_arh.create_anchored_rhythm_histograms(
+                    anchoring_dir=str(nohats_dir),
+                    output_dir=str(nohats_rhythm_dir),
+                    track_id=nh_tid,
+                    verbose=verbose
+                )
+                if nh_rhythm and nh_rhythm.get('csv'):
+                    nh_gp = _nh_arh.create_anchored_groove_pulse_histograms(
+                        rhythm_histograms_csv=nh_rhythm['csv'],
+                        track_id=nh_tid,
+                        output_dir=str(nohats_rhythm_dir),
+                        verbose=verbose
+                    )
+                    if nh_gp and nh_gp.get('csv'):
+                        _nh_arh.create_anchored_rhythm_patterns(
+                            groove_pulse_csv=nh_gp['csv'],
+                            track_id=nh_tid,
+                            output_dir=str(nohats_rhythm_dir),
+                            verbose=verbose
+                        )
+
+                # ---- 7.7: noHats beat histograms ----
+                if verbose:
+                    print("\n[7.7] noHats beat histograms (drums)...")
+                nohats_beat_dir.mkdir(parents=True, exist_ok=True)
+                _nh_abh.create_anchored_beat_histograms(
+                    filtered_patterns_dir=str(nohats_dir),
+                    track_id=track_id,
+                    output_dir=str(nohats_beat_dir)
+                )
+                _nh_abh.create_anchored_beat_histograms_all_onsets(
+                    filtered_patterns_dir=str(nohats_dir),
+                    track_id=track_id,
+                    output_dir=str(nohats_beat_dir)
+                )
+                nh_gpb = nohats_beat_dir / f'{track_id}_groove_pulse_beat_histograms.csv'
+                nh_agg = nohats_beat_dir / f'{track_id}_anchored_beat_histograms.csv'
+                nh_bpc = nh_gpb if nh_gpb.exists() else nh_agg
+                if nh_bpc.exists():
+                    _nh_abh.create_anchored_beat_patterns(
+                        beat_histograms_csv=str(nh_bpc),
+                        track_id=track_id,
+                        output_dir=str(nohats_beat_dir)
+                    )
+                nh_gpcsv = nohats_rhythm_dir / f'{nh_tid}_anchored_groove_pulse_histograms.csv'
+                if nh_gpcsv.exists():
+                    _nh_abh.create_anchored_groove_pulse_beat_histograms(
+                        filtered_patterns_dir=str(nohats_dir),
+                        track_id=track_id,
+                        output_dir=str(nohats_beat_dir),
+                        groove_pulse_csv=str(nh_gpcsv)
+                    )
+                    _nh_abh.create_anchored_groove_pulse_beat_histograms_all_onsets(
+                        filtered_patterns_dir=str(nohats_dir),
+                        track_id=track_id,
+                        output_dir=str(nohats_beat_dir),
+                        groove_pulse_csv=str(nh_gpcsv)
+                    )
+
+                # ---- 7.8: noHats statistics ----
+                if verbose:
+                    print("\n[7.8] noHats statistics (drums)...")
+                nohats_stats_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    _nh_ars.anchored_statistics_for_track_stem(
+                        rhythm_hist_dir=nohats_rhythm_dir,
+                        stats_dir=nohats_stats_dir,
+                        track_id=track_id
+                    )
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! noHats rhythm statistics: {e}")
+                try:
+                    _nh_ars.anchored_beat_statistics_for_track_stem(
+                        beat_hist_dir=nohats_beat_dir,
+                        stats_dir=nohats_stats_dir,
+                        track_id=track_id
+                    )
+                except Exception as e:
+                    if verbose:
+                        print(f"  ! noHats beat statistics: {e}")
+
+                results['steps_completed'].append('anchored_histograms_noHats')
+                if verbose:
+                    print("  ✓ noHats variant complete "
+                          "(6.6/6.7/6.8 _noHats folders written)")
+
+        except Exception as e:
+            error_msg = f"Step 7.6-7.8 (noHats variant) failed: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR (noHats variant): {e}")
 
     # ========================================================================
     # STEP 7 (OLD): RMS ANALYSIS - COMMENTED OUT FOR FUTURE REFERENCE
@@ -2774,6 +2936,9 @@ Environment:
             from batch_analysis.collect_data import create_collected_data, collect_pironio_yodfat_data, collect_spotify_data
             for stem in available_stems:
                 create_collected_data(Path(args.output_dir), stem=stem)
+            # noHats variant (drums-only, L2-only): -> collected_data/drums/noHats_L2_ratio*.csv
+            if 'drums' in available_stems:
+                create_collected_data(Path(args.output_dir), stem='drums', variant='noHats')
             # Pironio/Yodfat and Spotify are not stem-specific
             collect_pironio_yodfat_data(Path(args.output_dir))
             collect_spotify_data(Path(args.output_dir))

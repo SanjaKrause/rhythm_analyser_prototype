@@ -319,9 +319,13 @@ class Config:
             'comprehensive_csv': track_dir / '5_grid' / stem / f'{track_name}_comprehensive_phases.csv',
             'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER / stem,
             'filtered_patterns_dir': track_dir / '6.2_filtered_patterns' / stem,
+            'nohats_patterns_dir': track_dir / '6.3_filtered_patterns_noHats' / stem,
             # Downstream analysis folders (stem-specific)
             'rhythm_histograms_dir': track_dir / '6.6_anchored_rhythm_histograms' / stem,
             'beat_histograms_dir': track_dir / '6.7_anchored_beat_histograms' / stem,
+            # noHats variant twins (cymbal-filtered; computed from 6.3_filtered_patterns_noHats)
+            'nohats_rhythm_histograms_dir': track_dir / '6.6_anchored_rhythm_histograms_noHats' / stem,
+            'nohats_beat_histograms_dir': track_dir / '6.7_anchored_beat_histograms_noHats' / stem,
             'sections_dir': track_dir / '9.1_sections' / stem,
         }
 
