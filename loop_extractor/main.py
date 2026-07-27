@@ -1120,7 +1120,7 @@ def run_complete_pipeline(
                     # STEP 6.2.6: DRUM CLASSIFICATION + noHats FILTERING (drums only)
                     # Classify each L2 anchored onset (kick/snare/tom/hihat/ride/crash),
                     # write predicted_class + confidence back into 6.2, and write a
-                    # cymbal-filtered copy to 6.3_filtered_patterns_noHats/drums.
+                    # cymbal-filtered copy to 6.2_filtered_patterns_noHats/drums.
                     # ================================================================
                     try:
                         from analysis import classify_anchored_drums
@@ -1658,7 +1658,7 @@ def run_complete_pipeline(
     # ========================================================================
     # STEP 7.6/7.7/7.8: noHats VARIANT (drums only)
     # Rhythm histograms, beat histograms and statistics computed on the
-    # cymbal-filtered patterns (6.3_filtered_patterns_noHats), written to
+    # cymbal-filtered patterns (6.2_filtered_patterns_noHats), written to
     # parallel _noHats folders so BOTH variants are kept side by side.
     # Mirrors the "filtered" branch of Steps 7 / 7.1 / 7.2 for drums.
     # ========================================================================

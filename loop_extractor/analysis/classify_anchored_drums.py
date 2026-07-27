@@ -10,7 +10,7 @@ pattern file in ``6.2_filtered_patterns/drums`` it:
      DrumTranscriber CNN and writes two columns back into the file in place:
      ``predicted_class`` and ``confidence``.
 
-  2. Writes a cymbal-filtered copy to ``6.3_filtered_patterns_noHats/drums`` with
+  2. Writes a cymbal-filtered copy to ``6.2_filtered_patterns_noHats/drums`` with
      the same filename. Onsets classified as a cymbal (crash / hihat_c / ride)
      have their ``onset_time``, ``phase``, ``tick_phase``, ``predicted_class`` and
      ``confidence`` cleared, so the row reads as an empty grid slot (no event) -
@@ -142,7 +142,7 @@ def classify_and_filter_anchored_drums(drums_wav_path, filtered_dir, nohats_dir,
     filtered_dir : str or Path
         6.2_filtered_patterns/drums (input; class columns written back here).
     nohats_dir : str or Path
-        6.3_filtered_patterns_noHats/drums (output; cymbal-filtered copies).
+        6.2_filtered_patterns_noHats/drums (output; cymbal-filtered copies).
     sr : int
         Sample rate for loading drums.wav.
     remove_classes : tuple

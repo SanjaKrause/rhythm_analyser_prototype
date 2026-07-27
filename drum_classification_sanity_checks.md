@@ -12,7 +12,7 @@ For each `*_L2_*_anchored.csv` in `6.2_filtered_patterns/drums`:
 2. Cut a window per onset: start **20 ms before** the onset (to catch the attack),
    cap length at **1 s**, pad symmetrically — same helpers the CNN uses internally.
 3. Classify each window → `predicted_class` + `confidence`, written back into the file.
-4. Write a cymbal-filtered copy to `6.3_filtered_patterns_noHats/drums`, clearing
+4. Write a cymbal-filtered copy to `6.2_filtered_patterns_noHats/drums`, clearing
    onsets classified as **crash / hihat_c / ride** so they read as empty grid slots.
 
 The model has exactly **6 classes** (`crash, hihat_c, kick_drum, ride, snare, tom_h`) —
