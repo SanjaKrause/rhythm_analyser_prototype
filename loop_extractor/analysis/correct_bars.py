@@ -631,7 +631,18 @@ def correct_downbeats(
             n_half = classes.count('half')
 
     # Determine dominant pattern
-    if n_normal >= (n_double + n_half):
+    if base_override is not None:
+        # The BPM-threshold rebasing has already decided the true tempo
+        # (base_override); correct all bars TOWARDS it: merge 'double' bars
+        # pairwise, split 'half' bars. Without this, a song detected entirely
+        # in double time makes 'double' the dominant class, the factor2 branch
+        # keeps those bars unchanged, and the usability filter (centred on
+        # base_override) then discards every bar -> whole song lost.
+        # Note: pairwise merging adopts the tracker's downbeat phase; which of
+        # the two merged half-bars carries the true "One" is undetermined.
+        dominant_major = 'normal'
+        factor2_orientation = ''
+    elif n_normal >= (n_double + n_half):
         dominant_major = 'normal'
         factor2_orientation = ''
     else:

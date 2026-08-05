@@ -31,16 +31,16 @@ Column Structure:
     Rhythm Pattern (RP): L*16 positions
         RP_str_0 ... RP_str_N, RP_med_0 ... RP_med_N, RP_iqr_0 ... RP_iqr_N
 
-    Beat Histogram (BH): 7 IOI categories (1/16, 1/8, 3/16, 1/4, 3/8, 1/2, 3/4)
-        BH_str_1/16 ... BH_str_3/4 (onset strength)
-        BH_med_1/16 ... BH_med_3/4 (median shift)
-        BH_iqr_1/16 ... BH_iqr_3/4 (IQR scaled)
+    Beat Histogram (BH): 7 IOI categories (1/16, 1/8, 3/16, 1/4, 6/16, 2/4, 4/4)
+        BH_str_1/16 ... BH_str_4/4 (onset strength)
+        BH_med_1/16 ... BH_med_4/4 (median shift)
+        BH_iqr_1/16 ... BH_iqr_4/4 (IQR scaled)
 
     Groove Pulse Beat (GPB): 7 IOI categories
-        GPB_str_1/16 ... GPB_str_3/4, GPB_med_1/16 ... GPB_med_3/4, GPB_iqr_1/16 ... GPB_iqr_3/4
+        GPB_str_1/16 ... GPB_str_4/4, GPB_med_1/16 ... GPB_med_4/4, GPB_iqr_1/16 ... GPB_iqr_4/4
 
     Beat Pattern (BP): 7 IOI categories
-        BP_str_1/16 ... BP_str_3/4, BP_med_1/16 ... BP_med_3/4, BP_iqr_1/16 ... BP_iqr_3/4
+        BP_str_1/16 ... BP_str_4/4, BP_med_1/16 ... BP_med_4/4, BP_iqr_1/16 ... BP_iqr_4/4
 
     Rhythm Statistics (from 6.8):
         microtiming_degree, microtiming_complexity, pulse_strength, groove_pulse_strength
@@ -81,8 +81,14 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
 
-# IOI categories in order
-IOI_CATEGORIES = ['1/16', '1/8', '3/16', '1/4', '3/8', '1/2', '3/4']
+# IOI categories in order -- MUST match the labels written by
+# utils/anchored_beat_histograms.py::categorize_ioi (threshold bins):
+#   >=16 ticks '4/4' (whole+), >=8 '2/4' (half), >=6 '6/16' (dotted quarter),
+#   >=4 '1/4', >=3 '3/16', >=2 '1/8', else '1/16'.
+# Fixed 2026-07-31: the old list ('3/8','1/2','3/4') used label names that never
+# occur in the source files -> all 6-, 8- and >=16-tick interval rows were
+# silently dropped and those columns stayed empty.
+IOI_CATEGORIES = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
 
 # For bass pitch calculations
 import numpy as np
@@ -93,6 +99,7 @@ RATIO_THRESHOLDS = [0.50, 0.70]
 # Additional ratio thresholds with max-ratio selection per song
 # For these thresholds: if multiple sections per song meet criteria, keep only the one with highest ratio
 RATIO_THRESHOLDS_MAX_SELECTION = [0.30, 0.40]
+MIN_REPETITIONS = 3   # sections with fewer loops are dropped at collection (2026-08-05)
 
 # Pattern lengths
 PATTERN_LENGTHS = [1, 2, 4]
@@ -176,8 +183,8 @@ def read_rhythm_histogram_data(csv_path: Path, pattern_length: int) -> Dict[str,
 
                     sections[section_id]['positions'][pos] = {
                         'strength': strength,
-                        'median': float(median) if median else 0.0,
-                        'iqr': float(iqr) if iqr else 0.0
+                        'median': float(median) if median else '',   # empty source cell stays empty (NaN downstream)
+                        'iqr': float(iqr) if iqr else ''
                     }
     except Exception as e:
         print(f"    Warning: Could not read {csv_path}: {e}")
@@ -216,8 +223,8 @@ def read_groove_pulse_histogram_data(csv_path: Path, pattern_length: int) -> Dic
 
                     sections[section_id]['positions'][pos] = {
                         'strength': strength,
-                        'median': float(median) if median else 0.0,
-                        'iqr': float(iqr) if iqr else 0.0
+                        'median': float(median) if median else '',   # empty source cell stays empty (NaN downstream)
+                        'iqr': float(iqr) if iqr else ''
                     }
     except Exception as e:
         print(f"    Warning: Could not read {csv_path}: {e}")
@@ -257,8 +264,8 @@ def read_rhythm_pattern_data(csv_path: Path, pattern_length: int) -> Dict[str, D
 
                     sections[section_id]['positions'][pos] = {
                         'strength': strength,
-                        'median': float(median) if median else 0.0,
-                        'iqr': float(iqr) if iqr else 0.0
+                        'median': float(median) if median else '',   # empty source cell stays empty (NaN downstream)
+                        'iqr': float(iqr) if iqr else ''
                     }
     except Exception as e:
         print(f"    Warning: Could not read {csv_path}: {e}")
@@ -296,8 +303,8 @@ def read_beat_histogram_data(csv_path: Path, pattern_length: int) -> Dict[str, D
 
                     sections[section_id]['categories'][cat] = {
                         'strength': strength,
-                        'median': float(median) if median else 0.0,
-                        'iqr': float(iqr) if iqr else 0.0
+                        'median': float(median) if median else '',   # empty source cell stays empty (NaN downstream)
+                        'iqr': float(iqr) if iqr else ''
                     }
     except Exception as e:
         print(f"    Warning: Could not read {csv_path}: {e}")
@@ -341,8 +348,8 @@ def read_beat_pattern_data(csv_path: Path, pattern_length: int) -> Dict[str, Dic
 
                     sections[section_id]['categories'][cat] = {
                         'strength': strength,
-                        'median': float(median) if median else 0.0,
-                        'iqr': float(iqr) if iqr else 0.0
+                        'median': float(median) if median else '',   # empty source cell stays empty (NaN downstream)
+                        'iqr': float(iqr) if iqr else ''
                     }
     except Exception as e:
         print(f"    Warning: Could not read {csv_path}: {e}")
@@ -685,11 +692,23 @@ def collect_section_data(
     song_name = extract_song_name(track_name)
     time_signature = read_time_signature(track_dir, track_name)
 
+    # Absent position/category: no onsets there -> strength is genuinely 0, but
+    # median/iqr (timing quality OF onsets) are undefined -> empty cell (NaN in
+    # pandas), NOT 0 (0 would falsely mean "perfectly on-grid / perfectly stable").
+    # Imputation happens downstream in the ML notebooks, never in written features.
+    ABSENT = {'strength': 0.0, 'median': '', 'iqr': ''}
+
     for section_id, rh_section in rh_data.items():
         ratio = rh_section.get('ratio_in_snippet', 0)
 
         # Filter by ratio threshold
         if ratio <= ratio_threshold:
+            continue
+
+        # Filter by minimum loop count: histogram statistics on < 3 loops are
+        # unreliable (1 loop: binary strength, single-value median, IQR = 0;
+        # <= 2 loops: running-mean instead of Tukey filtering). 2026-08-05.
+        if int(rh_section.get('num_repetitions', 0)) < MIN_REPETITIONS:
             continue
 
         row = {}
@@ -707,7 +726,7 @@ def collect_section_data(
         # Rhythm Histogram (RH)
         rh_positions = rh_section.get('positions', {})
         for pos in range(n_positions):
-            pos_data = rh_positions.get(pos, {'strength': 0.0, 'median': 0.0, 'iqr': 0.0})
+            pos_data = rh_positions.get(pos, ABSENT)
             row[f'RH_str_{pos}'] = pos_data['strength']
             row[f'RH_med_{pos}'] = pos_data['median']
             row[f'RH_iqr_{pos}'] = pos_data['iqr']
@@ -716,7 +735,7 @@ def collect_section_data(
         gp_section = gp_data.get(section_id, {})
         gp_positions = gp_section.get('positions', {})
         for pos in range(n_positions):
-            pos_data = gp_positions.get(pos, {'strength': 0.0, 'median': 0.0, 'iqr': 0.0})
+            pos_data = gp_positions.get(pos, ABSENT)
             row[f'GP_str_{pos}'] = pos_data['strength']
             row[f'GP_med_{pos}'] = pos_data['median']
             row[f'GP_iqr_{pos}'] = pos_data['iqr']
@@ -725,7 +744,7 @@ def collect_section_data(
         rp_section = rp_data.get(section_id, {})
         rp_positions = rp_section.get('positions', {})
         for pos in range(n_positions):
-            pos_data = rp_positions.get(pos, {'strength': 0.0, 'median': 0.0, 'iqr': 0.0})
+            pos_data = rp_positions.get(pos, ABSENT)
             row[f'RP_str_{pos}'] = pos_data['strength']
             row[f'RP_med_{pos}'] = pos_data['median']
             row[f'RP_iqr_{pos}'] = pos_data['iqr']
@@ -734,7 +753,7 @@ def collect_section_data(
         bh_section = bh_data.get(section_id, {})
         bh_categories = bh_section.get('categories', {})
         for cat in IOI_CATEGORIES:
-            cat_data = bh_categories.get(cat, {'strength': 0.0, 'median': 0.0, 'iqr': 0.0})
+            cat_data = bh_categories.get(cat, ABSENT)
             row[f'BH_str_{cat}'] = cat_data['strength']
             row[f'BH_med_{cat}'] = cat_data['median']
             row[f'BH_iqr_{cat}'] = cat_data['iqr']
@@ -743,7 +762,7 @@ def collect_section_data(
         gpb_section = gpb_data.get(section_id, {})
         gpb_categories = gpb_section.get('categories', {})
         for cat in IOI_CATEGORIES:
-            cat_data = gpb_categories.get(cat, {'strength': 0.0, 'median': 0.0, 'iqr': 0.0})
+            cat_data = gpb_categories.get(cat, ABSENT)
             row[f'GPB_str_{cat}'] = cat_data['strength']
             row[f'GPB_med_{cat}'] = cat_data['median']
             row[f'GPB_iqr_{cat}'] = cat_data['iqr']
@@ -752,7 +771,7 @@ def collect_section_data(
         bp_section = bp_data.get(section_id, {})
         bp_categories = bp_section.get('categories', {})
         for cat in IOI_CATEGORIES:
-            cat_data = bp_categories.get(cat, {'strength': 0.0, 'median': 0.0, 'iqr': 0.0})
+            cat_data = bp_categories.get(cat, ABSENT)
             row[f'BP_str_{cat}'] = cat_data['strength']
             row[f'BP_med_{cat}'] = cat_data['median']
             row[f'BP_iqr_{cat}'] = cat_data['iqr']

@@ -378,6 +378,17 @@ def run_complete_pipeline(
             results['tempo_plots_pdf_fullsong'] = tempo_files.get('plot_pdf_fullsong')
             results['tempo_csv'] = tempo_files['csv']
 
+            # Thesis figure: 4 horizontal panels -> <track_id>_thesisPlot.pdf
+            if not daw_ready:
+                results['tempo_plots_thesis_pdf'] = tempo_plots.create_thesis_tempo_plot(
+                    str(paths['beats_file']),
+                    str(paths['corrected_downbeats_file']),
+                    str(paths['tempo_plots_dir']),
+                    track_id,
+                    snippet_start=snippet_offset,
+                    snippet_duration=snippet_duration
+                )
+
             if daw_ready:
                 results['steps_completed'].append('tempo_csv_only')
             else:

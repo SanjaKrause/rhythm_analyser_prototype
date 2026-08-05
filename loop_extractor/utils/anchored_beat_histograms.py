@@ -501,12 +501,14 @@ def create_anchored_beat_histograms(
                         'nominal_ticks': nominal_ticks
                     }
                 else:
+                    # Absent category: timing stats are undefined -> NaN (empty in
+                    # CSV), never 0 (0 would falsely mean "perfectly stable timing").
                     category_stats[cat] = {
                         'count': 0,
                         'median': np.nan,
                         'median_shift': np.nan,
-                        'iqr_scaled': 0.0,
-                        'iqr_shift': 0.0,
+                        'iqr_scaled': np.nan,
+                        'iqr_shift': np.nan,
                         'nominal_ticks': nominal_ticks
                     }
 
@@ -1020,9 +1022,10 @@ def create_anchored_groove_pulse_beat_histograms(
                         'iqr_scaled': iqr_scaled, 'iqr_shift': iqr_shift, 'nominal_ticks': nominal_ticks
                     }
                 else:
+                    # Absent category: timing stats undefined -> NaN, never 0
                     category_stats[cat] = {
                         'count': 0, 'median': np.nan, 'median_shift': np.nan,
-                        'iqr_scaled': 0.0, 'iqr_shift': 0.0, 'nominal_ticks': nominal_ticks
+                        'iqr_scaled': np.nan, 'iqr_shift': np.nan, 'nominal_ticks': nominal_ticks
                     }
 
             counts = np.array([category_stats[cat]['count'] for cat in category_order])
@@ -1116,7 +1119,7 @@ def create_anchored_groove_pulse_beat_histograms(
                     'median_ioi': stats['median'] if passes_threshold else np.nan,
                     'median_shift': stats['median_shift'] if passes_threshold else np.nan,
                     'iqr_shift': stats['iqr_shift'] if passes_threshold else np.nan,
-                    'iqr_scaled': stats['iqr_scaled'] if passes_threshold else 0.0
+                    'iqr_scaled': stats['iqr_scaled'] if passes_threshold else np.nan
                 }
                 csv_stats_rows.append(row_data)
                 all_stats_rows.append({

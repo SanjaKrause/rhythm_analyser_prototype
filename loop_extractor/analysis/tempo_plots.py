@@ -252,7 +252,8 @@ def plot_tempo_over_time(
     title: str,
     color: str = 'blue',
     usable_mask: Optional[List[bool]] = None,
-    snippet_xspan: Optional[Tuple[float, float]] = None
+    snippet_xspan: Optional[Tuple[float, float]] = None,
+    all_label: str = 'corrected (all)'
 ):
     """
     Plot bar tempo over time (bar index on x-axis).
@@ -278,7 +279,7 @@ def plot_tempo_over_time(
 
         # Plot ALL bars first (faded style)
         ax.plot(indices_arr, tempos_arr, marker='o', linestyle='-', color=color,
-               linewidth=1.0, markersize=3, alpha=0.35, label='corrected (all)')
+               linewidth=1.0, markersize=3, alpha=0.35, label=all_label)
 
         # Plot USABLE bars on top (bold style)
         if np.any(usable_arr):
@@ -614,6 +615,142 @@ def create_tempo_plots(
     result['plot_pdf_fullsong'] = str(plot_path_fullsong)
 
     return result
+
+
+# ============================================================================
+# THESIS PLOT (4 horizontal panels)
+# ============================================================================
+
+def _dominant_class_average(bar_tempos: List[float]) -> Optional[float]:
+    """
+    Average tempo of the bars in the DOMINANT tempo class of the raw song.
+
+    Mirrors the classification of correct_bars.correct_downbeats: median base,
+    factor-of-two classification (±10 %), incl. the 135-BPM adaptive rebasing.
+    Returns the mean tempo of whichever class (normal/double/half) is most
+    frequent, or None if there are no bars.
+    """
+    from . import correct_bars as _cb
+
+    if not bar_tempos:
+        return None
+    tempos = np.asarray(bar_tempos, dtype=float)
+    base = float(np.median(tempos))
+    # 135-BPM adaptive rebasing (same logic/constants as correct_bars)
+    if _cb.DOUBLE_BPM_CHART_ADJUSTED:
+        fast = tempos > _cb.BPM_CHARTS_THRESHOLD
+        if fast.sum() > len(tempos) / 2:
+            base = float(np.median(tempos[fast])) / 2.0
+    classes = np.array([_cb.classify_factor2(t, base, _cb.MULT_MATCH_TOL) for t in tempos])
+    labels, counts = np.unique(classes, return_counts=True)
+    dominant = labels[np.argmax(counts)]
+    return float(tempos[classes == dominant].mean())
+
+
+def create_thesis_tempo_plot(
+    beats_file: str,
+    corrected_downbeats_file: str,
+    output_dir: str,
+    track_id: str,
+    snippet_start: Optional[float] = None,
+    snippet_duration: float = 30.0
+) -> Optional[str]:
+    """
+    Thesis figure: 4 horizontal panels -> '<track_id>_thesisPlot.pdf'.
+
+    1. Uncorrected bar tempo over time (snippet window, avg line, plus
+       'avg dominant class' line)
+    2. Corrected bar tempo over time (usable styling, avg line) -- x AND y
+       axes identical to panel 1
+    3. Bar tempo histogram, full song, uncorrected
+    4. Bar tempo histogram, full song, corrected -- x AND y axes identical
+       to panel 3
+
+    Returns the path of the written PDF (or None if no data).
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    uncorr_tempos, uncorr_db_times, sig_uncorr = load_uncorrected_bar_tempos(beats_file)
+    corr_tempos, corr_db_times, corr_usable, _ = load_corrected_bar_tempos(corrected_downbeats_file)
+    if not uncorr_tempos or not corr_tempos:
+        return None
+    uncorr_indices = list(range(len(uncorr_tempos)))
+    corr_indices = list(range(len(corr_tempos)))
+
+    snip_end = snippet_start + snippet_duration if snippet_start is not None else None
+    uncorr_xspan = calculate_snippet_xspan(uncorr_db_times, snippet_start, snip_end)
+    corr_xspan = calculate_snippet_xspan(corr_db_times, snippet_start, snip_end)
+
+    # Shared histogram bins over BOTH series (same x-axis by construction)
+    bins = np.histogram_bin_edges(uncorr_tempos + corr_tempos, bins=BIN_COUNT)
+
+    fig, axes = plt.subplots(4, 1, figsize=(10, 13))
+
+    title = f"Track {track_id} - Bar Tempo Analysis (Time Sig: {sig_uncorr}/4)"
+    if snippet_start is not None:
+        title += f"\nSnippet: {snippet_start:.1f}s - {snip_end:.1f}s"
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    # -- Panel 1: uncorrected over time (+ dominant-class average) ----------
+    dom_avg = _dominant_class_average(uncorr_tempos)
+    if dom_avg is not None:
+        # drawn before the helper so its legend picks the line up
+        axes[0].axhline(dom_avg, linestyle=':', linewidth=1.4, color='purple',
+                        alpha=0.9, label=f'avg(dominant class)={dom_avg:.1f} BPM')
+    plot_tempo_over_time(axes[0], uncorr_indices, uncorr_tempos,
+                         '1. Tempo Over Bars (Full Song) - Uncorrected',
+                         color='blue', snippet_xspan=uncorr_xspan)
+
+    # -- Panel 2: corrected over time, axes identical to panel 1 ------------
+    plot_tempo_over_time(axes[1], corr_indices, corr_tempos,
+                         '2. Tempo Over Bars (Full Song) - Corrected',
+                         color='green', usable_mask=corr_usable,
+                         snippet_xspan=corr_xspan,
+                         all_label='discarded bars')
+    # shared limits: union of both series so nothing clips, applied to BOTH
+    all_t = np.asarray(uncorr_tempos + corr_tempos, dtype=float)
+    pad = 0.05 * (all_t.max() - all_t.min() + 1e-9)
+    ylim = (all_t.min() - pad, all_t.max() + pad)
+    xlim = (-1, max(len(uncorr_tempos), len(corr_tempos)))
+    for ax in axes[:2]:
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+
+    # -- Panels 3+4: histograms with identical x AND y axes ------------------
+    # corrected histogram: USABLE bars only (discarded bars do not enter the
+    # analysis -- same convention as plot_tempo_histogram with usable_mask)
+    corr_tempos_usable = [t for t, u in zip(corr_tempos, corr_usable) if u]
+    counts_u, _ = np.histogram(uncorr_tempos, bins=bins)
+    counts_c, _ = np.histogram(corr_tempos_usable, bins=bins)
+    ymax = max(counts_u.max(), counts_c.max()) * 1.1
+
+    for ax, tempos, counts, ttl, col in [
+            (axes[2], uncorr_tempos, counts_u,
+             '3. Bar Tempo Histogram (Full Song) - Uncorrected', 'skyblue'),
+            (axes[3], corr_tempos_usable, counts_c,
+             '4. Bar Tempo Histogram (Full Song) - Corrected', 'lightgreen')]:
+        ax.hist(tempos, bins=bins, color=col, edgecolor='black', linewidth=0.5)
+        ax.set_title(ttl, fontsize=12, fontweight='bold')
+        ax.set_xlabel('Tempo (BPM)', fontsize=11, fontweight='bold')
+        ax.set_ylabel('Count', fontsize=11, fontweight='bold')
+        ax.tick_params(axis='both', which='major', labelsize=10)
+        ax.grid(axis='y', alpha=0.3)
+        ax.set_xlim(bins[0], bins[-1])
+        ax.set_ylim(0, ymax)
+        ax2 = ax.twinx()
+        total = counts.sum() if counts.sum() > 0 else 1
+        ax2.set_ylim(0, ymax / total * 100)
+        ax2.set_ylabel('Percent (%)', fontsize=11, fontweight='bold')
+        ax2.tick_params(axis='y', which='major', labelsize=10)
+
+    fig.tight_layout(rect=[0, 0.01, 1, 0.96])
+
+    plot_path = output_dir / f'{track_id}_thesisPlot.pdf'
+    fig.savefig(plot_path)
+    fig.savefig(plot_path.with_suffix('.png'), dpi=200)
+    plt.close(fig)
+    return str(plot_path)
 
 
 if __name__ == "__main__":
