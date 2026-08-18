@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Loop Extractor 2000 - GUI Application
+Rhythm Pattern Extractor - GUI Application
 
 A graphical interface for the rhythm analysis and loop extraction pipeline.
 """
@@ -15,12 +15,36 @@ import os
 import time
 import math
 
+from PIL import Image, ImageTk
+
+# ---------------------------------------------------------------------------
+# Colour palette (light / white theme)
+# ---------------------------------------------------------------------------
+BG          = '#FFFFFF'   # window / panel background (white)
+PANEL       = '#F4F5F7'   # subtle panel / entry background
+INK         = '#1F2430'   # primary text
+MUTED       = '#6B7280'   # secondary text / hints
+ACCENT      = '#C50E1F'   # TU Berlin red (title / brand accent)
+BTN         = '#2563EB'   # primary buttons (blue)
+BTN_ACT     = '#1D4ED8'   # primary button hover
+RUN_BG      = '#16A34A'   # run button (green)
+RUN_ACT     = '#15803D'   # run button hover
+GREEN       = '#15803D'   # positive / value text on light bg
+SELECT      = '#DCE3EA'   # radio / check indicator fill
+TROUGH      = '#D1D5DB'   # slider trough
+BORDER      = '#D1D5DB'   # thin separators / entry borders
+CONSOLE_BG  = '#111827'   # system monitor (dark console)
+CONSOLE_FG  = '#22C55E'   # system monitor text (terminal green)
+
+LOGO_DIR = Path(__file__).parent / 'logos'
+
+
 class LoopExtractorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("LOOP EXTRACTOR 2000")
-        self.root.geometry("750x800")
-        self.root.configure(bg='#000080')  # Dark blue background
+        self.root.title("Rhythm Pattern Extractor")
+        self.root.geometry("800x880")
+        self.root.configure(bg=BG)
 
         # Set up cleanup on window close
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -68,25 +92,80 @@ class LoopExtractorGUI:
         self.calculate_fullmix = tk.BooleanVar(value=False)  # Default: don't calculate fullmix
         self.fullmix_dir_path = tk.StringVar(value="/Volumes/PortableSSD/mastabfiles/renamed")  # Default path
 
+        # Keep references to logo images so they are not garbage-collected
+        self._logo_refs = []
+
         self.setup_ui()
 
+    # ------------------------------------------------------------------ helpers
+    def _load_logo(self, filename, height):
+        """Load a logo PNG, resize to `height` px (keeping aspect) and flatten
+        onto white so transparency renders cleanly on the light background."""
+        img = Image.open(LOGO_DIR / filename).convert('RGBA')
+        w, h = img.size
+        new_w = max(1, int(round(w * height / h)))
+        img = img.resize((new_w, height), Image.LANCZOS)
+        white = Image.new('RGBA', img.size, (255, 255, 255, 255))
+        flat = Image.alpha_composite(white, img).convert('RGB')
+        photo = ImageTk.PhotoImage(flat)
+        self._logo_refs.append(photo)  # prevent GC
+        return photo
+
+    def _flat_button(self, parent, text, command, bg, bg_active,
+                     fg='white', font=('Arial', 12, 'bold'), padx=16, pady=9):
+        """A flat, solid-colour button built from a Label so the colour is
+        honoured on macOS (native tk.Button ignores bg there)."""
+        btn = tk.Label(parent, text=text, font=font, bg=bg, fg=fg,
+                       cursor='hand2', padx=padx, pady=pady)
+        btn._bg, btn._bg_active = bg, bg_active
+        btn.bind('<Enter>', lambda e: btn.config(bg=btn._bg_active))
+        btn.bind('<Leave>', lambda e: btn.config(bg=btn._bg))
+        btn.bind('<Button-1>', lambda e: command())
+        return btn
+
+    def _radio(self, parent, text, variable, value, font=('Arial', 10), fg=INK):
+        return tk.Radiobutton(
+            parent, text=text, variable=variable, value=value, font=font,
+            fg=fg, bg=BG, selectcolor=SELECT, activebackground=BG,
+            activeforeground=fg, highlightthickness=0, anchor='w'
+        )
+
+    def _check(self, parent, text, variable, font=('Arial', 10), fg=INK):
+        return tk.Checkbutton(
+            parent, text=text, variable=variable, font=font,
+            fg=fg, bg=BG, selectcolor=SELECT, activebackground=BG,
+            activeforeground=fg, highlightthickness=0, anchor='w'
+        )
+
+    # ------------------------------------------------------------------ layout
     def setup_ui(self):
+        # ---- Header with logos + title ------------------------------------
+        header = tk.Frame(self.root, bg=BG)
+        header.pack(fill=tk.X, padx=24, pady=(16, 6))
+
+        akt_logo = self._load_logo('akt.png', 58)
+        tk.Label(header, image=akt_logo, bg=BG).pack(side=tk.LEFT)
+
+        tu_logo = self._load_logo('tuBerlin.png', 52)
+        tk.Label(header, image=tu_logo, bg=BG).pack(side=tk.RIGHT)
+
+        tk.Label(
+            header,
+            text="Rhythm Pattern Extractor",
+            font=('Arial', 26, 'bold'),
+            fg=ACCENT,
+            bg=BG
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # thin separator under the header
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill=tk.X, padx=24)
+
         # Main container
-        main_frame = tk.Frame(self.root, bg='#000080')
+        main_frame = tk.Frame(self.root, bg=BG)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        # Title
-        title = tk.Label(
-            main_frame,
-            text="LOOP EXTRACTOR 2000",
-            font=('Arial', 24, 'bold'),
-            fg='#0000FF',
-            bg='#000080'
-        )
-        title.pack(pady=(0, 20))
-
         # Left column - Input/Output
-        left_frame = tk.Frame(main_frame, bg='#000080', width=450)
+        left_frame = tk.Frame(main_frame, bg=BG, width=450)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 20))
         left_frame.pack_propagate(False)
 
@@ -95,8 +174,8 @@ class LoopExtractorGUI:
             left_frame,
             text="/input_wav_example",
             font=('Arial', 12),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         input_label.pack(anchor='w')
 
@@ -105,34 +184,23 @@ class LoopExtractorGUI:
             textvariable=self.input_path,
             font=('Arial', 12),
             state='readonly',
+            readonlybackground=PANEL,
+            fg=INK,
+            relief=tk.SOLID,
+            bd=1,
+            highlightthickness=1,
+            highlightbackground=BORDER,
             width=40
         )
         input_display.pack(pady=(5, 10), fill=tk.X)
 
-        load_button = tk.Button(
-            left_frame,
-            text="Load file/folder BUTTON",
-            font=('Arial', 12, 'bold'),
-            bg='#0000FF',
-            fg='black',
-            activebackground='#0000CC',
-            activeforeground='black',
-            command=self.load_input,
-            relief=tk.RAISED,
-            bd=3
+        load_button = self._flat_button(
+            left_frame, "Load file / folder", self.load_input, BTN, BTN_ACT
         )
         load_button.pack(pady=5)
 
-        folder_check = tk.Checkbutton(
-            left_frame,
-            text="apply to all files in folder",
-            variable=self.apply_to_folder,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        folder_check = self._check(
+            left_frame, "apply to all files in folder", self.apply_to_folder
         )
         folder_check.pack(anchor='w', pady=10)
 
@@ -141,8 +209,8 @@ class LoopExtractorGUI:
             left_frame,
             text="/output_folder",
             font=('Arial', 12),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         output_label.pack(anchor='w', pady=(20, 0))
 
@@ -151,107 +219,72 @@ class LoopExtractorGUI:
             textvariable=self.output_path,
             font=('Arial', 12),
             state='readonly',
+            readonlybackground=PANEL,
+            fg=INK,
+            relief=tk.SOLID,
+            bd=1,
+            highlightthickness=1,
+            highlightbackground=BORDER,
             width=40
         )
         output_display.pack(pady=(5, 10), fill=tk.X)
 
-        output_button = tk.Button(
-            left_frame,
-            text="Choose output path",
-            font=('Arial', 12, 'bold'),
-            bg='#0000FF',
-            fg='black',
-            activebackground='#0000CC',
-            activeforeground='black',
-            command=self.choose_output,
-            relief=tk.RAISED,
-            bd=3
+        output_button = self._flat_button(
+            left_frame, "Choose output path", self.choose_output, BTN, BTN_ACT
         )
         output_button.pack(pady=5)
 
         # Run button
-        self.run_button = tk.Button(
-            left_frame,
-            text="RUN ANALYSIS",
-            font=('Arial', 14, 'bold'),
-            bg='#00FF00',
-            fg='black',
-            activebackground='#00CC00',
-            activeforeground='black',
-            command=self.run_analysis,
-            relief=tk.RAISED,
-            bd=4,
-            width=20,
-            cursor='hand2',
-            state=tk.NORMAL
+        self.run_button = self._flat_button(
+            left_frame, "RUN ANALYSIS", self.run_analysis, RUN_BG, RUN_ACT,
+            font=('Arial', 14, 'bold'), padx=40, pady=12
         )
         self.run_button.pack(pady=20)
         self.run_button.lift()  # Ensure button is on top layer
 
-        # Debug: bind additional click event
-        self.run_button.bind('<Button-1>', lambda e: print("DEBUG: Button clicked!"))
-
         # Horizontal container for TIME RANGE and ONSET CALCULATION
-        time_onset_container = tk.Frame(left_frame, bg='#000080')
+        time_onset_container = tk.Frame(left_frame, bg=BG)
         time_onset_container.pack(fill=tk.X, pady=(10, 10))
 
         # Time selection section (left side)
-        time_frame = tk.Frame(time_onset_container, bg='#000080')
+        time_frame = tk.Frame(time_onset_container, bg=BG)
         time_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
 
         time_label = tk.Label(
             time_frame,
             text="TIME RANGE:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         time_label.pack(anchor='w', pady=(0, 10))
 
         # Radio button: Use snippet times
-        snippet_radio = tk.Radiobutton(
-            time_frame,
-            text="Use snippet times (30s)",
-            variable=self.use_snippet_times,
-            value=True,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        snippet_radio = self._radio(
+            time_frame, "Use snippet times (30s)", self.use_snippet_times, True
         )
         snippet_radio.pack(anchor='w', pady=(0, 8))
 
         # Radio button: Manual time range
-        manual_radio = tk.Radiobutton(
-            time_frame,
-            text="Manual time range:",
-            variable=self.use_snippet_times,
-            value=False,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        manual_radio = self._radio(
+            time_frame, "Manual time range:", self.use_snippet_times, False
         )
         manual_radio.pack(anchor='w', pady=(0, 8))
 
         # Sliders container (centered)
-        sliders_container = tk.Frame(time_frame, bg='#000080')
+        sliders_container = tk.Frame(time_frame, bg=BG)
         sliders_container.pack(pady=(5, 0))
 
         # Start time slider
-        start_slider_frame = tk.Frame(sliders_container, bg='#000080')
+        start_slider_frame = tk.Frame(sliders_container, bg=BG)
         start_slider_frame.pack(pady=(0, 8))
 
         start_label = tk.Label(
             start_slider_frame,
             text="Start:",
             font=('Arial', 9),
-            fg='white',
-            bg='#000080',
+            fg=INK,
+            bg=BG,
             width=6,
             anchor='w'
         )
@@ -263,11 +296,11 @@ class LoopExtractorGUI:
             to=300,
             orient=tk.HORIZONTAL,
             variable=self.manual_start_time,
-            bg='#000080',
-            fg='white',
-            highlightbackground='#000080',
-            troughcolor='#0000FF',
-            activebackground='#0000CC',
+            bg=BG,
+            fg=INK,
+            highlightbackground=BG,
+            troughcolor=TROUGH,
+            activebackground=BTN,
             showvalue=False,
             length=200
         )
@@ -276,24 +309,24 @@ class LoopExtractorGUI:
         self.start_value_label = tk.Label(
             start_slider_frame,
             text=f"{int(self.manual_start_time.get())}s",
-            font=('Arial', 9),
-            fg='#00FF00',
-            bg='#000080',
+            font=('Arial', 9, 'bold'),
+            fg=GREEN,
+            bg=BG,
             width=5,
             anchor='w'
         )
         self.start_value_label.pack(side=tk.LEFT)
 
         # End time slider
-        end_slider_frame = tk.Frame(sliders_container, bg='#000080')
+        end_slider_frame = tk.Frame(sliders_container, bg=BG)
         end_slider_frame.pack(pady=(0, 0))
 
         end_label = tk.Label(
             end_slider_frame,
             text="End:",
             font=('Arial', 9),
-            fg='white',
-            bg='#000080',
+            fg=INK,
+            bg=BG,
             width=6,
             anchor='w'
         )
@@ -305,11 +338,11 @@ class LoopExtractorGUI:
             to=300,
             orient=tk.HORIZONTAL,
             variable=self.manual_end_time,
-            bg='#000080',
-            fg='white',
-            highlightbackground='#000080',
-            troughcolor='#0000FF',
-            activebackground='#0000CC',
+            bg=BG,
+            fg=INK,
+            highlightbackground=BG,
+            troughcolor=TROUGH,
+            activebackground=BTN,
             showvalue=False,
             length=200
         )
@@ -318,9 +351,9 @@ class LoopExtractorGUI:
         self.end_value_label = tk.Label(
             end_slider_frame,
             text=f"{int(self.manual_end_time.get())}s",
-            font=('Arial', 9),
-            fg='#00FF00',
-            bg='#000080',
+            font=('Arial', 9, 'bold'),
+            fg=GREEN,
+            bg=BG,
             width=5,
             anchor='w'
         )
@@ -330,43 +363,25 @@ class LoopExtractorGUI:
         self.manual_start_time.trace_add('write', lambda *args: self.start_value_label.config(text=f"{int(self.manual_start_time.get())}s"))
         self.manual_end_time.trace_add('write', lambda *args: self.end_value_label.config(text=f"{int(self.manual_end_time.get())}s"))
 
-        # ONSET STEMS section (moved from right column to left, below TIME RANGE)
+        # ONSET STEMS section (below TIME RANGE)
         stems_label = tk.Label(
             time_frame,
             text="ONSET STEMS:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         stems_label.pack(anchor='w', pady=(20, 10))
 
         # Radio button: Drums only (default)
-        drums_only_radio = tk.Radiobutton(
-            time_frame,
-            text="Drums only",
-            variable=self.onset_all_stems,
-            value=False,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        drums_only_radio = self._radio(
+            time_frame, "Drums only", self.onset_all_stems, False
         )
         drums_only_radio.pack(anchor='w', pady=(0, 8))
 
         # Radio button: All 5 stems
-        all_stems_radio = tk.Radiobutton(
-            time_frame,
-            text="All 5 stems",
-            variable=self.onset_all_stems,
-            value=True,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        all_stems_radio = self._radio(
+            time_frame, "All 5 stems", self.onset_all_stems, True
         )
         all_stems_radio.pack(anchor='w', pady=(0, 8))
 
@@ -375,23 +390,13 @@ class LoopExtractorGUI:
             time_frame,
             text="ALSO CALCULATE ON FULL WAV:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         fullmix_label.pack(anchor='w', pady=(20, 10))
 
         # Checkbox: Calculate fullmix
-        fullmix_check = tk.Checkbutton(
-            time_frame,
-            text="Yes",
-            variable=self.calculate_fullmix,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
-        )
+        fullmix_check = self._check(time_frame, "Yes", self.calculate_fullmix)
         fullmix_check.pack(anchor='w', pady=(0, 8))
 
         # Fullmix directory path label
@@ -399,37 +404,33 @@ class LoopExtractorGUI:
             time_frame,
             text="Original WAV folder (required if reuse enabled):",
             font=('Arial', 9),
-            fg='#CCCCCC',
-            bg='#000080'
+            fg=MUTED,
+            bg=BG
         )
         fullmix_path_label.pack(anchor='w', pady=(5, 3))
 
         # Fullmix path entry and browse button container
-        fullmix_path_frame = tk.Frame(time_frame, bg='#000080')
+        fullmix_path_frame = tk.Frame(time_frame, bg=BG)
         fullmix_path_frame.pack(fill=tk.X, pady=(0, 5))
 
         fullmix_path_entry = tk.Entry(
             fullmix_path_frame,
             textvariable=self.fullmix_dir_path,
             font=('Arial', 9),
-            bg='#1C1C1C',
-            fg='white',
-            insertbackground='white',
+            bg=PANEL,
+            fg=INK,
+            insertbackground=INK,
+            relief=tk.SOLID,
+            bd=1,
+            highlightthickness=1,
+            highlightbackground=BORDER,
             width=30
         )
         fullmix_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
-        fullmix_browse_btn = tk.Button(
-            fullmix_path_frame,
-            text="Browse",
-            command=self.browse_fullmix_dir,
-            font=('Arial', 9),
-            bg='#0000CC',
-            fg='white',
-            activebackground='#0000AA',
-            activeforeground='white',
-            relief=tk.RAISED,
-            bd=2
+        fullmix_browse_btn = self._flat_button(
+            fullmix_path_frame, "Browse", self.browse_fullmix_dir, BTN, BTN_ACT,
+            font=('Arial', 9, 'bold'), padx=10, pady=4
         )
         fullmix_browse_btn.pack(side=tk.LEFT)
 
@@ -438,66 +439,39 @@ class LoopExtractorGUI:
             time_frame,
             text="Hint: Required when 'Use existing stems/beats' is checked",
             font=('Arial', 8, 'italic'),
-            fg='#00FF00',
-            bg='#000080'
+            fg=GREEN,
+            bg=BG
         )
         fullmix_hint_label.pack(anchor='w', pady=(2, 0))
 
         # Onset calculation section (right side, next to TIME RANGE)
-        onset_frame = tk.Frame(time_onset_container, bg='#000080')
+        onset_frame = tk.Frame(time_onset_container, bg=BG)
         onset_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False)
 
         onset_label = tk.Label(
             onset_frame,
             text="ONSET CALCULATION:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         onset_label.pack(anchor='w', pady=(0, 10))
 
         # Radio button: Librosa (default)
-        librosa_radio = tk.Radiobutton(
-            onset_frame,
-            text="Librosa onset detection",
-            variable=self.onset_mode,
-            value="librosa",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        librosa_radio = self._radio(
+            onset_frame, "Librosa onset detection", self.onset_mode, "librosa"
         )
         librosa_radio.pack(anchor='w', pady=(0, 8))
 
         # Radio button: DrumTranscriber
-        drumtranscriber_radio = tk.Radiobutton(
-            onset_frame,
-            text="DrumTranscriber CNN",
-            variable=self.onset_mode,
-            value="drumtranscriber",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        drumtranscriber_radio = self._radio(
+            onset_frame, "DrumTranscriber CNN", self.onset_mode, "drumtranscriber"
         )
         drumtranscriber_radio.pack(anchor='w', pady=(0, 8))
 
         # Radio button: Madmom CNN
-        madmom_radio = tk.Radiobutton(
-            onset_frame,
-            text="Madmom CNN",
-            variable=self.onset_mode,
-            value="madmom",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        madmom_radio = self._radio(
+            onset_frame, "Madmom CNN", self.onset_mode, "madmom"
         )
         madmom_radio.pack(anchor='w', pady=(0, 8))
 
@@ -506,38 +480,20 @@ class LoopExtractorGUI:
             onset_frame,
             text="ANCHORING MODE:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         anchoring_label.pack(anchor='w', pady=(15, 10))
 
         # Radio button: Double anchoring (default)
-        double_radio = tk.Radiobutton(
-            onset_frame,
-            text="Double (start + end)",
-            variable=self.anchoring_mode,
-            value="double",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        double_radio = self._radio(
+            onset_frame, "Double (start + end)", self.anchoring_mode, "double"
         )
         double_radio.pack(anchor='w', pady=(0, 8))
 
         # Radio button: Single anchoring
-        single_radio = tk.Radiobutton(
-            onset_frame,
-            text="Single (start only)",
-            variable=self.anchoring_mode,
-            value="single",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        single_radio = self._radio(
+            onset_frame, "Single (start only)", self.anchoring_mode, "single"
         )
         single_radio.pack(anchor='w', pady=(0, 8))
 
@@ -546,50 +502,34 @@ class LoopExtractorGUI:
             onset_frame,
             text="REUSE FILES:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         reuse_label.pack(anchor='w', pady=(15, 10))
 
         # Checkbox: Reuse stems + SongFormer
-        reuse_check = tk.Checkbutton(
-            onset_frame,
-            text="Use existing stems/beats",
-            variable=self.reuse_existing,
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
+        reuse_check = self._check(
+            onset_frame, "Use existing stems/beats", self.reuse_existing
         )
         reuse_check.pack(anchor='w', pady=(0, 8))
 
         # Right column - Plots and Status
-        right_frame = tk.Frame(main_frame, bg='#000080')
+        right_frame = tk.Frame(main_frame, bg=BG)
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         outputs_label = tk.Label(
             right_frame,
             text="OUTPUT MODE:",
             font=('Arial', 14, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         outputs_label.pack(anchor='w', pady=(0, 10))
 
         # Radio button: Detailed Analysis + Plots
-        detailed_radio = tk.Radiobutton(
-            right_frame,
-            text="Detailed Analysis + Plots",
-            variable=self.output_mode,
-            value="detailed",
-            font=('Arial', 12, 'bold'),
-            fg='#00FF00',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='#00FF00'
+        detailed_radio = self._radio(
+            right_frame, "Detailed Analysis + Plots", self.output_mode, "detailed",
+            font=('Arial', 12, 'bold'), fg=ACCENT
         )
         detailed_radio.pack(anchor='w', pady=(0, 5))
 
@@ -598,24 +538,16 @@ class LoopExtractorGUI:
             right_frame,
             text="  • Stems\n  • Beat Detection\n  • Downbeat Correction\n  • Onset Detection\n  • Pattern Detection (all methods)\n  • Grid Analysis\n  • RMS Analysis\n  • Tempo Plots\n  • Raster Plots\n  • Audio Examples\n  • MIDI Export (all methods)\n  • Loop Export (all methods)",
             font=('Arial', 9),
-            fg='white',
-            bg='#000080',
+            fg=MUTED,
+            bg=BG,
             justify=tk.LEFT
         )
         detailed_steps.pack(anchor='w', pady=(0, 15))
 
         # Radio button: DAW Ready Loops
-        daw_radio = tk.Radiobutton(
-            right_frame,
-            text="DAW Ready Loops",
-            variable=self.output_mode,
-            value="daw_ready",
-            font=('Arial', 12, 'bold'),
-            fg='#00FF00',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='#00FF00'
+        daw_radio = self._radio(
+            right_frame, "DAW Ready Loops", self.output_mode, "daw_ready",
+            font=('Arial', 12, 'bold'), fg=ACCENT
         )
         daw_radio.pack(anchor='w', pady=(0, 5))
 
@@ -624,8 +556,8 @@ class LoopExtractorGUI:
             right_frame,
             text="  • Stems\n  • Loops (drum pattern method only)\n  • MIDI (drum pattern method only)",
             font=('Arial', 9),
-            fg='white',
-            bg='#000080',
+            fg=MUTED,
+            bg=BG,
             justify=tk.LEFT
         )
         daw_steps.pack(anchor='w', pady=(0, 15))
@@ -635,50 +567,28 @@ class LoopExtractorGUI:
             right_frame,
             text="EXPORT FORMAT:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         format_label.pack(anchor='w', pady=(15, 5))
 
-        format_frame = tk.Frame(right_frame, bg='#000080')
+        format_frame = tk.Frame(right_frame, bg=BG)
         format_frame.pack(anchor='w')
 
         # WAV radio button
-        wav_radio = tk.Radiobutton(
-            format_frame,
-            text="WAV",
-            variable=self.export_format,
-            value="wav",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
-        )
+        wav_radio = self._radio(format_frame, "WAV", self.export_format, "wav")
         wav_radio.pack(side=tk.LEFT, padx=(0, 15))
 
         # MP3 radio button
-        mp3_radio = tk.Radiobutton(
-            format_frame,
-            text="MP3",
-            variable=self.export_format,
-            value="mp3",
-            font=('Arial', 10),
-            fg='white',
-            bg='#000080',
-            selectcolor='#000080',
-            activebackground='#000080',
-            activeforeground='white'
-        )
+        mp3_radio = self._radio(format_frame, "MP3", self.export_format, "mp3")
         mp3_radio.pack(side=tk.LEFT)
 
         # Circular progress indicator section
-        progress_indicator_frame = tk.Frame(right_frame, bg='#000080')
+        progress_indicator_frame = tk.Frame(right_frame, bg=BG)
         progress_indicator_frame.pack(fill=tk.X, pady=(20, 10))
 
         # Container for pie chart and labels
-        pie_container = tk.Frame(progress_indicator_frame, bg='#000080')
+        pie_container = tk.Frame(progress_indicator_frame, bg=BG)
         pie_container.pack()
 
         # Circular progress canvas (pie chart)
@@ -687,16 +597,16 @@ class LoopExtractorGUI:
             pie_container,
             width=self.pie_size,
             height=self.pie_size,
-            bg='#000080',
+            bg=BG,
             highlightthickness=0
         )
         self.progress_canvas.pack(side=tk.LEFT, padx=(0, 15))
 
-        # Draw initial empty pie (black circle)
+        # Draw initial empty pie
         self._draw_pie_chart(0)
 
         # Labels container (right of pie chart)
-        labels_container = tk.Frame(pie_container, bg='#000080')
+        labels_container = tk.Frame(pie_container, bg=BG)
         labels_container.pack(side=tk.LEFT, fill=tk.Y)
 
         # Songs processed counter
@@ -704,8 +614,8 @@ class LoopExtractorGUI:
             labels_container,
             text="Songs Analysed: 0/0",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         self.songs_counter_label.pack(anchor='w', pady=(5, 5))
 
@@ -714,13 +624,13 @@ class LoopExtractorGUI:
             labels_container,
             text="Est. Time Left: --:--",
             font=('Arial', 10),
-            fg='#00FF00',
-            bg='#000080'
+            fg=GREEN,
+            bg=BG
         )
         self.time_remaining_label.pack(anchor='w', pady=(0, 5))
 
         # Progress bar
-        progress_frame = tk.Frame(right_frame, bg='#000080')
+        progress_frame = tk.Frame(right_frame, bg=BG)
         progress_frame.pack(fill=tk.X, pady=(20, 10))
 
         # Main progress bar (animated)
@@ -732,15 +642,15 @@ class LoopExtractorGUI:
         self.progress_bar.pack(fill=tk.X, pady=5)
 
         # Status/log area (system monitor)
-        status_frame = tk.Frame(right_frame, bg='#000080')
+        status_frame = tk.Frame(right_frame, bg=BG)
         status_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
         status_label = tk.Label(
             status_frame,
             text="System Monitor:",
             font=('Arial', 11, 'bold'),
-            fg='white',
-            bg='#000080'
+            fg=INK,
+            bg=BG
         )
         status_label.pack(anchor='w')
 
@@ -748,8 +658,10 @@ class LoopExtractorGUI:
             status_frame,
             height=20,
             width=60,
-            bg='#000040',
-            fg='#00FF00',
+            bg=CONSOLE_BG,
+            fg=CONSOLE_FG,
+            insertbackground=CONSOLE_FG,
+            relief=tk.FLAT,
             font=('Courier', 10),
             state=tk.DISABLED
         )
@@ -831,15 +743,15 @@ class LoopExtractorGUI:
         x0, y0 = padding, padding
         x1, y1 = self.pie_size - padding, self.pie_size - padding
 
-        # Draw background circle (black/dark)
+        # Draw background circle (light)
         self.progress_canvas.create_oval(
             x0, y0, x1, y1,
-            fill='#000000',
-            outline='#404040',
+            fill=PANEL,
+            outline=BORDER,
             width=2
         )
 
-        # Draw progress arc (white fill) if there's any progress
+        # Draw progress arc (blue fill) if there's any progress
         if progress_fraction > 0:
             # Arc starts at top (90 degrees) and goes clockwise (negative extent)
             extent = -360 * progress_fraction
@@ -847,8 +759,8 @@ class LoopExtractorGUI:
                 x0, y0, x1, y1,
                 start=90,
                 extent=extent,
-                fill='white',
-                outline='white'
+                fill=BTN,
+                outline=BTN
             )
 
         # Draw center text showing percentage
@@ -858,7 +770,7 @@ class LoopExtractorGUI:
         self.progress_canvas.create_text(
             center_x, center_y,
             text=f"{percentage}%",
-            fill='#00FF00' if progress_fraction > 0 else '#808080',
+            fill=BTN if progress_fraction > 0 else MUTED,
             font=('Arial', 10, 'bold')
         )
 
