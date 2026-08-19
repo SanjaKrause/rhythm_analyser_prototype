@@ -1964,7 +1964,8 @@ def run_complete_pipeline(
             midi_files_exist = (
                 (paths['midi_dir'] / 'drum.mid').exists() or
                 (paths['midi_dir'] / 'mel.mid').exists() or
-                (paths['midi_dir'] / 'pitch.mid').exists()
+                (paths['midi_dir'] / 'pitch.mid').exists() or
+                any((paths['midi_dir'] / 'onset').glob('SecNo*.mid'))
             )
 
             if skip_existing and midi_files_exist:
@@ -2017,39 +2018,28 @@ def run_complete_pipeline(
                     # No FlexStart MIDI in DAW mode
                     midi_files_flexstart = []
                 else:
-                    # Detailed mode: all methods with subfolders
-                    # Prepare FlexStart parameters
-                    grid_output_dir = Path(paths['comprehensive_csv']).parent
-                    base_name = Path(paths['comprehensive_csv']).stem.replace('_comprehensive_phases', '')
-
+                    # Detailed mode: anchored onset MIDI + bass pitch with subfolders
                     if verbose:
-                        print("\n  [10a] Onset-based MIDI (drum hits + FlexStart grid)...")
-                    midi_files_onset = midi_export.comprehensive_csv_to_onset_midi(
-                        str(paths['comprehensive_csv']),
-                        str(paths['tempo_csv']),
-                        str(paths['midi_dir'] / 'onset'),
-                        snippet_start=snippet_offset,
-                        methods=['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4',
-                                 '1bar_flexStart', '2bar_flexStart', '4bar_flexStart'],
-                        grid_output_dir=str(grid_output_dir),
-                        base_name=base_name
+                        print("\n  [10a] Onset-based MIDI (anchored patterns: L2 + full sections)...")
+                    drum_stem_paths = config.get_stem_paths(track_id, 'drums', Path(output_dir))
+                    midi_files_onset = midi_export.export_anchored_onset_midi(
+                        anchoring_dir=str(drum_stem_paths['anchoring_dir']),
+                        filtered_dir=str(drum_stem_paths['filtered_patterns_dir']),
+                        output_dir=str(paths['midi_dir'] / 'onset'),
+                        verbose=verbose
                     )
 
                     # Export bass pitch MIDI files (F0 converted to MIDI notes)
                     if verbose:
-                        print("\n  [10b] Bass pitch MIDI (all methods + FlexStart)...")
+                        print("\n  [10b] Bass pitch MIDI (anchored windows: L2 + full sections)...")
                     f0_csv_path = paths['stems_dir'] / 'bass_f0.csv'
                     if f0_csv_path.exists():
-                        midi_files_pitch = midi_export.comprehensive_csv_to_pitch_midi(
-                            str(paths['comprehensive_csv']),
-                            str(paths['tempo_csv']),
-                            str(f0_csv_path),
-                            str(paths['midi_dir'] / 'bass_pitch'),
-                            snippet_start=snippet_offset,
-                            methods=['per_snippet', 'drum', 'mel', 'pitch', 'standard_L1', 'standard_L2', 'standard_L4',
-                                     '1bar_flexStart', '2bar_flexStart', '4bar_flexStart'],
-                            grid_output_dir=str(grid_output_dir),
-                            base_name=base_name
+                        midi_files_pitch = midi_export.export_anchored_pitch_midi(
+                            anchoring_dir=str(drum_stem_paths['anchoring_dir']),
+                            filtered_dir=str(drum_stem_paths['filtered_patterns_dir']),
+                            f0_csv_path=str(f0_csv_path),
+                            output_dir=str(paths['midi_dir'] / 'bass_pitch'),
+                            verbose=verbose
                         )
                     else:
                         midi_files_pitch = []
