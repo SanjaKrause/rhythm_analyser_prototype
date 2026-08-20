@@ -64,15 +64,30 @@ wrote the old 5.5 outputs), ~450 lines total:
 - Stale docstring lines (12–14): "rhythm histograms with style", "with medians and IQR" —
   no merge step reads these anymore (only `5_grid` among the 5.x folders is read)
 
-### `loop_extractor/utils/midi_export.py` (after the anchored-MIDI switch)
-- `_flexstart_to_midi_onset` / `_flexstart_to_midi_pitch` — no longer reachable:
-  steps 10a/10b now call `export_anchored_onset_midi` / `export_anchored_pitch_midi`;
-  the only remaining `comprehensive_csv_to_*_midi` caller is DAW mode with
-  `methods=['drum']` (flexStart branches never taken there)
-- `flexstart_to_midi` — check callers; likely dead
-- `f0_to_midi` — KEEP for now: still called by `comprehensive_csv_to_pitch_midi`
-  (DAW mode). In the anchored export it is superseded by `_f0_to_note_events` +
-  `_write_pitch_midi` (which align to the window start instead of the first note)
+### `loop_extractor/utils/midi_export.py` (after the anchored-MIDI switch + DAW-mode removal)
+DAW mode was removed entirely (GUI + code, 2026-08-19), so the legacy
+comprehensive-CSV MIDI branch now has NO callers at all. Dead and removable:
+- `comprehensive_csv_to_onset_midi` / `comprehensive_csv_to_pitch_midi`
+- `_flexstart_to_midi_onset` / `_flexstart_to_midi_pitch`
+- `flexstart_to_midi`
+- `f0_to_midi` (superseded by `_f0_to_note_events` + `_write_pitch_midi`,
+  which align to the window start instead of the first note)
+
+### Export format option (WAV/MP3) — REMOVED (done)
+- gui.py: EXPORT FORMAT radio section removed — always WAV
+- main.py: `export_format` param + `--export-format` flag removed; audio-examples
+  skip-existing check fixed to look for `.wav` (was checking stale `.mp3` names)
+- config.py: dead `AUDIO_EXPORT_FORMAT` constant removed
+- Still in audio_export.py (now dead unless called with mp3 explicitly):
+  `export_audio_to_mp3` + the `export_format` params of `create_audio_examples`
+  / `export_stem_loops` and `AUDIO_EXPORT_BITRATE` — candidates for removal
+
+### DAW mode — REMOVED (done)
+- gui.py: OUTPUT MODE radio section removed (always full detailed pipeline)
+- main.py: `daw_ready` parameter, `--daw-ready` flag, and all branches removed
+- config.py: `8_midi_drum` / `9_loops_drum` folder switching removed
+- Any existing `8_midi_drum/` or `9_loops_drum/` output folders are orphaned →
+  DELETE if found in output dirs
 
 ### Backup / dated files (whole files)
 - `loop_extractor/analysis/anchored_rhythm_histograms_backup.py`
@@ -90,6 +105,11 @@ wrote the old 5.5 outputs), ~450 lines total:
 - Step 7.2 statistics outputs (built from 6.6/6.7 CSVs)
 
 ## 4. Open questions (to confirm before executing)
+
+- [ ] `9_loops/` output + step 11 (`export_stem_loops`): user flagged as obsolete
+      (superseded by `9.1_sections/`), based on the legacy flexStart branch.
+      Now that DAW mode is removed, dropping step 11 entirely would also let
+      `audio_export.export_stem_loops` go. Decision pending discussion.
 
 - [ ] Delete output folders across **all** tracks in `output all/`, or only some?
 - [ ] Any other output dirs (other corpora/SSDs) that should get the same cleanup?

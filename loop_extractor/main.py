@@ -26,7 +26,7 @@ Complete pipeline for music microtiming analysis and loop extraction:
 8. Audio example generation
 9. LEPA data export
 10. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
-11. Stem loop export (WAV/MP3 loops for each stem, one loop per method: drum, mel, pitch)
+11. Stem loop export (WAV loops for each stem, one loop per method: drum, mel, pitch)
 11.1. Section extraction (extract audio sections from filtered pattern boundaries)
 13. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
 13.1. Pironio section metrics (pulse clarity for each extracted section)
@@ -103,10 +103,8 @@ def run_complete_pipeline(
     anchoring_mode: str = 'double',  # 'single' or 'double' anchoring
     skip_existing: bool = False,
     create_audio_examples: bool = True,
-    daw_ready: bool = False,
     manual_start: Optional[float] = None,
     manual_duration: Optional[float] = None,
-    export_format: str = 'wav',
     reuse_existing: bool = False,  # Reuse existing stems/beats/songformer, skip steps 1-4.5, 5.5
     all_stems: bool = False,  # Run onset/grid analysis for all 5 stems
     fullmix: bool = False,  # Also calculate on full mix (non-separated audio)
@@ -133,7 +131,7 @@ def run_complete_pipeline(
     skip_existing : bool
         Skip steps if output files already exist
     create_audio_examples : bool
-        Create MP3 examples with click tracks
+        Create audio examples (WAV) with click tracks
     verbose : bool
         Print progress messages
 
@@ -160,10 +158,10 @@ def run_complete_pipeline(
         raise FileNotFoundError(f"Audio file not found: {audio_file}")
 
     # Get output paths
-    paths = config.get_output_paths(track_id, Path(output_dir), daw_ready=daw_ready)
+    paths = config.get_output_paths(track_id, Path(output_dir))
 
     # Create directories
-    config.create_output_directories(track_id, Path(output_dir), daw_ready=daw_ready)
+    config.create_output_directories(track_id, Path(output_dir))
 
     results = {
         'track_id': track_id,
@@ -324,12 +322,8 @@ def run_complete_pipeline(
                 print("\n[3.5] Tempo plots - SKIPPED (exists)")
             results['steps_completed'].append('tempo_plots_skipped')
         else:
-            if daw_ready:
-                if verbose:
-                    print("\n[3.5] Generating tempo CSV (plots skipped in DAW mode)...")
-            else:
-                if verbose:
-                    print("\n[3.5] Generating tempo plots...")
+            if verbose:
+                print("\n[3.5] Generating tempo plots...")
 
             # Load snippet offset
             if manual_start is not None:
@@ -363,15 +357,14 @@ def run_complete_pipeline(
             if snippet_offset is not None:
                 results['time_range']['actual_end'] = snippet_offset + snippet_duration
 
-            # Create tempo plots (or just CSV in DAW mode)
+            # Create tempo plots
             tempo_files = tempo_plots.create_tempo_plots(
                 str(paths['beats_file']),
                 str(paths['corrected_downbeats_file']),
                 str(paths['tempo_plots_dir']),
                 track_id,
                 snippet_start=snippet_offset,
-                snippet_duration=snippet_duration,
-                skip_plots=daw_ready  # Skip plots in DAW mode
+                snippet_duration=snippet_duration
             )
 
             results['tempo_plots_pdf'] = tempo_files.get('plot_pdf')
@@ -379,29 +372,21 @@ def run_complete_pipeline(
             results['tempo_csv'] = tempo_files['csv']
 
             # Thesis figure: 4 horizontal panels -> <track_id>_thesisPlot.pdf
-            if not daw_ready:
-                results['tempo_plots_thesis_pdf'] = tempo_plots.create_thesis_tempo_plot(
-                    str(paths['beats_file']),
-                    str(paths['corrected_downbeats_file']),
-                    str(paths['tempo_plots_dir']),
-                    track_id,
-                    snippet_start=snippet_offset,
-                    snippet_duration=snippet_duration
-                )
+            results['tempo_plots_thesis_pdf'] = tempo_plots.create_thesis_tempo_plot(
+                str(paths['beats_file']),
+                str(paths['corrected_downbeats_file']),
+                str(paths['tempo_plots_dir']),
+                track_id,
+                snippet_start=snippet_offset,
+                snippet_duration=snippet_duration
+            )
 
-            if daw_ready:
-                results['steps_completed'].append('tempo_csv_only')
-            else:
-                results['steps_completed'].append('tempo_plots')
+            results['steps_completed'].append('tempo_plots')
 
             if verbose:
-                if daw_ready:
-                    print(f"  ✓ Tempo CSV created")
-                    print(f"    CSV: {Path(tempo_files['csv']).name}")
-                else:
-                    print(f"  ✓ Tempo plots created")
-                    print(f"    PDF: {Path(tempo_files['plot_pdf']).name}")
-                    print(f"    CSV: {Path(tempo_files['csv']).name}")
+                print(f"  ✓ Tempo plots created")
+                print(f"    PDF: {Path(tempo_files['plot_pdf']).name}")
+                print(f"    CSV: {Path(tempo_files['csv']).name}")
 
     except Exception as e:
         error_msg = f"Step 3.5 failed: {e}"
@@ -429,7 +414,7 @@ def run_complete_pipeline(
 
             # Still create plots if they don't exist
             sf_snippet_plot = paths['songformer_dir'] / 'SF_snippet_sections.png'
-            if not daw_ready and not sf_snippet_plot.exists():
+            if not sf_snippet_plot.exists():
                 if verbose:
                     print("  Creating SongFormer plots...")
                 sf_plot_results = songformer_analysis.create_songformer_plots(
@@ -467,18 +452,17 @@ def run_complete_pipeline(
                     print(f"  ✓ SongFormer completed: {num_sections} sections detected")
 
                 # Create plots
-                if not daw_ready:
-                    sf_plot_results = songformer_analysis.create_songformer_plots(
-                        songformer_json_path=songformer_json,
-                        output_dir=paths['songformer_dir'],
-                        track_id=track_id,
-                        snippet_start=snippet_offset_val,
-                        snippet_duration=snippet_dur_val,
-                        track_name=track_id,
-                        downbeats_file=paths['corrected_downbeats_file'] if paths['corrected_downbeats_file'].exists() else None,
-                        verbose=verbose
-                    )
-                    results['songformer_plots'] = sf_plot_results
+                sf_plot_results = songformer_analysis.create_songformer_plots(
+                    songformer_json_path=songformer_json,
+                    output_dir=paths['songformer_dir'],
+                    track_id=track_id,
+                    snippet_start=snippet_offset_val,
+                    snippet_duration=snippet_dur_val,
+                    track_name=track_id,
+                    downbeats_file=paths['corrected_downbeats_file'] if paths['corrected_downbeats_file'].exists() else None,
+                    verbose=verbose
+                )
+                results['songformer_plots'] = sf_plot_results
 
     except Exception as e:
         error_msg = f"Step 4 failed: {e}"
@@ -656,12 +640,6 @@ def run_complete_pipeline(
                     print("\n[5.1] Drum transcription - SKIPPED (DrumTranscriber not available)")
                     print("      Falling back to librosa onsets from Step 5")
                 results['steps_completed'].append('drumtranscriber_unavailable')
-            elif daw_ready:
-                # Skip in DAW mode (not essential for loop creation)
-                if verbose:
-                    print("\n[5.1] Drum transcription - SKIPPED (DAW mode)")
-                    print("      Using librosa onsets from Step 5")
-                results['steps_completed'].append('drumtranscriber_skipped_daw')
             else:
                 # Always run DrumTranscriber fresh when this mode is selected
                 if verbose:
@@ -1023,11 +1001,7 @@ def run_complete_pipeline(
     # Track which stems were successfully processed (for downstream steps)
     processed_stems = []
 
-    if daw_ready:
-        if verbose:
-            print("\n[6.1] Section anchoring - SKIPPED (DAW ready mode)")
-        results['steps_completed'].append('anchoring_skipped_daw')
-    elif not sf_overlapping_csv.exists() or not sf_timings_csv.exists():
+    if not sf_overlapping_csv.exists() or not sf_timings_csv.exists():
         if verbose:
             print("\n[6.1] Section anchoring - SKIPPED (no SongFormer sections)")
         results['steps_completed'].append('anchoring_skipped_no_sections')
@@ -1264,120 +1238,106 @@ def run_complete_pipeline(
     # ========================================================================
     # STEP 6.2.5: ANCHORED MICROTIMING PLOTS (per section, per stem)
     # ========================================================================
-    if daw_ready:
-        if verbose:
-            print("\n[6.2.5] Anchored microtiming plots - SKIPPED (DAW ready mode)")
-        results['steps_completed'].append('anchored_microtiming_plots_skipped_daw')
-    else:
-        try:
-            track_dir = Path(output_dir) / track_id
-            filtered_patterns_dir = track_dir / '6.2_filtered_patterns'
+    try:
+        track_dir = Path(output_dir) / track_id
+        filtered_patterns_dir = track_dir / '6.2_filtered_patterns'
 
-            if not filtered_patterns_dir.exists():
+        if not filtered_patterns_dir.exists():
+            if verbose:
+                print("\n[6.2.5] Anchored microtiming plots - SKIPPED (no filtered patterns)")
+            results['steps_completed'].append('anchored_microtiming_plots_skipped')
+        else:
+            # Check if any anchored microtiming plots already exist
+            existing_plots = list(filtered_patterns_dir.glob('*/*_microtiming.pdf'))
+
+            if skip_existing and existing_plots:
                 if verbose:
-                    print("\n[6.2.5] Anchored microtiming plots - SKIPPED (no filtered patterns)")
+                    print("\n[6.2.5] Anchored microtiming plots - SKIPPED (exists)")
                 results['steps_completed'].append('anchored_microtiming_plots_skipped')
             else:
-                # Check if any anchored microtiming plots already exist
-                existing_plots = list(filtered_patterns_dir.glob('*/*_microtiming.pdf'))
+                if verbose:
+                    print("\n[6.2.5] Generating anchored microtiming plots...")
 
-                if skip_existing and existing_plots:
-                    if verbose:
-                        print("\n[6.2.5] Anchored microtiming plots - SKIPPED (exists)")
-                    results['steps_completed'].append('anchored_microtiming_plots_skipped')
-                else:
-                    if verbose:
-                        print("\n[6.2.5] Generating anchored microtiming plots...")
+                onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+                # Append fullmix if enabled
+                if fullmix:
+                    onset_stems = list(onset_stems) + ['fullmix']
+                all_plots = anchored_microtiming_plots.create_all_anchored_microtiming_plots(
+                    str(filtered_patterns_dir),
+                    track_id,
+                    stems=onset_stems
+                )
 
-                    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
-                    # Append fullmix if enabled
-                    if fullmix:
-                        onset_stems = list(onset_stems) + ['fullmix']
-                    all_plots = anchored_microtiming_plots.create_all_anchored_microtiming_plots(
-                        str(filtered_patterns_dir),
-                        track_id,
-                        stems=onset_stems
-                    )
+                results['anchored_microtiming_plots'] = all_plots
+                results['steps_completed'].append('anchored_microtiming_plots')
 
-                    results['anchored_microtiming_plots'] = all_plots
-                    results['steps_completed'].append('anchored_microtiming_plots')
+                if verbose:
+                    total_plots = sum(len(v) for v in all_plots.values())
+                    print(f"  ✓ Anchored microtiming plots created ({total_plots} files)")
 
-                    if verbose:
-                        total_plots = sum(len(v) for v in all_plots.values())
-                        print(f"  ✓ Anchored microtiming plots created ({total_plots} files)")
-
-        except Exception as e:
-            error_msg = f"Step 6.2.5 failed: {e}"
-            results['errors'].append(error_msg)
-            if verbose:
-                print(f"  ✗ ERROR: {e}")
-            # Don't raise - continue to next step
+    except Exception as e:
+        error_msg = f"Step 6.2.5 failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR: {e}")
+        # Don't raise - continue to next step
 
     # ========================================================================
     # STEP 6.5: RASTER PLOTS (for all stems)
     # ========================================================================
-    if daw_ready:
-        if verbose:
-            print("\n[6.5] Raster plots - SKIPPED (DAW ready mode)")
-        results['steps_completed'].append('raster_plots_skipped_daw')
-    else:
-        onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
-        # Append fullmix if enabled
-        if fullmix:
-            onset_stems = list(onset_stems) + ['fullmix']
-        raster_created = False
+    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    # Append fullmix if enabled
+    if fullmix:
+        onset_stems = list(onset_stems) + ['fullmix']
+    raster_created = False
 
-        for stem in onset_stems:
-            try:
-                stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
-                comprehensive_csv = stem_paths['comprehensive_csv']
+    for stem in onset_stems:
+        try:
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            comprehensive_csv = stem_paths['comprehensive_csv']
 
-                if not comprehensive_csv.exists():
-                    if verbose:
-                        print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (no comprehensive CSV)")
-                    continue
-
-                grid_output_dir = comprehensive_csv.parent
-                raster_files_exist = (grid_output_dir / f'{track_id}_raster_comparison.png').exists()
-
-                if skip_existing and raster_files_exist:
-                    if verbose:
-                        print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (exists)")
-                    continue
-
+            if not comprehensive_csv.exists():
                 if verbose:
-                    print(f"\n[6.5] Generating raster plots ({stem})...")
-
-                raster_plots.create_all_plots(
-                    str(comprehensive_csv),
-                    str(grid_output_dir),
-                    track_id
-                )
-
-                raster_created = True
-
-                if verbose:
-                    print(f"  ✓ Raster plots ({stem}) created")
-
-            except Exception as e:
-                error_msg = f"Step 6.5 failed for {stem}: {e}"
-                results['errors'].append(error_msg)
-                if verbose:
-                    print(f"  ✗ ERROR ({stem}): {e}")
+                    print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (no comprehensive CSV)")
                 continue
 
-        if raster_created:
-            results['steps_completed'].append('raster_plots')
+            grid_output_dir = comprehensive_csv.parent
+            raster_files_exist = (grid_output_dir / f'{track_id}_raster_comparison.png').exists()
+
+            if skip_existing and raster_files_exist:
+                if verbose:
+                    print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (exists)")
+                continue
+
+            if verbose:
+                print(f"\n[6.5] Generating raster plots ({stem})...")
+
+            raster_plots.create_all_plots(
+                str(comprehensive_csv),
+                str(grid_output_dir),
+                track_id
+            )
+
+            raster_created = True
+
+            if verbose:
+                print(f"  ✓ Raster plots ({stem}) created")
+
+        except Exception as e:
+            error_msg = f"Step 6.5 failed for {stem}: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR ({stem}): {e}")
+            continue
+
+    if raster_created:
+        results['steps_completed'].append('raster_plots')
 
     # ========================================================================
     # STEP 6.6: MICROTIMING PLOTS
     # ========================================================================
     try:
-        if daw_ready:
-            if verbose:
-                print("\n[6.6] Microtiming plots - SKIPPED (DAW ready mode)")
-            results['steps_completed'].append('microtiming_plots_skipped_daw')
-        elif not paths['comprehensive_csv'].exists():
+        if not paths['comprehensive_csv'].exists():
             if verbose:
                 print("\n[6.6] Microtiming plots - SKIPPED (no comprehensive CSV)")
             results['steps_completed'].append('microtiming_plots_skipped')
@@ -1594,77 +1554,72 @@ def run_complete_pipeline(
     # ========================================================================
     # STEP 7.2: ANCHORED STATISTICS (for all stems)
     # ========================================================================
-    if daw_ready:
-        if verbose:
-            print("\n[7.2] Anchored statistics - SKIPPED (DAW ready mode)")
-        results['steps_completed'].append('anchored_statistics_skipped_daw')
-    else:
-        from batch_analysis import anchored_rhythm_statistics
+    from batch_analysis import anchored_rhythm_statistics
 
-        onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
-        # Append fullmix if enabled
-        if fullmix:
-            onset_stems = list(onset_stems) + ['fullmix']
-        stats_created = False
+    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
+    # Append fullmix if enabled
+    if fullmix:
+        onset_stems = list(onset_stems) + ['fullmix']
+    stats_created = False
 
-        for stem in onset_stems:
-            try:
-                stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
-                rhythm_hist_dir = stem_paths['rhythm_histograms_dir']
-                beat_hist_dir = stem_paths['beat_histograms_dir']
+    for stem in onset_stems:
+        try:
+            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+            rhythm_hist_dir = stem_paths['rhythm_histograms_dir']
+            beat_hist_dir = stem_paths['beat_histograms_dir']
 
-                # Check if rhythm histograms exist for this stem
-                rhythm_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_rhythm_histograms.csv'
-                if not rhythm_csv.exists():
-                    if verbose:
-                        print(f"\n[7.2] Anchored statistics ({stem}) - SKIPPED (no rhythm histograms)")
-                    continue
-
+            # Check if rhythm histograms exist for this stem
+            rhythm_csv = rhythm_hist_dir / f'{track_id}_filtered_anchored_rhythm_histograms.csv'
+            if not rhythm_csv.exists():
                 if verbose:
-                    print(f"\n[7.2] Calculating anchored statistics ({stem})...")
-
-                # Output directory for statistics (stem-specific)
-                track_dir = Path(output_dir) / track_id
-                stats_dir = track_dir / '6.8_anchored_statistics' / stem
-                stats_dir.mkdir(parents=True, exist_ok=True)
-
-                # Calculate anchored rhythm statistics
-                try:
-                    anchored_rhythm_statistics.anchored_statistics_for_track_stem(
-                        rhythm_hist_dir=rhythm_hist_dir,
-                        stats_dir=stats_dir,
-                        track_id=track_id
-                    )
-                    if verbose:
-                        print(f"  ✓ Anchored rhythm statistics ({stem}) calculated")
-                except Exception as e:
-                    if verbose:
-                        print(f"  ! Warning: Could not calculate anchored rhythm statistics ({stem}): {e}")
-
-                # Calculate anchored beat statistics
-                try:
-                    anchored_rhythm_statistics.anchored_beat_statistics_for_track_stem(
-                        beat_hist_dir=beat_hist_dir,
-                        stats_dir=stats_dir,
-                        track_id=track_id
-                    )
-                    if verbose:
-                        print(f"  ✓ Anchored beat statistics ({stem}) calculated")
-                except Exception as e:
-                    if verbose:
-                        print(f"  ! Warning: Could not calculate anchored beat statistics ({stem}): {e}")
-
-                stats_created = True
-
-            except Exception as e:
-                error_msg = f"Step 7.2 failed for {stem}: {e}"
-                results['errors'].append(error_msg)
-                if verbose:
-                    print(f"  ✗ ERROR ({stem}): {e}")
+                    print(f"\n[7.2] Anchored statistics ({stem}) - SKIPPED (no rhythm histograms)")
                 continue
 
-        if stats_created:
-            results['steps_completed'].append('anchored_statistics')
+            if verbose:
+                print(f"\n[7.2] Calculating anchored statistics ({stem})...")
+
+            # Output directory for statistics (stem-specific)
+            track_dir = Path(output_dir) / track_id
+            stats_dir = track_dir / '6.8_anchored_statistics' / stem
+            stats_dir.mkdir(parents=True, exist_ok=True)
+
+            # Calculate anchored rhythm statistics
+            try:
+                anchored_rhythm_statistics.anchored_statistics_for_track_stem(
+                    rhythm_hist_dir=rhythm_hist_dir,
+                    stats_dir=stats_dir,
+                    track_id=track_id
+                )
+                if verbose:
+                    print(f"  ✓ Anchored rhythm statistics ({stem}) calculated")
+            except Exception as e:
+                if verbose:
+                    print(f"  ! Warning: Could not calculate anchored rhythm statistics ({stem}): {e}")
+
+            # Calculate anchored beat statistics
+            try:
+                anchored_rhythm_statistics.anchored_beat_statistics_for_track_stem(
+                    beat_hist_dir=beat_hist_dir,
+                    stats_dir=stats_dir,
+                    track_id=track_id
+                )
+                if verbose:
+                    print(f"  ✓ Anchored beat statistics ({stem}) calculated")
+            except Exception as e:
+                if verbose:
+                    print(f"  ! Warning: Could not calculate anchored beat statistics ({stem}): {e}")
+
+            stats_created = True
+
+        except Exception as e:
+            error_msg = f"Step 7.2 failed for {stem}: {e}"
+            results['errors'].append(error_msg)
+            if verbose:
+                print(f"  ✗ ERROR ({stem}): {e}")
+            continue
+
+    if stats_created:
+        results['steps_completed'].append('anchored_statistics')
 
     # ========================================================================
     # STEP 7.6/7.7/7.8: noHats VARIANT (drums only)
@@ -1673,124 +1628,120 @@ def run_complete_pipeline(
     # parallel _noHats folders so BOTH variants are kept side by side.
     # Mirrors the "filtered" branch of Steps 7 / 7.1 / 7.2 for drums.
     # ========================================================================
-    if daw_ready:
-        if verbose:
-            print("\n[7.6-7.8] noHats variant - SKIPPED (DAW ready mode)")
-    else:
-        try:
-            stem = 'drums'
-            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
-            nohats_dir = stem_paths['nohats_patterns_dir']
-            nohats_rhythm_dir = stem_paths['nohats_rhythm_histograms_dir']
-            nohats_beat_dir = stem_paths['nohats_beat_histograms_dir']
-            track_dir = Path(output_dir) / track_id
-            nohats_stats_dir = track_dir / '6.8_anchored_statistics_noHats' / stem
+    try:
+        stem = 'drums'
+        stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
+        nohats_dir = stem_paths['nohats_patterns_dir']
+        nohats_rhythm_dir = stem_paths['nohats_rhythm_histograms_dir']
+        nohats_beat_dir = stem_paths['nohats_beat_histograms_dir']
+        track_dir = Path(output_dir) / track_id
+        nohats_stats_dir = track_dir / '6.8_anchored_statistics_noHats' / stem
 
-            if not nohats_dir.exists() or not any(nohats_dir.glob('*_L2_*_anchored.csv')):
-                if verbose:
-                    print("\n[7.6-7.8] noHats variant - SKIPPED (no noHats patterns)")
-            else:
-                from analysis import anchored_rhythm_histograms as _nh_arh
-                from utils import anchored_beat_histograms as _nh_abh
-                from batch_analysis import anchored_rhythm_statistics as _nh_ars
-                nh_tid = track_id + '_filtered'
+        if not nohats_dir.exists() or not any(nohats_dir.glob('*_L2_*_anchored.csv')):
+            if verbose:
+                print("\n[7.6-7.8] noHats variant - SKIPPED (no noHats patterns)")
+        else:
+            from analysis import anchored_rhythm_histograms as _nh_arh
+            from utils import anchored_beat_histograms as _nh_abh
+            from batch_analysis import anchored_rhythm_statistics as _nh_ars
+            nh_tid = track_id + '_filtered'
 
-                # ---- 7.6: noHats rhythm histograms ----
-                if verbose:
-                    print("\n[7.6] noHats rhythm histograms (drums)...")
-                nohats_rhythm_dir.mkdir(parents=True, exist_ok=True)
-                nh_rhythm = _nh_arh.create_anchored_rhythm_histograms(
-                    anchoring_dir=str(nohats_dir),
-                    output_dir=str(nohats_rhythm_dir),
+            # ---- 7.6: noHats rhythm histograms ----
+            if verbose:
+                print("\n[7.6] noHats rhythm histograms (drums)...")
+            nohats_rhythm_dir.mkdir(parents=True, exist_ok=True)
+            nh_rhythm = _nh_arh.create_anchored_rhythm_histograms(
+                anchoring_dir=str(nohats_dir),
+                output_dir=str(nohats_rhythm_dir),
+                track_id=nh_tid,
+                verbose=verbose
+            )
+            if nh_rhythm and nh_rhythm.get('csv'):
+                nh_gp = _nh_arh.create_anchored_groove_pulse_histograms(
+                    rhythm_histograms_csv=nh_rhythm['csv'],
                     track_id=nh_tid,
+                    output_dir=str(nohats_rhythm_dir),
                     verbose=verbose
                 )
-                if nh_rhythm and nh_rhythm.get('csv'):
-                    nh_gp = _nh_arh.create_anchored_groove_pulse_histograms(
-                        rhythm_histograms_csv=nh_rhythm['csv'],
+                if nh_gp and nh_gp.get('csv'):
+                    _nh_arh.create_anchored_rhythm_patterns(
+                        groove_pulse_csv=nh_gp['csv'],
                         track_id=nh_tid,
                         output_dir=str(nohats_rhythm_dir),
                         verbose=verbose
                     )
-                    if nh_gp and nh_gp.get('csv'):
-                        _nh_arh.create_anchored_rhythm_patterns(
-                            groove_pulse_csv=nh_gp['csv'],
-                            track_id=nh_tid,
-                            output_dir=str(nohats_rhythm_dir),
-                            verbose=verbose
-                        )
 
-                # ---- 7.7: noHats beat histograms ----
-                if verbose:
-                    print("\n[7.7] noHats beat histograms (drums)...")
-                nohats_beat_dir.mkdir(parents=True, exist_ok=True)
-                _nh_abh.create_anchored_beat_histograms(
-                    filtered_patterns_dir=str(nohats_dir),
-                    track_id=track_id,
-                    output_dir=str(nohats_beat_dir)
-                )
-                _nh_abh.create_anchored_beat_histograms_all_onsets(
-                    filtered_patterns_dir=str(nohats_dir),
-                    track_id=track_id,
-                    output_dir=str(nohats_beat_dir)
-                )
-                nh_gpb = nohats_beat_dir / f'{track_id}_groove_pulse_beat_histograms.csv'
-                nh_agg = nohats_beat_dir / f'{track_id}_anchored_beat_histograms.csv'
-                nh_bpc = nh_gpb if nh_gpb.exists() else nh_agg
-                if nh_bpc.exists():
-                    _nh_abh.create_anchored_beat_patterns(
-                        beat_histograms_csv=str(nh_bpc),
-                        track_id=track_id,
-                        output_dir=str(nohats_beat_dir)
-                    )
-                nh_gpcsv = nohats_rhythm_dir / f'{nh_tid}_anchored_groove_pulse_histograms.csv'
-                if nh_gpcsv.exists():
-                    _nh_abh.create_anchored_groove_pulse_beat_histograms(
-                        filtered_patterns_dir=str(nohats_dir),
-                        track_id=track_id,
-                        output_dir=str(nohats_beat_dir),
-                        groove_pulse_csv=str(nh_gpcsv)
-                    )
-                    _nh_abh.create_anchored_groove_pulse_beat_histograms_all_onsets(
-                        filtered_patterns_dir=str(nohats_dir),
-                        track_id=track_id,
-                        output_dir=str(nohats_beat_dir),
-                        groove_pulse_csv=str(nh_gpcsv)
-                    )
-
-                # ---- 7.8: noHats statistics ----
-                if verbose:
-                    print("\n[7.8] noHats statistics (drums)...")
-                nohats_stats_dir.mkdir(parents=True, exist_ok=True)
-                try:
-                    _nh_ars.anchored_statistics_for_track_stem(
-                        rhythm_hist_dir=nohats_rhythm_dir,
-                        stats_dir=nohats_stats_dir,
-                        track_id=track_id
-                    )
-                except Exception as e:
-                    if verbose:
-                        print(f"  ! noHats rhythm statistics: {e}")
-                try:
-                    _nh_ars.anchored_beat_statistics_for_track_stem(
-                        beat_hist_dir=nohats_beat_dir,
-                        stats_dir=nohats_stats_dir,
-                        track_id=track_id
-                    )
-                except Exception as e:
-                    if verbose:
-                        print(f"  ! noHats beat statistics: {e}")
-
-                results['steps_completed'].append('anchored_histograms_noHats')
-                if verbose:
-                    print("  ✓ noHats variant complete "
-                          "(6.6/6.7/6.8 _noHats folders written)")
-
-        except Exception as e:
-            error_msg = f"Step 7.6-7.8 (noHats variant) failed: {e}"
-            results['errors'].append(error_msg)
+            # ---- 7.7: noHats beat histograms ----
             if verbose:
-                print(f"  ✗ ERROR (noHats variant): {e}")
+                print("\n[7.7] noHats beat histograms (drums)...")
+            nohats_beat_dir.mkdir(parents=True, exist_ok=True)
+            _nh_abh.create_anchored_beat_histograms(
+                filtered_patterns_dir=str(nohats_dir),
+                track_id=track_id,
+                output_dir=str(nohats_beat_dir)
+            )
+            _nh_abh.create_anchored_beat_histograms_all_onsets(
+                filtered_patterns_dir=str(nohats_dir),
+                track_id=track_id,
+                output_dir=str(nohats_beat_dir)
+            )
+            nh_gpb = nohats_beat_dir / f'{track_id}_groove_pulse_beat_histograms.csv'
+            nh_agg = nohats_beat_dir / f'{track_id}_anchored_beat_histograms.csv'
+            nh_bpc = nh_gpb if nh_gpb.exists() else nh_agg
+            if nh_bpc.exists():
+                _nh_abh.create_anchored_beat_patterns(
+                    beat_histograms_csv=str(nh_bpc),
+                    track_id=track_id,
+                    output_dir=str(nohats_beat_dir)
+                )
+            nh_gpcsv = nohats_rhythm_dir / f'{nh_tid}_anchored_groove_pulse_histograms.csv'
+            if nh_gpcsv.exists():
+                _nh_abh.create_anchored_groove_pulse_beat_histograms(
+                    filtered_patterns_dir=str(nohats_dir),
+                    track_id=track_id,
+                    output_dir=str(nohats_beat_dir),
+                    groove_pulse_csv=str(nh_gpcsv)
+                )
+                _nh_abh.create_anchored_groove_pulse_beat_histograms_all_onsets(
+                    filtered_patterns_dir=str(nohats_dir),
+                    track_id=track_id,
+                    output_dir=str(nohats_beat_dir),
+                    groove_pulse_csv=str(nh_gpcsv)
+                )
+
+            # ---- 7.8: noHats statistics ----
+            if verbose:
+                print("\n[7.8] noHats statistics (drums)...")
+            nohats_stats_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                _nh_ars.anchored_statistics_for_track_stem(
+                    rhythm_hist_dir=nohats_rhythm_dir,
+                    stats_dir=nohats_stats_dir,
+                    track_id=track_id
+                )
+            except Exception as e:
+                if verbose:
+                    print(f"  ! noHats rhythm statistics: {e}")
+            try:
+                _nh_ars.anchored_beat_statistics_for_track_stem(
+                    beat_hist_dir=nohats_beat_dir,
+                    stats_dir=nohats_stats_dir,
+                    track_id=track_id
+                )
+            except Exception as e:
+                if verbose:
+                    print(f"  ! noHats beat statistics: {e}")
+
+            results['steps_completed'].append('anchored_histograms_noHats')
+            if verbose:
+                print("  ✓ noHats variant complete "
+                      "(6.6/6.7/6.8 _noHats folders written)")
+
+    except Exception as e:
+        error_msg = f"Step 7.6-7.8 (noHats variant) failed: {e}"
+        results['errors'].append(error_msg)
+        if verbose:
+            print(f"  ✗ ERROR (noHats variant): {e}")
 
     # ========================================================================
     # STEP 7 (OLD): RMS ANALYSIS - COMMENTED OUT FOR FUTURE REFERENCE
@@ -1854,8 +1805,8 @@ def run_complete_pipeline(
             else:
                 # Check if audio examples already exist
                 audio_files_exist = (
-                    (paths['audio_examples_dir'] / 'drum.mp3').exists() or
-                    (paths['audio_examples_dir'] / 'uncorrected.mp3').exists()
+                    (paths['audio_examples_dir'] / 'drum.wav').exists() or
+                    (paths['audio_examples_dir'] / 'uncorrected.wav').exists()
                 )
 
                 if skip_existing and audio_files_exist:
@@ -1884,7 +1835,6 @@ def run_complete_pipeline(
                         str(paths['audio_examples_dir']),
                         snippet_offset=snippet_offset,
                         snippet_duration=snippet_dur,
-                        export_format=export_format,
                         track_id=track_id
                     )
 
@@ -1961,12 +1911,7 @@ def run_complete_pipeline(
             results['steps_completed'].append('midi_export_skipped')
         else:
             # Check if MIDI files already exist
-            midi_files_exist = (
-                (paths['midi_dir'] / 'drum.mid').exists() or
-                (paths['midi_dir'] / 'mel.mid').exists() or
-                (paths['midi_dir'] / 'pitch.mid').exists() or
-                any((paths['midi_dir'] / 'onset').glob('SecNo*.mid'))
-            )
+            midi_files_exist = any((paths['midi_dir'] / 'onset').glob('SecNo*.mid'))
 
             if skip_existing and midi_files_exist:
                 if verbose:
@@ -1976,96 +1921,45 @@ def run_complete_pipeline(
                 if verbose:
                     print("\n[10] MIDI export...")
 
-                # Load snippet offset
-                if snippet_offset_file and Path(snippet_offset_file).exists():
-                    snippet_offset = raster.load_snippet_offset(snippet_offset_file, track_id)
-                elif config.OVERVIEW_CSV.exists():
-                    snippet_offset = raster.load_snippet_offset(str(config.OVERVIEW_CSV), track_id)
-                else:
-                    snippet_offset = 0.0
+                # Export onset MIDI files (anchored patterns: L2 + full sections)
+                if verbose:
+                    print("\n  [10a] Onset-based MIDI (anchored patterns: L2 + full sections)...")
+                drum_stem_paths = config.get_stem_paths(track_id, 'drums', Path(output_dir))
+                midi_files_onset = midi_export.export_anchored_onset_midi(
+                    anchoring_dir=str(drum_stem_paths['anchoring_dir']),
+                    filtered_dir=str(drum_stem_paths['filtered_patterns_dir']),
+                    output_dir=str(paths['midi_dir'] / 'onset'),
+                    verbose=verbose
+                )
 
-                # Export onset MIDI files (actual drum hits within loop boundaries)
-                # In DAW mode: only drum method, no subfolders
-                # In detailed mode: all methods (per_snippet, drum, mel, pitch) with subfolders
-                if daw_ready:
-                    # DAW mode: drum method onset + bass pitch, directly in midi_dir
-                    if verbose:
-                        print("\n  [10] MIDI export (drum method + bass pitch)...")
-                    midi_files_onset = midi_export.comprehensive_csv_to_onset_midi(
-                        str(paths['comprehensive_csv']),
-                        str(paths['tempo_csv']),
-                        str(paths['midi_dir']),
-                        snippet_start=snippet_offset,
-                        methods=['drum']  # Only drum method
-                    )
-
-                    # Export bass pitch MIDI in DAW mode
-                    f0_csv_path = paths['stems_dir'] / 'bass_f0.csv'
-                    if f0_csv_path.exists():
-                        midi_files_pitch = midi_export.comprehensive_csv_to_pitch_midi(
-                            str(paths['comprehensive_csv']),
-                            str(paths['tempo_csv']),
-                            str(f0_csv_path),
-                            str(paths['midi_dir']),
-                            snippet_start=snippet_offset,
-                            methods=['drum']  # Only drum method
-                        )
-                    else:
-                        midi_files_pitch = []
-                        if verbose:
-                            print(f"  ⚠️  Bass F0 CSV not found, skipping bass pitch MIDI")
-
-                    # No FlexStart MIDI in DAW mode
-                    midi_files_flexstart = []
-                else:
-                    # Detailed mode: anchored onset MIDI + bass pitch with subfolders
-                    if verbose:
-                        print("\n  [10a] Onset-based MIDI (anchored patterns: L2 + full sections)...")
-                    drum_stem_paths = config.get_stem_paths(track_id, 'drums', Path(output_dir))
-                    midi_files_onset = midi_export.export_anchored_onset_midi(
+                # Export bass pitch MIDI files (F0 converted to MIDI notes)
+                if verbose:
+                    print("\n  [10b] Bass pitch MIDI (anchored windows: L2 + full sections)...")
+                f0_csv_path = paths['stems_dir'] / 'bass_f0.csv'
+                if f0_csv_path.exists():
+                    midi_files_pitch = midi_export.export_anchored_pitch_midi(
                         anchoring_dir=str(drum_stem_paths['anchoring_dir']),
                         filtered_dir=str(drum_stem_paths['filtered_patterns_dir']),
-                        output_dir=str(paths['midi_dir'] / 'onset'),
+                        f0_csv_path=str(f0_csv_path),
+                        output_dir=str(paths['midi_dir'] / 'bass_pitch'),
                         verbose=verbose
                     )
-
-                    # Export bass pitch MIDI files (F0 converted to MIDI notes)
+                else:
+                    midi_files_pitch = []
                     if verbose:
-                        print("\n  [10b] Bass pitch MIDI (anchored windows: L2 + full sections)...")
-                    f0_csv_path = paths['stems_dir'] / 'bass_f0.csv'
-                    if f0_csv_path.exists():
-                        midi_files_pitch = midi_export.export_anchored_pitch_midi(
-                            anchoring_dir=str(drum_stem_paths['anchoring_dir']),
-                            filtered_dir=str(drum_stem_paths['filtered_patterns_dir']),
-                            f0_csv_path=str(f0_csv_path),
-                            output_dir=str(paths['midi_dir'] / 'bass_pitch'),
-                            verbose=verbose
-                        )
-                    else:
-                        midi_files_pitch = []
-                        if verbose:
-                            print(f"  ⚠️  Bass F0 CSV not found, skipping bass pitch MIDI")
-
-                    # No separate FlexStart export needed - integrated into onset and pitch exports
-                    midi_files_flexstart = []
+                        print(f"  ⚠️  Bass F0 CSV not found, skipping bass pitch MIDI")
 
                 # Combine all MIDI files
                 midi_files = midi_files_onset + midi_files_pitch
-                if not daw_ready:
-                    midi_files += midi_files_flexstart
 
                 if midi_files:
                     results['midi_files'] = {
                         'onset': [str(f) for f in midi_files_onset],
-                        'bass_pitch': [str(f) for f in midi_files_pitch],
-                        'flexstart': [str(f) for f in midi_files_flexstart] if not daw_ready else []
+                        'bass_pitch': [str(f) for f in midi_files_pitch]
                     }
                     results['steps_completed'].append('midi_export')
                     if verbose:
-                        if daw_ready:
-                            print(f"\n  ✓ Exported {len(midi_files_onset)} onset MIDI + {len(midi_files_pitch)} bass pitch MIDI files")
-                        else:
-                            print(f"\n  ✓ Exported {len(midi_files_onset)} onset MIDI + {len(midi_files_pitch)} bass pitch MIDI + {len(midi_files_flexstart)} FlexStart MIDI files")
+                        print(f"\n  ✓ Exported {len(midi_files_onset)} onset MIDI + {len(midi_files_pitch)} bass pitch MIDI files")
                 else:
                     results['steps_completed'].append('midi_export_no_data')
                     if verbose:
@@ -2114,46 +2008,17 @@ def run_complete_pipeline(
                 base_name = Path(paths['comprehensive_csv']).stem  # e.g., 'track_id_comprehensive_phases'
                 grid_output_dir = Path(paths['comprehensive_csv']).parent
 
-                # In DAW mode: only export one FlexStart method based on detected pattern length
-                # In detailed mode: export all FlexStart methods (L=4, L=2, L=1)
-                if daw_ready:
-                    # Determine which method to use based on pattern_lengths
-                    # Priority: mel (4-bar) > lepa (2-bar) > aicc (1-bar)
-                    if 'mel' in pattern_lengths and pattern_lengths['mel'] == 4:
-                        methods = ['4bar_flexStart']
-                    elif 'lepa' in pattern_lengths and pattern_lengths['lepa'] == 2:
-                        methods = ['2bar_flexStart']
-                    elif 'aicc' in pattern_lengths and pattern_lengths['aicc'] == 1:
-                        methods = ['1bar_flexStart']
-                    else:
-                        # Fallback: try 4-bar first
-                        methods = ['4bar_flexStart']
-
-                    loop_files = audio_export.export_stem_loops(
-                        str(paths['stems_dir']),
-                        str(grid_output_dir),
-                        base_name,
-                        str(paths['loops_dir']),
-                        snippet_start=snippet_offset,
-                        pattern_lengths=pattern_lengths,
-                        fade_duration_ms=5.0,
-                        export_format=export_format,
-                        methods=methods,
-                        loop_start_offset_ms=loop_start_offset_ms
-                    )
-                else:
-                    # Detailed mode: export all three FlexStart methods
-                    loop_files = audio_export.export_stem_loops(
-                        str(paths['stems_dir']),
-                        str(grid_output_dir),
-                        base_name,
-                        str(paths['loops_dir']),
-                        snippet_start=snippet_offset,
-                        pattern_lengths=pattern_lengths,
-                        fade_duration_ms=5.0,
-                        export_format=export_format,
-                        loop_start_offset_ms=loop_start_offset_ms
-                    )
+                # Export all three FlexStart methods (L=4, L=2, L=1)
+                loop_files = audio_export.export_stem_loops(
+                    str(paths['stems_dir']),
+                    str(grid_output_dir),
+                    base_name,
+                    str(paths['loops_dir']),
+                    snippet_start=snippet_offset,
+                    pattern_lengths=pattern_lengths,
+                    fade_duration_ms=5.0,
+                    loop_start_offset_ms=loop_start_offset_ms
+                )
 
                 if loop_files:
                     results['loop_files'] = {
@@ -2471,32 +2336,31 @@ def run_complete_pipeline(
     # Low CC = high rhythmic complexity (more varied)
     # ========================================================================
     try:
-        if not daw_ready:
-            # Check for full_snippet.wav (created in Step 3.6)
-            snippet_wav = paths['stems_dir'] / 'full_snippet.wav'
+        # Check for full_snippet.wav (created in Step 3.6)
+        snippet_wav = paths['stems_dir'] / 'full_snippet.wav'
 
-            if snippet_wav.exists():
-                if verbose:
-                    print(f"\n[15] Yodfat rhythmic complexity analysis...")
+        if snippet_wav.exists():
+            if verbose:
+                print(f"\n[15] Yodfat rhythmic complexity analysis...")
 
-                yodfat_results = yodfat_analysis.run_yodfat_analysis(
-                    audio_file=str(snippet_wav),
-                    output_dir=str(Path(output_dir) / track_id),
-                    track_id=track_id,
-                    verbose=verbose
-                )
+            yodfat_results = yodfat_analysis.run_yodfat_analysis(
+                audio_file=str(snippet_wav),
+                output_dir=str(Path(output_dir) / track_id),
+                track_id=track_id,
+                verbose=verbose
+            )
 
-                results['yodfat'] = yodfat_results.get('metrics', {})
-                results['yodfat_json'] = yodfat_results.get('output_json')
+            results['yodfat'] = yodfat_results.get('metrics', {})
+            results['yodfat_json'] = yodfat_results.get('output_json')
 
-                if yodfat_results.get('errors'):
-                    results['steps_completed'].append('yodfat_with_errors')
-                else:
-                    results['steps_completed'].append('yodfat')
+            if yodfat_results.get('errors'):
+                results['steps_completed'].append('yodfat_with_errors')
             else:
-                if verbose:
-                    print(f"\n[15] Skipping Yodfat analysis - full_snippet.wav not found")
-                results['errors'].append("Step 15 skipped: full_snippet.wav not found")
+                results['steps_completed'].append('yodfat')
+        else:
+            if verbose:
+                print(f"\n[15] Skipping Yodfat analysis - full_snippet.wav not found")
+            results['errors'].append("Step 15 skipped: full_snippet.wav not found")
 
     except Exception as e:
         error_msg = f"Step 15 failed: {e}"
@@ -2624,14 +2488,10 @@ Environment:
 
     parser.add_argument('--no-audio-examples', action='store_true',
                        help='Skip audio example generation')
-    parser.add_argument('--daw-ready', action='store_true',
-                       help='DAW Ready mode: only export stems, loops (drum method), and MIDI (drum method)')
     parser.add_argument('--manual-start', type=float,
                        help='Manual start time in seconds (overrides snippet detection)')
     parser.add_argument('--manual-duration', type=float,
                        help='Manual duration in seconds (overrides default 30s snippet duration)')
-    parser.add_argument('--export-format', choices=['wav', 'mp3'], default='wav',
-                       help='Export format for stem loops (default: wav)')
     parser.add_argument('--quiet', action='store_true',
                        help='Minimize output')
     parser.add_argument('--reuse-existing', action='store_true',
@@ -2755,11 +2615,9 @@ Environment:
                     anchoring_mode=args.anchoring_mode,
                     skip_existing=False,
                     create_audio_examples=not args.no_audio_examples,
-                    daw_ready=args.daw_ready,
                     manual_start=args.manual_start,
                     manual_duration=args.manual_duration,
-                    export_format=args.export_format,
-                    reuse_existing=args.reuse_existing,
+                            reuse_existing=args.reuse_existing,
                     all_stems=args.all_stems,
                     fullmix=args.fullmix,
                     fullmix_dir=args.fullmix_dir,
@@ -2976,10 +2834,8 @@ Environment:
             anchoring_mode=args.anchoring_mode,
             skip_existing=False,
             create_audio_examples=not args.no_audio_examples,
-            daw_ready=args.daw_ready,
             manual_start=args.manual_start,
             manual_duration=args.manual_duration,
-            export_format=args.export_format,
             reuse_existing=args.reuse_existing,
             all_stems=args.all_stems,
             verbose=not args.quiet

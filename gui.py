@@ -65,12 +65,6 @@ class LoopExtractorGUI:
         self.processing_times = []  # List of processing times in seconds
         self.current_song_start_time = None  # Track when current song started
 
-        # Output mode
-        self.output_mode = tk.StringVar(value="detailed")  # Default: detailed analysis + plots
-
-        # Export format
-        self.export_format = tk.StringVar(value="wav")  # "wav" or "mp3" - Default: wav
-
         # Time selection mode
         self.use_snippet_times = tk.BooleanVar(value=True)  # Default: use snippet times
         self.manual_start_time = tk.DoubleVar(value=50.0)
@@ -519,21 +513,14 @@ class LoopExtractorGUI:
 
         outputs_label = tk.Label(
             right_frame,
-            text="OUTPUT MODE:",
+            text="OUTPUT:",
             font=('Arial', 14, 'bold'),
             fg=INK,
             bg=BG
         )
         outputs_label.pack(anchor='w', pady=(0, 10))
 
-        # Radio button: Detailed Analysis + Plots
-        detailed_radio = self._radio(
-            right_frame, "Detailed Analysis + Plots", self.output_mode, "detailed",
-            font=('Arial', 12, 'bold'), fg=ACCENT
-        )
-        detailed_radio.pack(anchor='w', pady=(0, 5))
-
-        # Detailed mode steps
+        # Pipeline steps (always runs the full detailed analysis)
         detailed_steps = tk.Label(
             right_frame,
             text="  • Stems\n  • Beat Detection\n  • Downbeat Correction\n  • Onset Detection\n  • Pattern Detection (all methods)\n  • Grid Analysis\n  • RMS Analysis\n  • Tempo Plots\n  • Raster Plots\n  • Audio Examples\n  • MIDI Export (all methods)\n  • Loop Export (all methods)",
@@ -543,45 +530,6 @@ class LoopExtractorGUI:
             justify=tk.LEFT
         )
         detailed_steps.pack(anchor='w', pady=(0, 15))
-
-        # Radio button: DAW Ready Loops
-        daw_radio = self._radio(
-            right_frame, "DAW Ready Loops", self.output_mode, "daw_ready",
-            font=('Arial', 12, 'bold'), fg=ACCENT
-        )
-        daw_radio.pack(anchor='w', pady=(0, 5))
-
-        # DAW Ready mode steps
-        daw_steps = tk.Label(
-            right_frame,
-            text="  • Stems\n  • Loops (drum pattern method only)\n  • MIDI (drum pattern method only)",
-            font=('Arial', 9),
-            fg=MUTED,
-            bg=BG,
-            justify=tk.LEFT
-        )
-        daw_steps.pack(anchor='w', pady=(0, 15))
-
-        # Export format section
-        format_label = tk.Label(
-            right_frame,
-            text="EXPORT FORMAT:",
-            font=('Arial', 11, 'bold'),
-            fg=INK,
-            bg=BG
-        )
-        format_label.pack(anchor='w', pady=(15, 5))
-
-        format_frame = tk.Frame(right_frame, bg=BG)
-        format_frame.pack(anchor='w')
-
-        # WAV radio button
-        wav_radio = self._radio(format_frame, "WAV", self.export_format, "wav")
-        wav_radio.pack(side=tk.LEFT, padx=(0, 15))
-
-        # MP3 radio button
-        mp3_radio = self._radio(format_frame, "MP3", self.export_format, "mp3")
-        mp3_radio.pack(side=tk.LEFT)
 
         # Circular progress indicator section
         progress_indicator_frame = tk.Frame(right_frame, bg=BG)
@@ -891,13 +839,6 @@ class LoopExtractorGUI:
             cmd.extend(["--output-dir", self.output_path.get()])
             cmd.extend(["--track-id", track_id])
 
-            # Add mode-specific flags
-            if self.output_mode.get() == "daw_ready":
-                cmd.append("--daw-ready")  # Only export drum method, stems, loops, midi
-
-            # Add export format
-            cmd.extend(["--export-format", self.export_format.get()])
-
             # Add time selection parameters
             if not self.use_snippet_times.get():
                 # Manual time mode
@@ -934,8 +875,6 @@ class LoopExtractorGUI:
             cmd.extend(["--loop-start-offset-ms", "0.0"])
 
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
-            self.log_status(f"Mode: {self.output_mode.get()}")
-            self.log_status(f"Export format: {self.export_format.get().upper()}")
 
             # Log time settings
             if self.use_snippet_times.get():

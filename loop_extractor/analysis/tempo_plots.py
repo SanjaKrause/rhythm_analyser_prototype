@@ -494,7 +494,7 @@ def create_tempo_plots(
 
     result = {'csv': str(csv_path)}
 
-    # Skip plots if requested (for DAW ready mode)
+    # Skip plots if requested
     if skip_plots:
         return result
 

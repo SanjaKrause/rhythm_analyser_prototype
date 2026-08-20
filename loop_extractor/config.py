@@ -160,8 +160,7 @@ class Config:
     # STEP 6: AUDIO EXAMPLES
     # ============================================================================
 
-    # Audio export parameters
-    AUDIO_EXPORT_FORMAT = "mp3"
+    # Audio export parameters (always WAV; bitrate only used by legacy mp3 helper)
     AUDIO_EXPORT_BITRATE = "192k"
     CLICK_TRACK_FREQUENCY = 3000  # Hz for click sound (3000 = sharp, clicky sound)
     CLICK_TRACK_DURATION = 0.050  # 50ms click
@@ -183,7 +182,7 @@ class Config:
     # ============================================================================
 
     @classmethod
-    def get_output_paths(cls, track_name: str, base_output_dir: Optional[Path] = None, daw_ready: bool = False) -> dict:
+    def get_output_paths(cls, track_name: str, base_output_dir: Optional[Path] = None) -> dict:
         """
         Generate standardized output paths for a track.
 
@@ -193,8 +192,6 @@ class Config:
             Name of the track (without extension)
         base_output_dir : Path, optional
             Base output directory. If None, uses DEFAULT_OUTPUT_DIR
-        daw_ready : bool
-            If True, uses 'drum' suffix for MIDI and loops folders
 
         Returns
         -------
@@ -215,9 +212,8 @@ class Config:
 
         track_dir = base_output_dir / track_name
 
-        # Use different folder names for DAW ready mode
-        midi_folder = '8_midi_drum' if daw_ready else '8_midi'
-        loops_folder = '9_loops_drum' if daw_ready else '9_loops'
+        midi_folder = '8_midi'
+        loops_folder = '9_loops'
 
         return {
             # Step 1: Stem separation
@@ -330,9 +326,9 @@ class Config:
         }
 
     @classmethod
-    def create_output_directories(cls, track_name: str, base_output_dir: Optional[Path] = None, daw_ready: bool = False):
+    def create_output_directories(cls, track_name: str, base_output_dir: Optional[Path] = None):
         """Create all necessary output directories for a track."""
-        paths = cls.get_output_paths(track_name, base_output_dir, daw_ready=daw_ready)
+        paths = cls.get_output_paths(track_name, base_output_dir)
 
         for key, path in paths.items():
             if key.endswith('_dir'):
