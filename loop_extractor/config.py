@@ -150,18 +150,10 @@ class Config:
     NO_OF_REPETITIONS_TH = 2
 
     # ============================================================================
-    # STEP 5: RMS HISTOGRAMS
-    # ============================================================================
-
-    # RMS calculation (already implemented in analysis/rms_grid_histograms.py)
-    # Uses GRID_POSITIONS_PER_BAR from above
-
-    # ============================================================================
     # STEP 6: AUDIO EXAMPLES
     # ============================================================================
 
-    # Audio export parameters (always WAV; bitrate only used by legacy mp3 helper)
-    AUDIO_EXPORT_BITRATE = "192k"
+    # Audio export parameters (always WAV)
     CLICK_TRACK_FREQUENCY = 3000  # Hz for click sound (3000 = sharp, clicky sound)
     CLICK_TRACK_DURATION = 0.050  # 50ms click
 
@@ -203,8 +195,6 @@ class Config:
             - corrected_downbeats_file: Corrected downbeats
             - onsets_file: Onset detection CSV
             - comprehensive_csv: Comprehensive phases CSV
-            - rms_summary: RMS summary
-            - audio_examples_dir: Directory for audio examples
             - midi_dir: Directory for MIDI export
         """
         if base_output_dir is None:
@@ -213,7 +203,6 @@ class Config:
         track_dir = base_output_dir / track_name
 
         midi_folder = '8_midi'
-        loops_folder = '9_loops'
 
         return {
             # Step 1: Stem separation
@@ -250,17 +239,8 @@ class Config:
             # Step 6.2/6.3: Filtered patterns (drums stem by default)
             'filtered_patterns_dir': track_dir / '6.2_filtered_patterns' / 'drums',
 
-            # Step 6: RMS analysis
-            'rms_summary': track_dir / '6_rms' / f'{track_name}_rms_summary.json',
-
-            # Step 7: Audio examples
-            'audio_examples_dir': track_dir / '7_audio_examples',
-
             # Step 8: MIDI export
             'midi_dir': track_dir / midi_folder,
-
-            # Step 9: Stem loops
-            'loops_dir': track_dir / loops_folder,
 
             # Step 11: Drum transcription
             'drumtranscriber_dir': track_dir / '11_drumtranscriber',
@@ -315,13 +295,9 @@ class Config:
             'comprehensive_csv': track_dir / '5_grid' / stem / f'{track_name}_comprehensive_phases.csv',
             'anchoring_dir': track_dir / cls.ANCHORING_OUTPUT_FOLDER / stem,
             'filtered_patterns_dir': track_dir / '6.2_filtered_patterns' / stem,
-            'nohats_patterns_dir': track_dir / '6.2_filtered_patterns_noHats' / stem,
             # Downstream analysis folders (stem-specific)
             'rhythm_histograms_dir': track_dir / '6.6_anchored_rhythm_histograms' / stem,
             'beat_histograms_dir': track_dir / '6.7_anchored_beat_histograms' / stem,
-            # noHats variant twins (cymbal-filtered; computed from 6.2_filtered_patterns_noHats)
-            'nohats_rhythm_histograms_dir': track_dir / '6.6_anchored_rhythm_histograms_noHats' / stem,
-            'nohats_beat_histograms_dir': track_dir / '6.7_anchored_beat_histograms_noHats' / stem,
             'sections_dir': track_dir / '9.1_sections' / stem,
         }
 

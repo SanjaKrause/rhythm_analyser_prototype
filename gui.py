@@ -523,7 +523,7 @@ class LoopExtractorGUI:
         # Pipeline steps (always runs the full detailed analysis)
         detailed_steps = tk.Label(
             right_frame,
-            text="  • Stems\n  • Beat Detection\n  • Downbeat Correction\n  • Onset Detection\n  • Pattern Detection (all methods)\n  • Grid Analysis\n  • RMS Analysis\n  • Tempo Plots\n  • Raster Plots\n  • Audio Examples\n  • MIDI Export (all methods)\n  • Loop Export (all methods)",
+            text="  • Stems\n  • Beat Detection\n  • Downbeat Correction\n  • Onset Detection\n  • Pattern Detection (all methods)\n  • Grid Analysis\n  • Tempo Plots\n  • Raster Plots\n  • MIDI Export (anchored)\n  • Sections + Statistics",
             font=('Arial', 9),
             fg=MUTED,
             bg=BG,
@@ -870,9 +870,6 @@ class LoopExtractorGUI:
 
             # Add onset threshold for drumtranscriber (default 0.5)
             cmd.extend(["--onset-threshold-drumtranscriber", "0.5"])
-
-            # Add loop start offset (default 0.0ms - use grid time exactly)
-            cmd.extend(["--loop-start-offset-ms", "0.0"])
 
             self.log_status(f"\nCommand: {' '.join(cmd)}\n")
 

@@ -23,10 +23,8 @@ Complete pipeline for music microtiming analysis and loop extraction:
 7. Anchored rhythm histograms (per-section position histograms from 6.1 data)
 7.1. Anchored beat histograms (per-section IOI histograms from filtered patterns)
 7.2. Anchored statistics (rhythm + beat statistics from 6.6 and 6.7 data)
-8. Audio example generation
 9. LEPA data export
-10. MIDI export (actual onset times, one loop per method: drum, mel, pitch)
-11. Stem loop export (WAV loops for each stem, one loop per method: drum, mel, pitch)
+10. MIDI export (anchored patterns: L2 + full sections, drums + bass)
 11.1. Section extraction (extract audio sections from filtered pattern boundaries)
 13. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
 13.1. Pironio section metrics (pulse clarity for each extracted section)
@@ -81,8 +79,8 @@ config = config_module.config
 # Import all pipeline modules
 from stem_separation import spleeter_interface
 from beat_detection import transformer
-from analysis import correct_bars, raster, rms_grid_histograms, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections, write_clicks_to_sectionwavs
-from utils import audio_export, raster_plots, midi_export, microtiming_plots, anchored_microtiming_plots, drumtranscriber_interface
+from analysis import correct_bars, raster, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections, write_clicks_to_sectionwavs
+from utils import raster_plots, midi_export, microtiming_plots, anchored_microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
 import yodfat_analysis
@@ -99,10 +97,8 @@ def run_complete_pipeline(
     onset_mode: str = 'librosa',
     onset_threshold_drumtranscriber: float = 0.5,  # Filter onsets closer than this fraction of 1/16th note (0.5 = 1/32nd)
     onset_threshold_madmom: float = 0.5,  # Madmom onset detection threshold (0.3-0.7, lower = more sensitive)
-    loop_start_offset_ms: float = 0.0,  # Loop start offset in ms (0.0 = use grid time exactly, negative was adding silence)
     anchoring_mode: str = 'double',  # 'single' or 'double' anchoring
     skip_existing: bool = False,
-    create_audio_examples: bool = True,
     manual_start: Optional[float] = None,
     manual_duration: Optional[float] = None,
     reuse_existing: bool = False,  # Reuse existing stems/beats/songformer, skip steps 1-4.5, 5.5
@@ -130,8 +126,6 @@ def run_complete_pipeline(
         Path to onsets CSV (if None, will need onset detection)
     skip_existing : bool
         Skip steps if output files already exist
-    create_audio_examples : bool
-        Create audio examples (WAV) with click tracks
     verbose : bool
         Print progress messages
 
@@ -926,7 +920,7 @@ def run_complete_pipeline(
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
-        # Don't raise - continue to RMS if we have the CSV from before
+        # Don't raise - continue if we have the CSV from before
 
     # ========================================================================
     # STEP 6 (additional stems): RASTER/GRID CALCULATIONS FOR OTHER STEMS
@@ -1102,31 +1096,34 @@ def run_complete_pipeline(
                         print(f"  ✓ Filtering ({stem}) completed: {len(filter_results)} files filtered")
 
                     # ================================================================
-                    # STEP 6.2.6: DRUM CLASSIFICATION + noHats FILTERING (drums only)
-                    # Classify each L2 anchored onset (kick/snare/tom/hihat/ride/crash),
-                    # write predicted_class + confidence back into 6.2, and write a
-                    # cymbal-filtered copy to 6.2_filtered_patterns_noHats/drums.
+                    # STEP 6.2.6: DRUM CLASSIFICATION (drums only)
+                    # Classify each L2 anchored onset (kick/snare/tom/hihat/ride/crash)
+                    # and write predicted_class + confidence back into 6.2. Used by
+                    # the GM drum mapping of the anchored MIDI export.
                     # ================================================================
                     try:
                         from analysis import classify_anchored_drums
-                        nohats_dir = stem_paths['nohats_patterns_dir']
-                        nohats_exists = nohats_dir.exists() and any(nohats_dir.glob('*_L2_*_anchored.csv'))
+                        import pandas as _pd
+                        # NOTE: exclude macOS '._' AppleDouble sidecars (binary, break read_csv)
+                        l2_files = sorted(p for p in filtered_dir.glob('*_L2_*_anchored.csv')
+                                          if not p.name.startswith('._'))
+                        already_classified = bool(l2_files) and 'predicted_class' in \
+                            _pd.read_csv(l2_files[0], comment='#', nrows=0).columns
 
                         if not classify_anchored_drums.DRUM_CLASSIFICATION_AVAILABLE:
                             if verbose:
                                 print("\n[6.2.6] Drum classification - SKIPPED (DrumTranscriber unavailable)")
                             results['steps_completed'].append('drum_classification_unavailable')
-                        elif skip_existing and nohats_exists:
+                        elif skip_existing and already_classified:
                             if verbose:
                                 print("\n[6.2.6] Drum classification - SKIPPED (exists)")
                         else:
                             if verbose:
                                 print(f"\n[6.2.6] Classifying anchored drum onsets ({stem})...")
                             drums_wav = paths['stems_dir'] / 'drums.wav'
-                            clf_results = classify_anchored_drums.classify_and_filter_anchored_drums(
+                            clf_results = classify_anchored_drums.classify_all_anchored_drums(
                                 drums_wav_path=drums_wav,
                                 filtered_dir=filtered_dir,
-                                nohats_dir=nohats_dir,
                                 verbose=verbose,
                             )
                             results['drum_classification'] = clf_results
@@ -1622,238 +1619,6 @@ def run_complete_pipeline(
         results['steps_completed'].append('anchored_statistics')
 
     # ========================================================================
-    # STEP 7.6/7.7/7.8: noHats VARIANT (drums only)
-    # Rhythm histograms, beat histograms and statistics computed on the
-    # cymbal-filtered patterns (6.2_filtered_patterns_noHats), written to
-    # parallel _noHats folders so BOTH variants are kept side by side.
-    # Mirrors the "filtered" branch of Steps 7 / 7.1 / 7.2 for drums.
-    # ========================================================================
-    try:
-        stem = 'drums'
-        stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
-        nohats_dir = stem_paths['nohats_patterns_dir']
-        nohats_rhythm_dir = stem_paths['nohats_rhythm_histograms_dir']
-        nohats_beat_dir = stem_paths['nohats_beat_histograms_dir']
-        track_dir = Path(output_dir) / track_id
-        nohats_stats_dir = track_dir / '6.8_anchored_statistics_noHats' / stem
-
-        if not nohats_dir.exists() or not any(nohats_dir.glob('*_L2_*_anchored.csv')):
-            if verbose:
-                print("\n[7.6-7.8] noHats variant - SKIPPED (no noHats patterns)")
-        else:
-            from analysis import anchored_rhythm_histograms as _nh_arh
-            from utils import anchored_beat_histograms as _nh_abh
-            from batch_analysis import anchored_rhythm_statistics as _nh_ars
-            nh_tid = track_id + '_filtered'
-
-            # ---- 7.6: noHats rhythm histograms ----
-            if verbose:
-                print("\n[7.6] noHats rhythm histograms (drums)...")
-            nohats_rhythm_dir.mkdir(parents=True, exist_ok=True)
-            nh_rhythm = _nh_arh.create_anchored_rhythm_histograms(
-                anchoring_dir=str(nohats_dir),
-                output_dir=str(nohats_rhythm_dir),
-                track_id=nh_tid,
-                verbose=verbose
-            )
-            if nh_rhythm and nh_rhythm.get('csv'):
-                nh_gp = _nh_arh.create_anchored_groove_pulse_histograms(
-                    rhythm_histograms_csv=nh_rhythm['csv'],
-                    track_id=nh_tid,
-                    output_dir=str(nohats_rhythm_dir),
-                    verbose=verbose
-                )
-                if nh_gp and nh_gp.get('csv'):
-                    _nh_arh.create_anchored_rhythm_patterns(
-                        groove_pulse_csv=nh_gp['csv'],
-                        track_id=nh_tid,
-                        output_dir=str(nohats_rhythm_dir),
-                        verbose=verbose
-                    )
-
-            # ---- 7.7: noHats beat histograms ----
-            if verbose:
-                print("\n[7.7] noHats beat histograms (drums)...")
-            nohats_beat_dir.mkdir(parents=True, exist_ok=True)
-            _nh_abh.create_anchored_beat_histograms(
-                filtered_patterns_dir=str(nohats_dir),
-                track_id=track_id,
-                output_dir=str(nohats_beat_dir)
-            )
-            _nh_abh.create_anchored_beat_histograms_all_onsets(
-                filtered_patterns_dir=str(nohats_dir),
-                track_id=track_id,
-                output_dir=str(nohats_beat_dir)
-            )
-            nh_gpb = nohats_beat_dir / f'{track_id}_groove_pulse_beat_histograms.csv'
-            nh_agg = nohats_beat_dir / f'{track_id}_anchored_beat_histograms.csv'
-            nh_bpc = nh_gpb if nh_gpb.exists() else nh_agg
-            if nh_bpc.exists():
-                _nh_abh.create_anchored_beat_patterns(
-                    beat_histograms_csv=str(nh_bpc),
-                    track_id=track_id,
-                    output_dir=str(nohats_beat_dir)
-                )
-            nh_gpcsv = nohats_rhythm_dir / f'{nh_tid}_anchored_groove_pulse_histograms.csv'
-            if nh_gpcsv.exists():
-                _nh_abh.create_anchored_groove_pulse_beat_histograms(
-                    filtered_patterns_dir=str(nohats_dir),
-                    track_id=track_id,
-                    output_dir=str(nohats_beat_dir),
-                    groove_pulse_csv=str(nh_gpcsv)
-                )
-                _nh_abh.create_anchored_groove_pulse_beat_histograms_all_onsets(
-                    filtered_patterns_dir=str(nohats_dir),
-                    track_id=track_id,
-                    output_dir=str(nohats_beat_dir),
-                    groove_pulse_csv=str(nh_gpcsv)
-                )
-
-            # ---- 7.8: noHats statistics ----
-            if verbose:
-                print("\n[7.8] noHats statistics (drums)...")
-            nohats_stats_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                _nh_ars.anchored_statistics_for_track_stem(
-                    rhythm_hist_dir=nohats_rhythm_dir,
-                    stats_dir=nohats_stats_dir,
-                    track_id=track_id
-                )
-            except Exception as e:
-                if verbose:
-                    print(f"  ! noHats rhythm statistics: {e}")
-            try:
-                _nh_ars.anchored_beat_statistics_for_track_stem(
-                    beat_hist_dir=nohats_beat_dir,
-                    stats_dir=nohats_stats_dir,
-                    track_id=track_id
-                )
-            except Exception as e:
-                if verbose:
-                    print(f"  ! noHats beat statistics: {e}")
-
-            results['steps_completed'].append('anchored_histograms_noHats')
-            if verbose:
-                print("  ✓ noHats variant complete "
-                      "(6.6/6.7/6.8 _noHats folders written)")
-
-    except Exception as e:
-        error_msg = f"Step 7.6-7.8 (noHats variant) failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR (noHats variant): {e}")
-
-    # ========================================================================
-    # STEP 7 (OLD): RMS ANALYSIS - COMMENTED OUT FOR FUTURE REFERENCE
-    # ========================================================================
-    # try:
-    #     if daw_ready:
-    #         if verbose:
-    #             print("\n[7] RMS analysis - SKIPPED (DAW ready mode)")
-    #         results['steps_completed'].append('rms_skipped_daw')
-    #     elif not paths['comprehensive_csv'].exists():
-    #         if verbose:
-    #             print("\n[7] RMS analysis - SKIPPED (no comprehensive CSV)")
-    #         results['steps_completed'].append('rms_skipped')
-    #     elif skip_existing and paths['rms_summary'].exists():
-    #         if verbose:
-    #             print("\n[7] RMS analysis - SKIPPED (exists)")
-    #         results['steps_completed'].append('rms_analysis_skipped')
-    #     else:
-    #         if verbose:
-    #             print("\n[7] RMS histogram analysis...")
-    #
-    #         rms_values = rms_grid_histograms.calculate_rms_from_csv(
-    #             str(paths['comprehensive_csv'])
-    #         )
-    #
-    #         if rms_values:
-    #             # Save RMS summary as JSON
-    #             with open(paths['rms_summary'], 'w') as f:
-    #                 # Convert numpy types to Python types for JSON
-    #                 rms_json = {k: float(v) if not isinstance(v, dict) else v
-    #                            for k, v in rms_values.items()}
-    #                 json.dump(rms_json, f, indent=2)
-    #
-    #             results['rms_values'] = rms_values
-    #             results['steps_completed'].append('rms_analysis')
-    #
-    #             if verbose:
-    #                 print(f"  ✓ RMS calculated:")
-    #                 print(f"    Uncorrected: {rms_values['uncorrected_ms']:.2f}ms")
-    #                 print(f"    Per-snippet: {rms_values['per_snippet_ms']:.2f}ms")
-    #                 print(f"    Drum method: {rms_values['drum_ms']:.2f}ms")
-    #         else:
-    #             if verbose:
-    #                 print(f"  ⚠️  RMS calculation returned no values")
-    #
-    # except Exception as e:
-    #     error_msg = f"Step 7 failed: {e}"
-    #     results['errors'].append(error_msg)
-    #     if verbose:
-    #         print(f"  ✗ ERROR: {e}")
-
-    # ========================================================================
-    # STEP 8: AUDIO EXAMPLES
-    # ========================================================================
-    if create_audio_examples:
-        try:
-            if not paths['comprehensive_csv'].exists():
-                if verbose:
-                    print("\n[8] Audio examples - SKIPPED (no comprehensive CSV)")
-                results['steps_completed'].append('audio_examples_skipped')
-            else:
-                # Check if audio examples already exist
-                audio_files_exist = (
-                    (paths['audio_examples_dir'] / 'drum.wav').exists() or
-                    (paths['audio_examples_dir'] / 'uncorrected.wav').exists()
-                )
-
-                if skip_existing and audio_files_exist:
-                    if verbose:
-                        print("\n[8] Audio examples - SKIPPED (exists)")
-                    results['steps_completed'].append('audio_examples_skipped')
-                else:
-                    if verbose:
-                        print("\n[8] Audio examples...")
-
-                    # Load snippet offset again
-                    if manual_start is not None:
-                        snippet_offset = manual_start
-                    elif snippet_offset_file and Path(snippet_offset_file).exists():
-                        snippet_offset = raster.load_snippet_offset(snippet_offset_file, track_id)
-                    elif config.OVERVIEW_CSV.exists():
-                        snippet_offset = raster.load_snippet_offset(str(config.OVERVIEW_CSV), track_id)
-                    else:
-                        snippet_offset = 0.0
-
-                    snippet_dur = manual_duration if manual_duration is not None else config.CORRECT_BARS_SNIPPET_DURATION_S
-
-                    audio_export.create_audio_examples(
-                        str(audio_file),
-                        str(paths['comprehensive_csv']),
-                        str(paths['audio_examples_dir']),
-                        snippet_offset=snippet_offset,
-                        snippet_duration=snippet_dur,
-                        track_id=track_id
-                    )
-
-                    results['steps_completed'].append('audio_examples')
-
-                    if verbose:
-                        print(f"  ✓ Audio examples created")
-
-        except Exception as e:
-            error_msg = f"Step 8 failed: {e}"
-            results['errors'].append(error_msg)
-            if verbose:
-                print(f"  ✗ ERROR: {e}")
-    else:
-        if verbose:
-            print("\n[8] Audio examples - SKIPPED (disabled)")
-        results['steps_completed'].append('audio_examples_disabled')
-
-    # ========================================================================
     # STEP 9: LEPA DATA EXPORT
     # ========================================================================
     try:
@@ -1967,75 +1732,6 @@ def run_complete_pipeline(
 
     except Exception as e:
         error_msg = f"Step 10 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
-
-    # ========================================================================
-    # STEP 11: STEM LOOP EXPORT
-    # ========================================================================
-    try:
-        if not paths['comprehensive_csv'].exists():
-            if verbose:
-                print("\n[11] Stem loop export - SKIPPED (no comprehensive CSV)")
-            results['steps_completed'].append('loops_skipped')
-        else:
-            # Check if loop files already exist (check for any method subdirectory)
-            loops_exist = (
-                (paths['loops_dir'] / 'drum').exists() or
-                (paths['loops_dir'] / 'mel').exists() or
-                (paths['loops_dir'] / 'pitch').exists()
-            )
-
-            if skip_existing and loops_exist:
-                if verbose:
-                    print("\n[11] Stem loop export - SKIPPED (exists)")
-                results['steps_completed'].append('loops_skipped')
-            else:
-                if verbose:
-                    print("\n[11] Stem loop export...")
-
-                # Load snippet offset
-                if snippet_offset_file and Path(snippet_offset_file).exists():
-                    snippet_offset = raster.load_snippet_offset(snippet_offset_file, track_id)
-                elif config.OVERVIEW_CSV.exists():
-                    snippet_offset = raster.load_snippet_offset(str(config.OVERVIEW_CSV), track_id)
-                else:
-                    snippet_offset = 0.0
-
-                # Export stem loops using filtered FlexStart CSVs
-                # Extract base_name from comprehensive CSV path
-                base_name = Path(paths['comprehensive_csv']).stem  # e.g., 'track_id_comprehensive_phases'
-                grid_output_dir = Path(paths['comprehensive_csv']).parent
-
-                # Export all three FlexStart methods (L=4, L=2, L=1)
-                loop_files = audio_export.export_stem_loops(
-                    str(paths['stems_dir']),
-                    str(grid_output_dir),
-                    base_name,
-                    str(paths['loops_dir']),
-                    snippet_start=snippet_offset,
-                    pattern_lengths=pattern_lengths,
-                    fade_duration_ms=5.0,
-                    loop_start_offset_ms=loop_start_offset_ms
-                )
-
-                if loop_files:
-                    results['loop_files'] = {
-                        method: [str(f) for f in files]
-                        for method, files in loop_files.items()
-                    }
-                    results['steps_completed'].append('loops')
-                    if verbose:
-                        total_files = sum(len(files) for files in loop_files.values())
-                        print(f"  ✓ Exported {total_files} stem loops across {len(loop_files)} methods")
-                else:
-                    results['steps_completed'].append('loops_no_data')
-                    if verbose:
-                        print(f"  ⚠️  No loop files created")
-
-    except Exception as e:
-        error_msg = f"Step 11 failed: {e}"
         results['errors'].append(error_msg)
         if verbose:
             print(f"  ✗ ERROR: {e}")
@@ -2455,10 +2151,6 @@ Examples:
       --snippet-file snippet_offsets.csv \\
       --output-dir output/
 
-  # Skip audio examples
-  python main.py --audio track.wav --track-id 123 \\
-      --output-dir output/ --no-audio-examples
-
 Environment:
   Main: AEinBOX_13_3
   Beat detection subprocess: new_beatnet_env
@@ -2481,13 +2173,9 @@ Environment:
                        help='Onset detection threshold for madmom (default: 0.5, range: 0.3-0.7). Lower = more sensitive. Only used with --onset-mode madmom')
     parser.add_argument('--anchoring-mode', choices=['single', 'double'], default='double',
                        help='Grid anchoring mode: single (start only) or double (start + end, default)')
-    parser.add_argument('--loop-start-offset-ms', type=float, default=0.0,
-                       help='Loop start offset in milliseconds (default: 0.0ms, use grid time exactly. Negative values start earlier but may add silence)')
     parser.add_argument('--pattern-file', help='Path to pattern lengths CSV')
     parser.add_argument('--snippet-file', help='Path to snippet offsets CSV')
 
-    parser.add_argument('--no-audio-examples', action='store_true',
-                       help='Skip audio example generation')
     parser.add_argument('--manual-start', type=float,
                        help='Manual start time in seconds (overrides snippet detection)')
     parser.add_argument('--manual-duration', type=float,
@@ -2611,10 +2299,8 @@ Environment:
                     onset_mode=args.onset_mode,
                     onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
                     onset_threshold_madmom=args.onset_threshold_madmom,
-                    loop_start_offset_ms=args.loop_start_offset_ms,
                     anchoring_mode=args.anchoring_mode,
                     skip_existing=False,
-                    create_audio_examples=not args.no_audio_examples,
                     manual_start=args.manual_start,
                     manual_duration=args.manual_duration,
                             reuse_existing=args.reuse_existing,
@@ -2723,16 +2409,13 @@ Environment:
 
         # Merge all plot PDFs (per stem)
         try:
-            from batch_analysis.merge_plots import merge_plots, merge_plots_noHats
+            from batch_analysis.merge_plots import merge_plots
             print("\n" + "=" * 80)
             print("MERGING PLOTS")
             print("=" * 80)
             for stem in available_stems:
                 print(f"\n--- Merging plots for {stem} ---")
                 merge_plots(Path(args.output_dir), stem=stem)
-            # noHats variant batch plots (drums-only) -> batch_analysis/drums/noHats/
-            if 'drums' in available_stems:
-                merge_plots_noHats(Path(args.output_dir), stem='drums')
         except ImportError as ie:
             print(f"\n⚠️  PDF merging skipped: {ie}")
             print("Install required packages: pip install PyPDF2 Pillow reportlab")
@@ -2798,9 +2481,6 @@ Environment:
             from batch_analysis.collect_data import create_collected_data, collect_pironio_yodfat_data, collect_spotify_data
             for stem in available_stems:
                 create_collected_data(Path(args.output_dir), stem=stem)
-            # noHats variant (drums-only, L2-only): -> collected_data/drums/noHats_L2_ratio*.csv
-            if 'drums' in available_stems:
-                create_collected_data(Path(args.output_dir), stem='drums', variant='noHats')
             # Pironio/Yodfat and Spotify are not stem-specific
             collect_pironio_yodfat_data(Path(args.output_dir))
             collect_spotify_data(Path(args.output_dir))
@@ -2830,10 +2510,8 @@ Environment:
             onset_mode=args.onset_mode,
             onset_threshold_drumtranscriber=args.onset_threshold_drumtranscriber,
             onset_threshold_madmom=args.onset_threshold_madmom,
-            loop_start_offset_ms=args.loop_start_offset_ms,
             anchoring_mode=args.anchoring_mode,
             skip_existing=False,
-            create_audio_examples=not args.no_audio_examples,
             manual_start=args.manual_start,
             manual_duration=args.manual_duration,
             reuse_existing=args.reuse_existing,

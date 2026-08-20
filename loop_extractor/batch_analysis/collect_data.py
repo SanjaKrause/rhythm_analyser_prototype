@@ -628,8 +628,7 @@ def collect_section_data(
     track_name: str,
     pattern_length: int,
     ratio_threshold: float,
-    stem: str = 'drums',
-    variant: str = ''
+    stem: str = 'drums'
 ) -> List[Dict]:
     """
     Collect all data for sections matching pattern_length and ratio_threshold.
@@ -652,11 +651,9 @@ def collect_section_data(
     rows = []
     n_positions = pattern_length * 16
 
-    # noHats variant reads the cymbal-filtered twin folders (6.x_..._noHats)
-    sfx = '_noHats' if variant == 'noHats' else ''
-    rh_dir = track_dir / f'6.6_anchored_rhythm_histograms{sfx}' / stem
-    bt_dir = track_dir / f'6.7_anchored_beat_histograms{sfx}' / stem
-    st_dir = track_dir / f'6.8_anchored_statistics{sfx}' / stem
+    rh_dir = track_dir / '6.6_anchored_rhythm_histograms' / stem
+    bt_dir = track_dir / '6.7_anchored_beat_histograms' / stem
+    st_dir = track_dir / '6.8_anchored_statistics' / stem
 
     # File paths (stem-specific subfolders)
     rh_file = rh_dir / f'{track_name}_filtered_anchored_rhythm_histograms.csv'
@@ -827,7 +824,7 @@ def detect_available_stems(track_dirs: List[Path]) -> List[str]:
     return sorted(found_stems, key=lambda s: all_stems.index(s))
 
 
-def create_collected_data(output_dir: Path, stem: str = 'drums', variant: str = ''):
+def create_collected_data(output_dir: Path, stem: str = 'drums'):
     """
     Create collected data CSVs from batch processing results.
 
@@ -837,16 +834,10 @@ def create_collected_data(output_dir: Path, stem: str = 'drums', variant: str = 
         The batch output directory containing individual track folders
     stem : str
         Stem to collect data for (default: 'drums')
-    variant : str
-        '' for the regular 6.6/6.7/6.8 folders (all pattern lengths). 'noHats' reads
-        the cymbal-filtered twin folders (6.x_..._noHats) which are L2-only, so it
-        collects pattern_length == 2 only and prefixes output filenames with 'noHats_'.
     """
-    fpfx = 'noHats_' if variant == 'noHats' else ''
-    # noHats patterns only exist for L2, so restrict pattern lengths in that variant
-    pattern_lengths = [2] if variant == 'noHats' else PATTERN_LENGTHS
+    pattern_lengths = PATTERN_LENGTHS
     print("\n" + "=" * 80)
-    print(f"STEP 22: COLLECT DATA ({stem}{'' if not variant else ' / ' + variant})")
+    print(f"STEP 22: COLLECT DATA ({stem})")
     print("=" * 80)
 
     # Find all track directories
@@ -875,7 +866,7 @@ def create_collected_data(output_dir: Path, stem: str = 'drums', variant: str = 
 
             for track_dir in track_dirs:
                 track_name = track_dir.name
-                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold, stem=stem, variant=variant)
+                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold, stem=stem)
 
                 if rows:
                     print(f"  {track_name}: {len(rows)} sections")
@@ -885,7 +876,7 @@ def create_collected_data(output_dir: Path, stem: str = 'drums', variant: str = 
             all_rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
 
             # Write CSV
-            output_file = collected_dir / f'{fpfx}L{pattern_length}_ratio{int(ratio_threshold*100)}.csv'
+            output_file = collected_dir / f'L{pattern_length}_ratio{int(ratio_threshold*100)}.csv'
             headers = build_column_headers(pattern_length, stem=stem)
 
             with open(output_file, 'w', newline='', encoding='utf-8') as f:
@@ -906,7 +897,7 @@ def create_collected_data(output_dir: Path, stem: str = 'drums', variant: str = 
 
             for track_dir in track_dirs:
                 track_name = track_dir.name
-                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold, stem=stem, variant=variant)
+                rows = collect_section_data(track_dir, track_name, pattern_length, ratio_threshold, stem=stem)
 
                 if rows:
                     # If multiple sections for this song, keep only the one with highest ratio
@@ -922,7 +913,7 @@ def create_collected_data(output_dir: Path, stem: str = 'drums', variant: str = 
             all_rows.sort(key=lambda x: (int(x['song_id']), x['sec_no']))
 
             # Write CSV
-            output_file = collected_dir / f'{fpfx}L{pattern_length}_ratio{int(ratio_threshold*100)}_maxsel.csv'
+            output_file = collected_dir / f'L{pattern_length}_ratio{int(ratio_threshold*100)}_maxsel.csv'
             headers = build_column_headers(pattern_length, stem=stem)
 
             with open(output_file, 'w', newline='', encoding='utf-8') as f:
@@ -1436,10 +1427,6 @@ if __name__ == '__main__':
     # Collect data for each stem
     for stem in stems:
         create_collected_data(output_dir, stem=stem)
-
-    # noHats variant (drums-only, L2-only)
-    if 'drums' in stems:
-        create_collected_data(output_dir, stem='drums', variant='noHats')
 
     # Pironio/Yodfat and Spotify are not stem-specific
     collect_pironio_yodfat_data(output_dir)

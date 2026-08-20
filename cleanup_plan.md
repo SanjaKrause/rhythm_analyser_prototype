@@ -1,7 +1,7 @@
 # Cleanup Plan — Legacy Outputs & Dead Code
 
-Status: **PROPOSED — nothing deleted yet.** Verified against the codebase on 2026-08-19
-(branch `new-design`). Reference track used for checks:
+Status: **CODE CLEANUP DONE (2026-08-20, branch `code-cleanup2`) — output-data
+deletion still pending** (user: "not yet"; dry-run numbers in §1). Reference track used for checks:
 `/Volumes/PortableSSD/06_Testing/output all/2_Back in Blood (feat Lil Durk) - Pooh ShiestyLil Durk/`
 
 ## Background
@@ -27,7 +27,13 @@ to 6.6/6.7 — but it IS still used by raster plots, microtiming plots, MIDI/aud
 
 ---
 
-## 1. Output folders to delete (per track, across `output all/`)
+## 1. Output folders to delete (per track, across `output all/`) — PENDING
+
+Dry-run 2026-08-20 (`output all`, 532 tracks): 5.5_rhythm 530 dirs/16.4 GB,
+5.6_statistics 530 dirs/3.7 GB, 5.7_beat_histograms 530 dirs/20.7 GB, 6_rms
+532 dirs/0.5 GB, legacy onset .mid 2067, legacy bass .mid 3561 (+ `._` sidecars).
+`output präsi`: only 4 empty `6_rms` dirs. No 8_midi_drum/9_loops_drum found.
+Caveat: deleting legacy .mid leaves 531 tracks without MIDI until step 10 rerun.
 
 | Folder | Verdict | Evidence |
 |---|---|---|
@@ -41,7 +47,11 @@ to 6.6/6.7 — but it IS still used by raster plots, microtiming plots, MIDI/aud
 Plan: dry-run first (list + count matching folders across all tracks), then delete after
 confirmation.
 
-## 2. Dead code to remove
+## 2. Dead code to remove — DONE (2026-08-20)
+
+All items below were applied on branch `code-cleanup2` (~2,000 lines removed;
+verified: syntax, imports, --help, MIDI self-test, anchored MIDI export
+byte-identical to the präsi batch output).
 
 ### `loop_extractor/analysis/anchored_rhythm_histograms.py`
 Four functions with **zero callers** anywhere in the repo (these read from `5_grid` and
@@ -82,6 +92,20 @@ comprehensive-CSV MIDI branch now has NO callers at all. Dead and removable:
   `export_audio_to_mp3` + the `export_format` params of `create_audio_examples`
   / `export_stem_loops` and `AUDIO_EXPORT_BITRATE` — candidates for removal
 
+### noHats variant — REMOVED (done, 2026-08-20)
+Tested & dropped from the thesis (hi-hats carry signal), so the whole branch is gone:
+- main.py: steps 7.6–7.8 (noHats histograms/stats) deleted; step 6.2.6 now does
+  classification ONLY (predicted_class/confidence still written into 6.2 —
+  needed by the GM MIDI mapping); skip-existing check now looks for the
+  predicted_class column instead of the noHats folder
+- classify_anchored_drums.py: cymbal-filter/copy logic removed; function renamed
+  `classify_and_filter_anchored_drums` → `classify_all_anchored_drums`
+- config.py: `nohats_*` path entries removed
+- merge_plots.py: `merge_plots_noHats` deleted; collect_data.py: `variant`
+  machinery removed (noHats_L2_ratio*.csv no longer produced)
+- Existing `*_noHats` output folders (6.2/6.6/6.7/6.8) are orphaned →
+  add to the §1 deletion list
+
 ### DAW mode — REMOVED (done)
 - gui.py: OUTPUT MODE radio section removed (always full detailed pipeline)
 - main.py: `daw_ready` parameter, `--daw-ready` flag, and all branches removed
@@ -106,10 +130,13 @@ comprehensive-CSV MIDI branch now has NO callers at all. Dead and removable:
 
 ## 4. Open questions (to confirm before executing)
 
-- [ ] `9_loops/` output + step 11 (`export_stem_loops`): user flagged as obsolete
-      (superseded by `9.1_sections/`), based on the legacy flexStart branch.
-      Now that DAW mode is removed, dropping step 11 entirely would also let
-      `audio_export.export_stem_loops` go. Decision pending discussion.
+- [x] RESOLVED 2026-08-20: steps 8 (audio examples → `7_audio_examples/`) and
+      11 (stem loops → `9_loops/`) removed entirely from main.py, config paths,
+      GUI, and merge_plots (groove-click merge). `create_audio_examples`,
+      `export_stem_loops`, `apply_fade`, `export_audio_to_wav` deleted from
+      audio_export.py (click-track utils kept — used by 11.2 section clicks).
+      Existing `7_audio_examples/` and `9_loops/` folders in output dirs are
+      now orphaned → add to the §1 deletion list.
 
 - [ ] Delete output folders across **all** tracks in `output all/`, or only some?
 - [ ] Any other output dirs (other corpora/SSDs) that should get the same cleanup?

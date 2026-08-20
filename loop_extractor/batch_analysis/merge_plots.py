@@ -9,12 +9,6 @@ Merges:
 - All raster standard plots into all_raster_standard.pdf
 - All new grid corrections plots into all_new_grid_corrections.pdf
 - All microtiming plots into all_microtiming_plots.pdf
-- All rhythm histograms into all_rhythm_histograms.pdf
-- All rhythm histograms with style into all_rhythm_histograms_with_style.pdf
-- All rhythm histograms with medians and IQR into all_rhythm_histograms_with_medians_and_iqr.pdf
-- All groove pulse histograms into all_groove_pulse_histograms.pdf
-- All groove pulse click tracks into all_groove_pulse_click_tracks.pdf
-- All rhythm patterns into all_rhythm_patterns.pdf
 - All new 4-method raster plots into all_raster_4method.pdf
 - All Spotify sections timelines into all_spotify_sections.pdf
 - All SongFormer sections timelines into all_songformer_sections.pdf
@@ -221,36 +215,6 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
             merger.append(str(pdf))
         merger.write(str(output_pdf))
         merger.close()
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 10. Merge groove pulse click track plots (PNG files in 7_audio_examples or 5_grid folder)
-    print('\nLooking for groove pulse click track plots...')
-    groove_click_pngs = []
-    for track_dir in track_dirs:
-        # Check 7_audio_examples first (newer location), then 5_grid (legacy)
-        groove_click_png = track_dir / '7_audio_examples' / 'groove_pulse_click_times.png'
-        if groove_click_png.exists():
-            groove_click_pngs.append(groove_click_png)
-            print(f'  Found groove pulse click track: {track_dir.name}')
-        else:
-            groove_click_png = track_dir / '5_grid' / 'groove_pulse_click_times.png'
-            if groove_click_png.exists():
-                groove_click_pngs.append(groove_click_png)
-                print(f'  Found groove pulse click track (legacy): {track_dir.name}')
-
-    if groove_click_pngs:
-        print(f'\nConverting and merging {len(groove_click_pngs)} groove pulse click track PNGs...')
-
-        merger = PdfMerger()
-        for i, png in enumerate(groove_click_pngs):
-            temp_pdf = temp_dir / f'groove_click_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
-
-        output_pdf = batch_dir / 'all_groove_pulse_click_tracks.pdf'
-        merger.write(str(output_pdf))
-        merger.close()
-
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # 14. Merge new 4-method raster plots (PNG files in 5_grid folder)
@@ -755,69 +719,6 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
     print(f'\n✓ All plots merged successfully for stem: {stem}!')
 
 
-def merge_plots_noHats(output_dir: Path, stem: str = 'drums'):
-    """
-    Merge the noHats (cymbal-filtered) anchored plots into batch PDFs.
-
-    Mirrors the 8 anchored-plot merges of merge_plots() (rhythm / groove-pulse /
-    rhythm-pattern histograms from 6.6, beat histograms / all-onsets / groove-pulse
-    beat / beat patterns from 6.7) but reads the per-track PNGs from the _noHats twin
-    folders (6.6/6.7_..._noHats) and writes to batch_analysis/{stem}/noHats/.
-    Only these anchored plots have noHats variants (onset / microtiming / raster
-    plots are not regenerated for noHats).
-    """
-    batch_dir = output_dir / 'batch_analysis'
-    out_dir = batch_dir / stem / 'noHats'
-    out_dir.mkdir(parents=True, exist_ok=True)
-    temp_dir = batch_dir / '_temp_noHats'
-    temp_dir.mkdir(exist_ok=True)
-
-    track_dirs = sorted([
-        d for d in output_dir.iterdir()
-        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']
-    ])
-
-    RH = '6.6_anchored_rhythm_histograms_noHats'
-    BH = '6.7_anchored_beat_histograms_noHats'
-    # (source folder, [filename suffixes to try in order], merged output name)
-    specs = [
-        (RH, ['_filtered_anchored_rhythm_histograms.png', '_anchored_rhythm_histograms.png'], 'all_anchored_rhythm_histograms.pdf'),
-        (RH, ['_filtered_anchored_groove_pulse_histograms.png', '_anchored_groove_pulse_histograms.png'], 'all_anchored_groove_pulse_histograms.pdf'),
-        (RH, ['_filtered_anchored_rhythm_patterns.png', '_anchored_rhythm_patterns.png'], 'all_anchored_rhythm_patterns.pdf'),
-        (BH, ['_anchored_beat_histograms.png'], 'all_anchored_beat_histograms.pdf'),
-        (BH, ['_anchored_beat_histograms_all_onsets.png'], 'all_anchored_beat_histograms_all_onsets.pdf'),
-        (BH, ['_groove_pulse_beat_histograms.png'], 'all_groove_pulse_beat_histograms.pdf'),
-        (BH, ['_groove_pulse_beat_histograms_all_onsets.png'], 'all_groove_pulse_beat_histograms_all_onsets.pdf'),
-        (BH, ['_anchored_beat_patterns.png'], 'all_anchored_beat_patterns.pdf'),
-    ]
-
-    print(f'\n=== noHats batch plot merge ({stem}) -> {out_dir} ===')
-    for folder, suffixes, out_name in specs:
-        pngs = []
-        for track_dir in track_dirs:
-            for suffix in suffixes:
-                p = track_dir / folder / stem / f'{track_dir.name}{suffix}'
-                if p.exists():
-                    pngs.append(p)
-                    break
-        if not pngs:
-            print(f'  (skip {out_name}: no PNGs found)')
-            continue
-        merger = PdfMerger()
-        for i, png in enumerate(pngs):
-            temp_pdf = temp_dir / f'{out_name}_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
-        output_pdf = out_dir / out_name
-        merger.write(str(output_pdf))
-        merger.close()
-        print(f'  ✓ {out_name} ({len(pngs)} pages, {output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir, ignore_errors=True)   # ignore macOS ._ metadata races
-    print(f'✓ noHats batch plots merged for stem: {stem}')
-
-
 def detect_available_stems(track_dirs):
     """Detect which stems have data by checking the first few tracks."""
     all_stems = ['vocals', 'drums', 'bass', 'piano', 'other', 'fullmix']
@@ -865,7 +766,3 @@ if __name__ == '__main__':
     # Merge plots for each stem
     for stem in stems:
         merge_plots(output_dir, stem=stem)
-
-    # noHats variant batch plots (drums-only)
-    if 'drums' in stems:
-        merge_plots_noHats(output_dir, stem='drums')
