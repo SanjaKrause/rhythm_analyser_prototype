@@ -1,37 +1,44 @@
-# Loop Extractor Python
+# Rhythm Pattern Extractor
 
-Standalone loop extraction and microtiming analysis tool.
+Standalone rhythm pattern extraction and microtiming analysis tool
+(formerly "Loop Extractor").
 
 **Author:** Alexander Krause, TU Berlin
 **Co-Author:** Claude Code (Anthropic)
 
 ## Introduction
 
-This is the preprocessing pipeline prototype developed for my ongoing Master's thesis investigating the relationship between rhythm science, machine learning, and groove affordances as predictors of musical perception. The pipeline combines automated music analysis with loop extraction to support both research and creative applications.
+This is the preprocessing pipeline prototype developed for my ongoing Master's thesis investigating the relationship between rhythm science, machine learning, and groove affordances as predictors of musical perception. The pipeline combines automated music analysis (beat/downbeat detection, structure segmentation, onset detection, section anchoring) with rhythm pattern extraction to support both research and creative applications.
 
 **Research Focus:**
 - **Rhythm Science**: Quantitative analysis of microtiming, tempo variations, and rhythmic patterns in music
 - **Machine Learning**: Feature extraction from audio to support predictive modeling of groove characteristics
 - **Groove Affordances**: Understanding how timing deviations and rhythmic patterns influence listener perception and movement
 
-**Practical Use Cases:**
-- **DAW Remixing**: Extracted loops (vocals, drums, bass, piano, other) can be directly imported into your Digital Audio Workstation for remixing and production. The pipeline automatically detects the optimal loop length and cuts perfectly looping segments from your chosen time range.
-- **MIDI Triggering**: Generated MIDI files can trigger synthesizers, drum machines, or samplers with the exact timing from the original track
-- **Rhythm Analysis**: Microtiming data reveals groove characteristics and timing deviations that make music feel "human"
+**What the pipeline produces per track:**
+- **Anchored rhythm patterns**: per song section (verse, chorus, ...) the drum onsets of the first 1/2/4 bars and their repetitions, anchored to a corrected metrical grid (`6.1_anchoring`, `6.2_filtered_patterns`)
+- **Rhythm & beat histograms + statistics**: position histograms, IOI histograms, and microtiming statistics per section (`6.6`–`6.8`)
+- **MIDI export**: per section, the L2 pattern (first 2 bars) and the full section as drum MIDI — single-note and GM drum-mapped (kick/snare/hihat/ride/crash/tom via CNN drum classification) — plus a bass-pitch MIDI for the same windows, all aligned so drum and bass line up in a DAW (`8_midi`)
+- **Section WAVs with click tracks**: extracted section audio with the detected rhythm pattern rendered as clicks (`9.1_sections`)
+- **Diagnostics**: tempo plots, raster/microtiming plots, structure timelines, pulse-clarity (Pironio) and rhythmic-complexity (Yodfat) metrics
 
-See the [OUTPUT_EXAMPLES](OUTPUT_EXAMPLES/) directory for sample outputs including stem loops, MIDI files, and timing visualizations.
+See the [OUTPUT_EXAMPLES](OUTPUT_EXAMPLES/) directory for sample outputs
+(note: these examples are from an earlier pipeline version; the current output
+layout is described below).
 
 ## Directory Structure
 
 ```
 loop_extractor_python/
+├── gui.py                  # GUI application (Rhythm Pattern Extractor)
 ├── loop_extractor/         # Main pipeline code
 │   ├── main.py             # Entry point
 │   ├── config.py           # Configuration
-│   ├── beat_detection/     # Beat detection module
+│   ├── beat_detection/     # Beat-Transformer integration
 │   ├── stem_separation/    # Spleeter integration
-│   ├── analysis/           # Pattern detection
-│   └── utils/              # Utilities
+│   ├── analysis/           # Anchoring, filtering, classification, histograms
+│   ├── batch_analysis/     # Plot merging, data collection across tracks
+│   └── utils/              # MIDI export, raster plots, ...
 │
 └── Beat-Transformer/       # Beat detection model
     ├── code/               # Model code (DilatedTransformer)
@@ -53,14 +60,16 @@ A graphical interface is available for easy operation:
 python gui.py
 ```
 
-![Loop Extractor 2000 GUI](screenshots/gui_screenshot.png)
+![Rhythm Pattern Extractor GUI](screenshots/gui_screenshot.png)
 
 The GUI supports:
 - Single file or batch folder processing
-- Visual output mode selection (Detailed Analysis or DAW Ready)
 - Manual time range selection with sliders
+- Onset detection method selection (librosa / DrumTranscriber / madmom)
 - Real-time progress monitoring
 - All command-line features in a user-friendly interface
+
+The pipeline always runs the full detailed analysis and exports everything as WAV.
 
 ## Example Plots
 
@@ -102,8 +111,9 @@ python main.py --audio track.mp3 --track-id 123 --output-dir output/
 python main.py --audio track.mp3 --track-id 123 --output-dir output/ \
     --manual-start 50.0 --manual-duration 71.0
 
-# DAW-ready mode (stems, loops, and MIDI only)
-python main.py --audio track.mp3 --track-id 123 --output-dir output/ --daw-ready
+# With madmom CNN onset detection
+python main.py --audio track.wav --track-id 123 --output-dir output/ \
+    --onset-mode madmom
 ```
 
 ### Batch Processing
@@ -116,15 +126,18 @@ python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir outpu
 python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir output/ \
     --manual-start 52.0 --manual-duration 36.0
 
-# Batch processing in DAW-ready mode
-python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir output/ --daw-ready
+# Re-run analysis reusing existing stems/beats/SongFormer results
+python main.py --audio-dir /path/to/audio/files --analyse-all --output-dir output/ \
+    --reuse-existing
 ```
 
-**Batch Tempo Plot Merging**
+**Batch Analysis Outputs**
 
-When using `--analyse-all`, the pipeline automatically merges all individual tempo plot PDFs into one combined PDF. This merged PDF is saved in `output/_batch_analysis/all_tempo_plots.pdf`.
+When using `--analyse-all`, the pipeline additionally:
+- merges the per-track plots into combined PDFs in `output/batch_analysis/` (tempo plots, raster plots, anchored rhythm/beat histograms per stem, ...)
+- collects the per-section histogram and statistics data across all tracks into `output/collected_data/` (one CSV per pattern length × section-ratio threshold)
 
-Individual tempo plots remain in each track's `3.5_tempo_plots/` folder.
+Individual plots remain in each track's own folders (e.g. `3.5_tempo_plots/`).
 
 **Dependencies**
 
@@ -135,6 +148,31 @@ pip install PyPDF2
 ```
 
 If PyPDF2 is not installed, batch processing will still complete successfully, but PDF merging will be skipped.
+
+## Output Structure (per track)
+
+```
+output/<track>/
+├── 1_stems/                          # Spleeter stems + full_snippet.wav + bass F0
+├── 2_beats/                          # Beat-Transformer beats/downbeats
+├── 2.5_songformer_sections/          # SongFormer structure segmentation
+├── 3_corrected/                      # Corrected downbeats
+├── 3.5_tempo_plots/                  # Tempo plots + bar tempo CSV
+├── 4_onsets/<stem>/                  # Detected onsets
+├── 5_grid/<stem>/                    # Comprehensive phase grid + raster/microtiming plots
+├── 6.1_anchoring/<stem>/             # Section-anchored patterns (L1/L2/L4, unfiltered)
+├── 6.2_filtered_patterns/<stem>/     # Tukey-filtered patterns + drum classes (kick/snare/...)
+├── 6.6_anchored_rhythm_histograms/   # Position histograms + groove pulse + rhythm patterns
+├── 6.7_anchored_beat_histograms/     # IOI histograms + beat patterns
+├── 6.8_anchored_statistics/          # Microtiming degree/complexity statistics
+├── 8_midi/
+│   ├── onset/                        # SecNoX_L2 / SecNoX_full (.mid + _gm.mid)
+│   └── bass_pitch/                   # Same windows as bass MIDI (_bass.mid)
+├── 9.1_sections/<stem>/              # Section WAVs + rhythm-pattern click tracks
+├── 10_output_for_lepa/               # Bar-duration audio export
+├── 11_drumtranscriber/  12_pironio/  13_spotify/  14_yodfat/
+└── pipeline_results.json             # Steps completed + errors
+```
 
 ## Configuration
 
