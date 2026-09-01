@@ -67,3 +67,9 @@ AP_2_code/input_wav/*.flac
 # Data folders (large datasets)
 groove-data/
 drumtranscriber/model/drum_transcriber.h5
+
+# macOS + thesis/ML artefacts (not part of the extractor)
+.DS_Store
+nested_cv_figs/
+song_corpus_numbers.md
+statistical_featureset_docu.md

@@ -44,6 +44,49 @@ from utils.audio_export import (
     CLICK_DURATION,
 )
 
+# Stems that make up the full mix (matches config.STEMS). Summed to reconstruct
+# the all-stems audio for the additional "_section_clicks_fullmix.wav" variant.
+FULLMIX_STEM_NAMES = ["drums", "vocals", "bass", "piano", "other"]
+
+
+def build_fullmix_section(
+    stems_dir: Path,
+    start_time: float,
+    end_time: float,
+    target_len: int,
+    fade_duration: float = 0.05,
+    sr: int = 44100,
+) -> Optional[np.ndarray]:
+    """
+    Reconstruct the full-mix (all stems) audio for one section by summing the
+    per-stem WAVs in 1_stems/ over [start_time, end_time].
+
+    Returns a mono float32 array of length `target_len` (to align with the
+    stem section audio / click track), or None if no stem WAVs are found.
+    """
+    duration = end_time - start_time
+    mix = np.zeros(target_len, dtype=np.float32)
+    n_found = 0
+    for name in FULLMIX_STEM_NAMES:
+        stem_path = stems_dir / f"{name}.wav"
+        if not stem_path.exists():
+            continue
+        y, _ = librosa.load(str(stem_path), sr=sr, mono=True,
+                            offset=start_time, duration=duration)
+        n_found += 1
+        L = min(len(y), target_len)
+        mix[:L] += y[:L]
+
+    if n_found == 0:
+        return None
+
+    # Match the fade of the stem section (extract_sections uses 50ms in/out)
+    fade_samples = int(fade_duration * sr)
+    if 0 < fade_samples < target_len:
+        mix[:fade_samples] *= np.linspace(0, 1, fade_samples)
+        mix[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+    return mix
+
 
 def read_metadata(csv_path: Path) -> Dict[str, str]:
     """Read metadata from comment header lines (# key=value) in CSV."""
@@ -156,7 +199,7 @@ def create_rhythm_click_track(
 
     # Pre-generate click templates at different volumes
     click_full = generate_click(sr, CLICK_FREQUENCY, CLICK_DURATION, amplitude=1.0)
-    click_half = generate_click(sr, CLICK_FREQUENCY, CLICK_DURATION, amplitude=0.5)
+    click_half = generate_click(sr, 2000, CLICK_DURATION, amplitude=1.0)  # small click: lower pitch (2kHz), same volume
 
     n_bars = grid_times.shape[0]
     n_repetitions = n_bars // pattern_length
@@ -233,6 +276,7 @@ def plot_waveform_with_clicks(
     grid_times: Optional[np.ndarray] = None,
     section_start: float = 0.0,
     bar_numbers: Optional[List[int]] = None,
+    pattern_length: Optional[int] = None,
 ):
     """
     Plot section waveform with click positions and bar/beat/16th grid.
@@ -263,7 +307,7 @@ def plot_waveform_with_clicks(
 
     _plot_waveform_on_ax(plt.figure(figsize=(14, 3)).add_subplot(111),
                          audio, click_events, sr, title,
-                         grid_times, section_start, bar_numbers)
+                         grid_times, section_start, bar_numbers, pattern_length)
     plt.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(output_path), dpi=150)
@@ -279,6 +323,7 @@ def _plot_waveform_on_ax(
     grid_times: Optional[np.ndarray] = None,
     section_start: float = 0.0,
     bar_numbers: Optional[List[int]] = None,
+    pattern_length: Optional[int] = None,
 ):
     """Render waveform + clicks + grid onto a matplotlib Axes."""
     from matplotlib.lines import Line2D
@@ -308,6 +353,13 @@ def _plot_waveform_on_ax(
     # Bottom x-axis: bar/beat/16th ticks
     if grid_times is not None:
         n_bars_grid = grid_times.shape[0]
+
+        # bold vertical separators between loops (every pattern_length bars)
+        if pattern_length:
+            for _b in range(pattern_length, n_bars_grid, pattern_length):
+                _rt = grid_times[_b, 0] - section_start
+                if not np.isnan(_rt):
+                    ax.axvline(_rt, color='#111111', lw=2.5, zorder=5)
 
         tick_positions = []
         tick_labels = []
@@ -378,9 +430,16 @@ def process_section_wav(
     sr: int = 44100,
     click_volume_db: float = 0.0,
     verbose: bool = True,
+    stems_dir: Optional[Path] = None,
+    add_fullmix: bool = False,
+    fullmix_click_gain: float = 3.0,
 ) -> Optional[Path]:
     """
     Create a click-track version of a section WAV.
+
+    If ``add_fullmix`` is set and ``stems_dir`` points at a 1_stems folder, an
+    additional ``*_section_clicks_fullmix.wav`` is written where the SAME click
+    track is mixed onto the full-mix (all stems summed) section audio.
 
     Parameters
     ----------
@@ -460,6 +519,25 @@ def process_section_wav(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(output_path), mixed, sr)
 
+    # ADDITIONAL variant: same drum click track over the FULL-MIX (all stems) section
+    if add_fullmix and stems_dir is not None:
+        fullmix_audio = build_fullmix_section(
+            stems_dir, used_section_start, used_section_end, len(audio), sr=sr
+        )
+        if fullmix_audio is not None:
+            # Clicks a bit louder over the full mix (they must cut through all stems).
+            # fullmix_click_gain is an AMPLITUDE factor (3.0 = +200%) -> dB.
+            fm_click_db = click_volume_db + 20.0 * np.log10(fullmix_click_gain)
+            mixed_fm = mix_audio_with_clicks(
+                fullmix_audio, click_track, click_volume_db=fm_click_db
+            )
+            fm_path = output_path.with_name(output_path.stem + '_fullmix.wav')
+            sf.write(str(fm_path), mixed_fm, sr)
+            if verbose:
+                print(f"      + {fm_path.name}  (clicks over full mix)")
+        elif verbose:
+            print(f"      (no stems in {stems_dir}, skipped fullmix variant)")
+
     # Build rhythm pattern string: x=1.0, .=0.5, o=0.0
     # Grouped in beats of 4, separated by spaces; | separates bars
     pattern_chars = []
@@ -482,7 +560,7 @@ def process_section_wav(
     title = f"{output_path.stem}  ({section_label}, L={pattern_length}, {n_bars} bars, {len(click_events)} clicks)\nPattern: {pattern_str}"
     plot_waveform_with_clicks(audio, click_events, sr, plot_path, title=title,
                               grid_times=grid_times, section_start=used_section_start,
-                              bar_numbers=bar_numbers)
+                              bar_numbers=bar_numbers, pattern_length=pattern_length)
 
     if verbose:
         n_active = int(np.sum(pattern_values > 0))
@@ -497,6 +575,7 @@ def process_section_wav(
         'grid_times': grid_times,
         'section_start': used_section_start,
         'bar_numbers': bar_numbers,
+        'pattern_length': pattern_length,
     }
     return output_path, plot_info
 
@@ -525,6 +604,7 @@ def save_combined_pdf(
                 grid_times=info.get('grid_times'),
                 section_start=info.get('section_start', 0.0),
                 bar_numbers=info.get('bar_numbers'),
+                pattern_length=info.get('pattern_length'),
             )
             plt.tight_layout()
             pdf.savefig(fig)
@@ -537,6 +617,8 @@ def write_clicks_to_section_wavs(
     sr: int = 44100,
     click_volume_db: float = 0.0,
     verbose: bool = True,
+    add_fullmix: bool = True,
+    fullmix_click_gain: float = 3.0,
 ) -> List[Path]:
     """
     Write rhythm pattern click tracks onto all section WAVs for a track.
@@ -563,6 +645,7 @@ def write_clicks_to_section_wavs(
     sections_dir = track_dir / '9.1_sections'
     filtered_dir = track_dir / '6.2_filtered_patterns'
     rhythm_dir = track_dir / '6.6_anchored_rhythm_histograms'
+    stems_dir_1 = track_dir / '1_stems'          # for the full-mix click variant
 
     if not sections_dir.exists():
         print(f"Error: 9.1_sections not found in {track_dir}")
@@ -646,6 +729,9 @@ def write_clicks_to_section_wavs(
                 sr=sr,
                 click_volume_db=click_volume_db,
                 verbose=verbose,
+                stems_dir=stems_dir_1,
+                add_fullmix=add_fullmix,
+                fullmix_click_gain=fullmix_click_gain,
             )
 
             if result is not None:
@@ -695,6 +781,17 @@ if __name__ == '__main__':
         default=44100,
         help='Sample rate (default: 44100)'
     )
+    parser.add_argument(
+        '--no-fullmix',
+        action='store_true',
+        help='Do NOT also write the *_section_clicks_fullmix.wav variant (clicks over the all-stems mix)'
+    )
+    parser.add_argument(
+        '--fullmix-click-gain',
+        type=float,
+        default=3.0,
+        help='Amplitude factor for clicks in the fullmix variant (default 3.0 = +200%% louder)'
+    )
 
     args = parser.parse_args()
 
@@ -706,6 +803,8 @@ if __name__ == '__main__':
         sr=args.sr,
         click_volume_db=args.click_volume_db,
         verbose=True,
+        add_fullmix=not args.no_fullmix,
+        fullmix_click_gain=args.fullmix_click_gain,
     )
 
     print(f"\nDone. Created {len(results)} click WAV files.")

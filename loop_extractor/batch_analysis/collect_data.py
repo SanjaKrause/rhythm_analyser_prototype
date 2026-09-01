@@ -94,7 +94,9 @@ IOI_CATEGORIES = ['1/16', '1/8', '3/16', '1/4', '6/16', '2/4', '4/4']
 import numpy as np
 
 # Ratio thresholds
-RATIO_THRESHOLDS = [0.50, 0.70]
+# 0.10 = section-based ML set: keep ALL sections crossing >10% of the snippet
+# (with num_repetitions >= MIN_REPETITIONS) -> several sections per song.
+RATIO_THRESHOLDS = [0.10, 0.50, 0.70]
 
 # Additional ratio thresholds with max-ratio selection per song
 # For these thresholds: if multiple sections per song meet criteria, keep only the one with highest ratio
@@ -549,9 +551,9 @@ def build_column_headers(pattern_length: int, stem: str = 'drums') -> List[str]:
     n_positions = pattern_length * 16
     headers = []
 
-    # Metadata columns
+    # Metadata columns  (section_id = stable unique key: {song_id}__{sec_no}_{label})
     headers.extend([
-        'song_id', 'song_name', 'sec_no', 'section_label',
+        'section_id', 'song_id', 'song_name', 'sec_no', 'section_label',
         'num_repetitions', 'ratio_in_snippet', 'mean_section_tempo', 'time_signature'
     ])
 
@@ -711,6 +713,10 @@ def collect_section_data(
         row = {}
 
         # Metadata
+        _sec_no = rh_section.get('sec_no', 0)
+        _label = str(rh_section.get('section_label', '')).replace(' ', '-')
+        # section_label included because sec_no is not always unique within a song
+        row['section_id'] = f"{song_id}__{_sec_no}_{_label}"
         row['song_id'] = song_id
         row['song_name'] = song_name
         row['sec_no'] = rh_section.get('sec_no', 0)
