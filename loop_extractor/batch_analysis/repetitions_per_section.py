@@ -63,7 +63,7 @@ def collect_repetition_data(output_dir: Path, use_filtered: bool = False, stem: 
     # Find all track directories
     track_dirs = sorted([
         d for d in output_dir.iterdir()
-        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis']
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis', 'feature_sets']
     ])
 
     if not track_dirs:
@@ -284,7 +284,7 @@ def create_repetitions_diagrams(output_dir: Path, stem: str = 'drums'):
     # Find number of track directories
     track_dirs = sorted([
         d for d in output_dir.iterdir()
-        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis']
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis', 'feature_sets']
     ])
     print(f"Found {len(track_dirs)} track directories")
 
@@ -344,7 +344,7 @@ if __name__ == '__main__':
     # Find track directories
     track_dirs = sorted([
         d for d in output_dir.iterdir()
-        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis']
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'snippet_ratio_batch_analysis', 'feature_sets']
     ])
 
     # Determine which stems to process

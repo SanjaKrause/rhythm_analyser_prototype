@@ -71,23 +71,6 @@ The GUI supports:
 
 The pipeline always runs the full detailed analysis and exports everything as WAV.
 
-## Example Plots
-
-The pipeline generates various visualizations to analyze timing and tempo:
-
-### Tempo Analysis
-![Tempo Plot](screenshots/tempoplot.png)
-
-Bar-by-bar tempo comparison showing different tempo estimation methods across the track.
-
-### Microtiming Raster Plot
-![Raster Plot](screenshots/raster%20plot.png)
-
-Timing deviation analysis showing how drum onsets align with the detected grid across different correction methods.
-
-### Microtiming Deviation Plots
-Pattern-folded visualization showing onset deviations from the metrical grid. Each plot displays multiple loops as colored lines, revealing the microtiming characteristics for different correction methods (Uncorrected, Per-Snippet, Standard L=1/L=2/L=4).
-
 ## Supported Audio Formats
 
 The pipeline supports both **WAV** and **MP3** audio files:
@@ -271,4 +254,44 @@ If you use this tool in your research, please cite the following papers:
 ```
 - Paper: https://www.gmth.de/zeitschrift/artikel/1224.aspx
 
+### Yodfat (Rhythmic Complexity / Autocorrelation Features)
+```bibtex
+@phdthesis{yodfat2020thousand,
+  title={A Thousand Songs and a Song: Five Decades of Mizrahit and Rock Songs in Israel - Musical Analysis},
+  author={Yodfat, A.},
+  school={The Hebrew University of Jerusalem},
+  year={2020},
+  type={PhD Dissertation},
+  address={Jerusalem}
+}
+```
+
+### Spotify Web API (Audio Features)
+The Spotify audio features (danceability, energy, valence, ...) are retrieved
+via the Spotify Web API:
+- Documentation: https://developer.spotify.com/documentation/web-api
+
+### DrumTranscriber (Drum-Hit Classification)
+CNN-based drum-hit classifier by yoshi-man, used for the optional
+`drumtranscriber` onset mode and the GM drum mapping (not redistributed here,
+see `drumtranscriber/README.md`):
+- GitHub: https://github.com/yoshi-man/DrumTranscriber
+
 **Note:** If you publish research using this pipeline, please also cite any relevant papers describing the microtiming analysis methods and loop extraction techniques specific to your use case.
+
+## License
+
+This project's own code is released under the MIT License (see `LICENSE`).
+
+### Third-party components
+
+| Component | Location | License |
+|---|---|---|
+| Beat Transformer (Zhao Jingwei) | `Beat-Transformer/` | MIT (`Beat-Transformer/LICENSE`) |
+| Pironio pulse-clarity (nPironio) | `pironio-python/` | BSD-3-Clause (`pironio-python/LICENSE`) |
+| SongFormer | `songformer/` | CC-BY-4.0 (`songformer/LICENSE`) |
+| DrumTranscriber (yoshi-man) | `drumtranscriber/` | no upstream license — **not redistributed**; see `drumtranscriber/README.md` |
+
+Spleeter, madmom, librosa and all other dependencies are installed via pip
+(see `requirements_main.txt` / `requirements_beat_detection.txt`) and keep
+their own licenses.

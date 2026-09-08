@@ -78,7 +78,7 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
     stem_batch_dir.mkdir(parents=True, exist_ok=True)
 
     # Get all track directories (exclude batch_analysis and any other special folders)
-    track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']])
+    track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'feature_sets']])
 
     if not track_dirs:
         print('No track directories found!')
@@ -123,123 +123,11 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # Create single temp directory for all PNG conversions
+    # (remove stale leftovers from a previous aborted run first)
     temp_dir = batch_dir / '_temp'
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir, ignore_errors=True)
     temp_dir.mkdir(exist_ok=True)
-
-    # 2. Merge raster comparison plots (PNG files in 5_grid folder)
-    print('\nLooking for raster comparison plots...')
-    raster_comparison_pngs = []
-    for track_dir in track_dirs:
-        raster_png = track_dir / '5_grid' / f'{track_dir.name}_raster_comparison.png'
-        if raster_png.exists():
-            raster_comparison_pngs.append(raster_png)
-            print(f'  Found raster comparison: {track_dir.name}')
-
-    if raster_comparison_pngs:
-        print(f'\nConverting and merging {len(raster_comparison_pngs)} raster comparison PNGs...')
-
-        merger = PdfMerger()
-        for i, png in enumerate(raster_comparison_pngs):
-            temp_pdf = temp_dir / f'raster_comp_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
-
-        output_pdf = batch_dir / 'all_raster_comparison.pdf'
-        merger.write(str(output_pdf))
-        merger.close()
-
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 3. Merge raster standard plots (PNG files in 5_grid folder)
-    print('\nLooking for raster standard plots...')
-    raster_standard_pngs = []
-    for track_dir in track_dirs:
-        raster_png = track_dir / '5_grid' / f'{track_dir.name}_raster_standard.png'
-        if raster_png.exists():
-            raster_standard_pngs.append(raster_png)
-            print(f'  Found raster standard: {track_dir.name}')
-
-    if raster_standard_pngs:
-        print(f'\nConverting and merging {len(raster_standard_pngs)} raster standard PNGs...')
-
-        merger = PdfMerger()
-        for i, png in enumerate(raster_standard_pngs):
-            temp_pdf = temp_dir / f'raster_std_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
-
-        output_pdf = batch_dir / 'all_raster_standard.pdf'
-        merger.write(str(output_pdf))
-        merger.close()
-
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 4. Merge new grid corrections plots (PNG files in 5_grid folder)
-    print('\nLooking for new grid corrections plots...')
-    new_grid_corrections_pngs = []
-    for track_dir in track_dirs:
-        new_grid_png = track_dir / '5_grid' / f'{track_dir.name}_new_grid_corrections.png'
-        if new_grid_png.exists():
-            new_grid_corrections_pngs.append(new_grid_png)
-            print(f'  Found new grid corrections: {track_dir.name}')
-
-    if new_grid_corrections_pngs:
-        print(f'\nConverting and merging {len(new_grid_corrections_pngs)} new grid corrections PNGs...')
-
-        merger = PdfMerger()
-        for i, png in enumerate(new_grid_corrections_pngs):
-            temp_pdf = temp_dir / f'new_grid_corr_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
-
-        output_pdf = batch_dir / 'all_new_grid_corrections.pdf'
-        merger.write(str(output_pdf))
-        merger.close()
-
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 5. Merge microtiming plots (PDF files in 5_grid folder)
-    print('\nLooking for microtiming plots...')
-    microtiming_pdfs = []
-    for track_dir in track_dirs:
-        microtiming_pdf = track_dir / '5_grid' / f'{track_dir.name}_microtiming_plots.pdf'
-        if microtiming_pdf.exists():
-            microtiming_pdfs.append(microtiming_pdf)
-            print(f'  Found microtiming: {track_dir.name}')
-
-    if microtiming_pdfs:
-        print(f'\nMerging {len(microtiming_pdfs)} microtiming PDFs...')
-        output_pdf = batch_dir / 'all_microtiming_plots.pdf'
-        merger = PdfMerger()
-        for pdf in microtiming_pdfs:
-            merger.append(str(pdf))
-        merger.write(str(output_pdf))
-        merger.close()
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 14. Merge new 4-method raster plots (PNG files in 5_grid folder)
-    print('\nLooking for new 4-method raster plots...')
-    raster_4method_pngs = []
-    for track_dir in track_dirs:
-        raster_png = track_dir / '5_grid' / f'{track_dir.name}_raster.png'
-        if raster_png.exists():
-            raster_4method_pngs.append(raster_png)
-            print(f'  Found 4-method raster: {track_dir.name}')
-
-    if raster_4method_pngs:
-        print(f'\nConverting and merging {len(raster_4method_pngs)} 4-method raster PNGs...')
-
-        merger = PdfMerger()
-        for i, png in enumerate(raster_4method_pngs):
-            temp_pdf = temp_dir / f'raster_4method_{i}.pdf'
-            png_to_pdf(png, temp_pdf)
-            merger.append(str(temp_pdf))
-
-        output_pdf = batch_dir / 'all_raster_4method.pdf'
-        merger.write(str(output_pdf))
-        merger.close()
-
-        print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # 18. Merge Spotify sections timeline plots (PNG files in 13_spotify folder)
     print('\nLooking for Spotify sections timeline plots...')
@@ -264,58 +152,6 @@ def merge_plots(output_dir: Path, stem: str = 'drums'):
         merger.close()
 
         print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 19. Merge onsets per pattern plots (PNG files in 13_spotify folder)
-    # Process 1-bar, 2-bar and 4-bar patterns
-    for pattern_len in [1, 2, 4]:
-        print(f'\nLooking for onsets per {pattern_len}-bar pattern plots...')
-        onsets_per_pattern_pngs = []
-        for track_dir in track_dirs:
-            onsets_png = track_dir / '13_spotify' / f'{track_dir.name}_onsets_per_pattern_{pattern_len}bar.png'
-            if onsets_png.exists():
-                onsets_per_pattern_pngs.append(onsets_png)
-                print(f'  Found onsets per {pattern_len}-bar pattern: {track_dir.name}')
-
-        if onsets_per_pattern_pngs:
-            print(f'\nConverting and merging {len(onsets_per_pattern_pngs)} onsets per {pattern_len}-bar pattern PNGs...')
-
-            merger = PdfMerger()
-            for i, png in enumerate(onsets_per_pattern_pngs):
-                temp_pdf = temp_dir / f'onsets_per_pattern_{pattern_len}bar_{i}.pdf'
-                png_to_pdf(png, temp_pdf)
-                merger.append(str(temp_pdf))
-
-            output_pdf = batch_dir / f'all_onsets_per_pattern_{pattern_len}bar.pdf'
-            merger.write(str(output_pdf))
-            merger.close()
-
-            print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
-
-    # 20. Merge onsets per bar plots (PNG files in 13_spotify folder)
-    # Process 1-bar, 2-bar and 4-bar grids
-    for pattern_len in [1, 2, 4]:
-        print(f'\nLooking for onsets per bar ({pattern_len}-bar grid) plots...')
-        onsets_per_bar_pngs = []
-        for track_dir in track_dirs:
-            onsets_png = track_dir / '13_spotify' / f'{track_dir.name}_onsets_per_bar_{pattern_len}bar.png'
-            if onsets_png.exists():
-                onsets_per_bar_pngs.append(onsets_png)
-                print(f'  Found onsets per bar ({pattern_len}-bar grid): {track_dir.name}')
-
-        if onsets_per_bar_pngs:
-            print(f'\nConverting and merging {len(onsets_per_bar_pngs)} onsets per bar ({pattern_len}-bar grid) PNGs...')
-
-            merger = PdfMerger()
-            for i, png in enumerate(onsets_per_bar_pngs):
-                temp_pdf = temp_dir / f'onsets_per_bar_{pattern_len}bar_{i}.pdf'
-                png_to_pdf(png, temp_pdf)
-                merger.append(str(temp_pdf))
-
-            output_pdf = batch_dir / f'all_onsets_per_bar_{pattern_len}bar.pdf'
-            merger.write(str(output_pdf))
-            merger.close()
-
-            print(f'✓ Created: {output_pdf.name} ({output_pdf.stat().st_size / 1024:.1f} KB)')
 
     # 21. Merge SongFormer snippet sections plots (PNG files in 2.5_songformer_sections folder)
     print('\nLooking for SongFormer snippet sections plots...')
@@ -753,7 +589,7 @@ if __name__ == '__main__':
     # Find track directories
     track_dirs = sorted([
         d for d in output_dir.iterdir()
-        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']
+        if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'feature_sets']
     ])
 
     # Determine which stems to process

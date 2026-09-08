@@ -687,10 +687,7 @@ def create_thesis_tempo_plot(
 
     fig, axes = plt.subplots(4, 1, figsize=(10, 13))
 
-    title = f"Track {track_id} - Bar Tempo Analysis (Time Sig: {sig_uncorr}/4)"
-    if snippet_start is not None:
-        title += f"\nSnippet: {snippet_start:.1f}s - {snip_end:.1f}s"
-    fig.suptitle(title, fontsize=14, fontweight='bold')
+    # (no figure suptitle -- kept titleless for the thesis figure)
 
     # -- Panel 1: uncorrected over time (+ dominant-class average) ----------
     dom_avg = _dominant_class_average(uncorr_tempos)
@@ -744,7 +741,7 @@ def create_thesis_tempo_plot(
         ax2.set_ylabel('Percent (%)', fontsize=11, fontweight='bold')
         ax2.tick_params(axis='y', which='major', labelsize=10)
 
-    fig.tight_layout(rect=[0, 0.01, 1, 0.96])
+    fig.tight_layout(rect=[0, 0.01, 1, 0.99])
 
     plot_path = output_dir / f'{track_id}_thesisPlot.pdf'
     fig.savefig(plot_path)

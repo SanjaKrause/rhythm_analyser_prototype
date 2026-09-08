@@ -46,7 +46,7 @@ def create_loop_statistics(output_dir: Path):
     }
 
     # Find all pipeline_results.json files
-    track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis']])
+    track_dirs = sorted([d for d in output_dir.iterdir() if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis', 'feature_sets']])
 
     if not track_dirs:
         print('No track directories found!')

@@ -24,9 +24,14 @@ class Config:
     # Subprocess environment (for Beat-Transformer and Madmom onset detection)
     BEAT_DETECTION_ENV = "new_beatnet_env"
 
-    # Path to conda/python executables
-    # Note: This environment is used for both beat detection and madmom onset detection
-    BEAT_DETECTION_PYTHON = "/Users/alexk/miniforge3/envs/new_beatnet_env/bin/python"
+    # Path to the python executable of the beat-detection environment
+    # (used for both beat detection and madmom onset detection).
+    # Override via the BEAT_DETECTION_PYTHON environment variable; falls back
+    # to the conda env named above in the default miniforge/anaconda location.
+    BEAT_DETECTION_PYTHON = os.environ.get(
+        "BEAT_DETECTION_PYTHON",
+        str(Path.home() / "miniforge3" / "envs" / BEAT_DETECTION_ENV / "bin" / "python"),
+    )
 
     # Madmom onset detection uses the same environment as beat detection
     MADMOM_PYTHON = BEAT_DETECTION_PYTHON
@@ -307,6 +312,10 @@ class Config:
         paths = cls.get_output_paths(track_name, base_output_dir)
 
         for key, path in paths.items():
+            if key == 'drumtranscriber_dir':
+                # Only used with --onset-mode drumtranscriber; created on demand
+                # by drumtranscriber_interface.transcribe_drums
+                continue
             if key.endswith('_dir'):
                 path.mkdir(parents=True, exist_ok=True)
             else:

@@ -1,46 +1,28 @@
-# Drum Transcriber - Transcribe Drum Audio Clips
+# DrumTranscriber (not included)
 
-This package helps users transcribes drum audio hits into 6 classes - Hihat, Crash, Kick Drum, Snare, Ride, and Toms.
+This folder is intentionally empty in the repository.
 
-![demo](https://github.com/yoshi-man/DrumTranscriber/blob/main/assets/demo.gif?raw=true)
+The optional `drumtranscriber` onset mode of the pipeline uses
+**DrumTranscriber** by yoshi-man, a CNN-based drum-hit classifier
+(Hi-hat, Crash, Kick, Snare, Ride, Toms):
 
+> https://github.com/yoshi-man/DrumTranscriber
 
+The upstream repository does **not** declare a licence, so its code cannot be
+redistributed here. To use the drumtranscriber onset mode, download it
+yourself:
 
-## Dependencies
-
-Run the following to install the python dependencies:
-
-```
-pip install librosa tensorflow numpy pandas scikit-learn streamlit streamlit-player
-```
-
-## Usage
-
-### Basic Usage
-```Python
-from DrumTranscriber import DrumTranscriber
-import librosa
-
-samples, sr = librosa.load(PATH/TO/AUDIO/CLIP)
-
-transcriber = DrumTranscriber()
-
-# pandas dataframe containing probabilities of classes
-predictions = transcriber.predict(samples, sr)
+```bash
+git clone https://github.com/yoshi-man/DrumTranscriber.git
+cp -r DrumTranscriber/* drumtranscriber/
 ```
 
-### For Streamlit
+so that `drumtranscriber/DrumTranscriber.py` and `drumtranscriber/model/`
+exist, and install its dependencies:
 
-cd to the parent directory and run the following command:
+```bash
+pip install librosa tensorflow numpy pandas scikit-learn
 ```
-streamlit run frontend.py
-```
-A localhost website will appear with the demo app.
 
-
-## Getting Started
-
-1. Clone/Zip the directory
-2. Redownload the model .h5 file from `/model/drum_transcriber.h5` (https://drive.google.com/file/d/1w2fIHeyr-st3sbk1PYrtGOYW6YAD1fsi/view?usp=sharing)
-
-**Note**: There is an issue with Github zipping the .h5 model file. To properly get the model to work, I suggest downloading the model file from the Google Drive above and directly to replace the model from the clone/zipped folder. 
+Note: the thesis results were produced **without** this component (onset
+mode `librosa`), so it is not required to reproduce them.

@@ -23,7 +23,6 @@ Complete pipeline for music microtiming analysis and loop extraction:
 7. Anchored rhythm histograms (per-section position histograms from 6.1 data)
 7.1. Anchored beat histograms (per-section IOI histograms from filtered patterns)
 7.2. Anchored statistics (rhythm + beat statistics from 6.6 and 6.7 data)
-9. LEPA data export
 10. MIDI export (anchored patterns: L2 + full sections, drums + bass)
 11.1. Section extraction (extract audio sections from filtered pattern boundaries)
 13. Pironio pulse clarity metrics (viterbi, entropy, peak analysis)
@@ -80,7 +79,7 @@ config = config_module.config
 from stem_separation import spleeter_interface
 from beat_detection import transformer
 from analysis import correct_bars, raster, onset_detection, pattern_detection, tempo_plots, anchoring, extract_sections, write_clicks_to_sectionwavs
-from utils import raster_plots, midi_export, microtiming_plots, anchored_microtiming_plots, drumtranscriber_interface
+from utils import midi_export, anchored_microtiming_plots, drumtranscriber_interface
 import main_pironio
 import spotify_analysis
 import yodfat_analysis
@@ -1280,101 +1279,6 @@ def run_complete_pipeline(
         # Don't raise - continue to next step
 
     # ========================================================================
-    # STEP 6.5: RASTER PLOTS (for all stems)
-    # ========================================================================
-    onset_stems = config.STEMS if all_stems else config.ONSET_STEMS
-    # Append fullmix if enabled
-    if fullmix:
-        onset_stems = list(onset_stems) + ['fullmix']
-    raster_created = False
-
-    for stem in onset_stems:
-        try:
-            stem_paths = config.get_stem_paths(track_id, stem, Path(output_dir))
-            comprehensive_csv = stem_paths['comprehensive_csv']
-
-            if not comprehensive_csv.exists():
-                if verbose:
-                    print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (no comprehensive CSV)")
-                continue
-
-            grid_output_dir = comprehensive_csv.parent
-            raster_files_exist = (grid_output_dir / f'{track_id}_raster_comparison.png').exists()
-
-            if skip_existing and raster_files_exist:
-                if verbose:
-                    print(f"\n[6.5] Raster plots ({stem}) - SKIPPED (exists)")
-                continue
-
-            if verbose:
-                print(f"\n[6.5] Generating raster plots ({stem})...")
-
-            raster_plots.create_all_plots(
-                str(comprehensive_csv),
-                str(grid_output_dir),
-                track_id
-            )
-
-            raster_created = True
-
-            if verbose:
-                print(f"  ✓ Raster plots ({stem}) created")
-
-        except Exception as e:
-            error_msg = f"Step 6.5 failed for {stem}: {e}"
-            results['errors'].append(error_msg)
-            if verbose:
-                print(f"  ✗ ERROR ({stem}): {e}")
-            continue
-
-    if raster_created:
-        results['steps_completed'].append('raster_plots')
-
-    # ========================================================================
-    # STEP 6.6: MICROTIMING PLOTS
-    # ========================================================================
-    try:
-        if not paths['comprehensive_csv'].exists():
-            if verbose:
-                print("\n[6.6] Microtiming plots - SKIPPED (no comprehensive CSV)")
-            results['steps_completed'].append('microtiming_plots_skipped')
-        else:
-            # Check if microtiming plots already exist
-            grid_output_dir = paths['comprehensive_csv'].parent
-            microtiming_files_exist = (grid_output_dir / f'{track_id}_microtiming_plots.pdf').exists()
-
-            if skip_existing and microtiming_files_exist:
-                if verbose:
-                    print("\n[6.6] Microtiming plots - SKIPPED (exists)")
-                results['steps_completed'].append('microtiming_plots_skipped')
-            else:
-                if verbose:
-                    print("\n[6.6] Generating microtiming deviation plots...")
-
-                # Get snippet info from pattern detection results
-                snippet_info = results.get('snippet_info')
-
-                microtiming_pdf = microtiming_plots.create_microtiming_plots(
-                    str(paths['comprehensive_csv']),
-                    track_id,
-                    str(grid_output_dir),
-                    snippet_info=snippet_info
-                )
-
-                results['microtiming_plots_pdf'] = microtiming_pdf
-                results['steps_completed'].append('microtiming_plots')
-
-                if verbose:
-                    print(f"  ✓ Microtiming plots created")
-
-    except Exception as e:
-        error_msg = f"Step 6.6 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
-        # Don't raise - continue to anchored rhythm histograms
-
-    # ========================================================================
     # STEP 7: ANCHORED RHYTHM HISTOGRAMS (for all stems)
     # ========================================================================
     from analysis import anchored_rhythm_histograms
@@ -1617,54 +1521,6 @@ def run_complete_pipeline(
 
     if stats_created:
         results['steps_completed'].append('anchored_statistics')
-
-    # ========================================================================
-    # STEP 9: LEPA DATA EXPORT
-    # ========================================================================
-    try:
-        if not paths['comprehensive_csv'].exists():
-            if verbose:
-                print("\n[9] LEPA export - SKIPPED (no comprehensive CSV)")
-            results['steps_completed'].append('lepa_export_skipped')
-        else:
-            # Define LEPA output directory
-            lepa_output_dir = Path(output_dir) / track_id / '10_output_for_lepa'
-
-            # Check if LEPA export already exists (check for L1 file)
-            lepa_file_exists = (lepa_output_dir / f'{track_id}_bar_durations_L1.csv').exists()
-
-            if skip_existing and lepa_file_exists:
-                if verbose:
-                    print("\n[9] LEPA export - SKIPPED (exists)")
-                results['steps_completed'].append('lepa_export_skipped')
-            else:
-                if verbose:
-                    print("\n[9] Exporting LEPA bar duration data...")
-
-                from utils import lepa_export
-
-                # Get audio file paths
-                drum_stem_path = paths['stems_dir'] / 'drums.wav'
-
-                lepa_csv = lepa_export.export_bar_durations(
-                    str(paths['comprehensive_csv']),
-                    track_id,
-                    str(lepa_output_dir),
-                    audio_file=str(audio_file) if audio_file else None,
-                    drum_stem_file=str(drum_stem_path) if drum_stem_path.exists() else None
-                )
-
-                if lepa_csv:
-                    results['lepa_export_csv'] = lepa_csv
-                    results['steps_completed'].append('lepa_export')
-                    if verbose:
-                        print(f"  ✓ LEPA data exported")
-
-    except Exception as e:
-        error_msg = f"Step 9 failed: {e}"
-        results['errors'].append(error_msg)
-        if verbose:
-            print(f"  ✗ ERROR: {e}")
 
     # ========================================================================
     # STEP 10: MIDI EXPORT
@@ -2402,7 +2258,8 @@ Environment:
         batch_track_dirs = sorted([
             d for d in Path(args.output_dir).iterdir()
             if d.is_dir() and d.name not in ['batch_analysis', '_batch_analysis',
-                                              'snippet_ratio_batch_analysis', 'collected_data']
+                                              'snippet_ratio_batch_analysis', 'collected_data',
+                                              'feature_sets']
         ])
         available_stems = detect_available_stems(batch_track_dirs) if batch_track_dirs else ['drums']
         print(f"\nDetected stems for batch analysis: {available_stems}")
@@ -2421,6 +2278,13 @@ Environment:
             print("Install required packages: pip install PyPDF2 Pillow reportlab")
         except Exception as e:
             print(f"\n⚠️  PDF merging failed: {e}")
+        finally:
+            # Remove leftover temp folder from PDF merging (survives aborted runs)
+            merge_temp_dir = Path(args.output_dir) / 'batch_analysis' / '_temp'
+            if merge_temp_dir.exists():
+                import shutil
+                shutil.rmtree(merge_temp_dir, ignore_errors=True)
+                print(f"Removed temp folder: {merge_temp_dir}")
 
         # Create pattern length summary pie charts
         try:
@@ -2442,15 +2306,6 @@ Environment:
         except Exception as e:
             print(f"\n⚠️  Loop statistics failed: {e}")
 
-        # Export LEPA data
-        try:
-            from batch_analysis.lepa_data_export import export_lepa_data
-            export_lepa_data(Path(args.output_dir))
-        except ImportError as ie:
-            print(f"\n⚠️  LEPA data export skipped: {ie}")
-            print("Install required packages: pip install pandas")
-        except Exception as e:
-            print(f"\n⚠️  LEPA data export failed: {e}")
 
         # Create snippet ratio diagrams (section coverage analysis) - per stem
         try:
@@ -2488,6 +2343,18 @@ Environment:
             print(f"\n⚠️  Collect data skipped: {ie}")
         except Exception as e:
             print(f"\n⚠️  Collect data failed: {e}")
+
+        # Step 23: Feature calculation + final feature set (RPE features)
+        try:
+            from batch_analysis.feature_calculation import calculate_features
+            print("\n" + "=" * 80)
+            print("FEATURE CALCULATION")
+            print("=" * 80)
+            calculate_features(Path(args.output_dir))
+        except ImportError as ie:
+            print(f"\n⚠️  Feature calculation skipped: {ie}")
+        except Exception as e:
+            print(f"\n⚠️  Feature calculation failed: {e}")
 
         # Exit with error code if any files failed
         if batch_results['failed']:

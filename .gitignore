@@ -73,3 +73,8 @@ drumtranscriber/model/drum_transcriber.h5
 nested_cv_figs/
 song_corpus_numbers.md
 statistical_featureset_docu.md
+
+# DrumTranscriber (github.com/yoshi-man/DrumTranscriber) — upstream has no
+# licence, so the code is not redistributed here; see drumtranscriber/README.md
+drumtranscriber/*
+!drumtranscriber/README.md
