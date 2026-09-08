@@ -142,7 +142,7 @@ output/<track>/
 ├── 3_corrected/                      # Corrected downbeats
 ├── 3.5_tempo_plots/                  # Tempo plots + bar tempo CSV
 ├── 4_onsets/<stem>/                  # Detected onsets
-├── 5_grid/<stem>/                    # Comprehensive phase grid + raster/microtiming plots
+├── 5_grid/<stem>/                    # Comprehensive phase grid + reference onsets (CSV)
 ├── 6.1_anchoring/<stem>/             # Section-anchored patterns (L1/L2/L4, unfiltered)
 ├── 6.2_filtered_patterns/<stem>/     # Tukey-filtered patterns + drum classes (kick/snare/...)
 ├── 6.6_anchored_rhythm_histograms/   # Position histograms + groove pulse + rhythm patterns
@@ -152,9 +152,22 @@ output/<track>/
 │   ├── onset/                        # SecNoX_L2 / SecNoX_full (.mid + _gm.mid)
 │   └── bass_pitch/                   # Same windows as bass MIDI (_bass.mid)
 ├── 9.1_sections/<stem>/              # Section WAVs + rhythm-pattern click tracks
-├── 10_output_for_lepa/               # Bar-duration audio export
-├── 11_drumtranscriber/  12_pironio/  13_spotify/  14_yodfat/
+├── 12_pironio/  13_spotify/  14_yodfat/   # Pulse clarity / Spotify / rhythmic complexity
 └── pipeline_results.json             # Steps completed + errors
+```
+
+In batch mode, corpus-level outputs are written next to the track folders:
+
+```
+output/
+├── batch_analysis/                   # Merged plots (+ per-stem anchored merges)
+├── collected_data/<stem>/            # Collected per-song grid CSVs (L1/L2/L4 x ratio)
+├── feature_sets/
+│   ├── calculated_features/          # 52 candidate features in 8 set CSVs
+│   ├── final_features/               # our_features.csv (25) + spotify_features.csv
+│   └── spearman_matrix_*.png         # Correlation matrices (full + reduced)
+├── snippet_ratio_batch_analysis/     # Section-coverage diagrams
+└── batch_results.json                # Batch processing log
 ```
 
 ## Configuration
